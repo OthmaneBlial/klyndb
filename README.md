@@ -109,7 +109,7 @@ Then create a connection, open a table or SQL tab, and run a real query.
 | `Shift + Cmd/Ctrl + F` | Format SQL |
 | `Cmd/Ctrl + S` | Save a query |
 
-Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Public downloadable releases are not available yet. macOS signing and notarization require Apple credentials.
+Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Public downloadable releases are not available yet. macOS signing and notarization require Apple credentials. The [local release guide](docs/RELEASES.md) documents the optimized macOS DMG/ZIP candidate builder and acceptance checks.
 
 ## 🧪 Local checks
 
