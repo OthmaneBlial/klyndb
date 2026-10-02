@@ -64,7 +64,7 @@
 | **📤 Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
 | **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
 
-Server passwords stay in the **OS keychain**. TLS verification is enabled by default. Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
+Server passwords stay in the **OS keychain**. TLS verification is enabled by default, with optional [custom CA certificates](docs/TLS.md) for private servers. Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 
 ## 🗄️ Four databases. One workspace.
 

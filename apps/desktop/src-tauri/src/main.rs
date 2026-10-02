@@ -284,6 +284,15 @@ async fn clear_history(engine: State<'_, Arc<Engine>>) -> ApiResult<()> {
     blocking(move || store.clear_history().map_err(api)).await
 }
 #[tauri::command]
+async fn choose_ca_file() -> ApiResult<Option<String>> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_title("Choose CA certificates")
+        .add_filter("CA certificates", &["pem", "crt", "cer", "der"])
+        .pick_file()
+        .await
+        .map(|f| f.path().to_string_lossy().into_owned()))
+}
+#[tauri::command]
 async fn choose_database_file(create: bool) -> ApiResult<Option<String>> {
     let dialog =
         rfd::AsyncFileDialog::new().add_filter("SQLite database", &["sqlite", "db", "sqlite3"]);
@@ -420,6 +429,7 @@ fn main() {
             history,
             clear_history,
             choose_database_file,
+            choose_ca_file,
             choose_import_file,
             preview_import,
             start_import,

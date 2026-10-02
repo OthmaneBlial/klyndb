@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FolderOpen, Database, ShieldCheck, Plus } from "lucide-react";
 import { api, type Connection } from "../api";
 import { Modal } from "./Modal";
+import { tlsSettings, updateTls } from "../connection";
 const fresh = (): Connection => ({
   id: "",
   name: "",
@@ -42,6 +43,24 @@ export function ConnectionDialog({
         if (!form.name)
           field("name", path.split(/[\\/]/).pop() ?? "Local database");
       }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+  const tls = tlsSettings(form.engine, form.address);
+  function changeTls(mode: string, ca: string) {
+    try {
+      field("address", updateTls(form.engine, form.address, mode, ca));
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+  async function chooseCa() {
+    try {
+      const path = await api("choose_ca_file");
+      if (path)
+        changeTls(form.engine === "mysql" ? "required" : "require", path);
     } catch (e) {
       setError(String(e));
     }
@@ -195,6 +214,70 @@ export function ConnectionDialog({
                   only for a trusted local server.
                 </small>
               </label>
+              <details className="tls-options">
+                <summary>TLS &amp; certificates</summary>
+                <label>
+                  Transport
+                  <select
+                    aria-label="TLS transport"
+                    value={tls.mode}
+                    onChange={(e) => changeTls(e.target.value, tls.ca)}
+                  >
+                    <option
+                      value={form.engine === "mysql" ? "required" : "require"}
+                    >
+                      Verified TLS (default)
+                    </option>
+                    {form.engine === "postgres" && (
+                      <option value="prefer" disabled={!!tls.ca}>
+                        Try TLS, allow plaintext fallback
+                      </option>
+                    )}
+                    <option
+                      value={form.engine === "mysql" ? "disabled" : "disable"}
+                      disabled={!!tls.ca}
+                    >
+                      Plaintext · trusted local server only
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  Custom CA certificates · optional
+                  <div className="input-action">
+                    <input
+                      aria-label="CA certificate file"
+                      value={tls.ca}
+                      placeholder="System trust store"
+                      onChange={(e) =>
+                        changeTls(
+                          form.engine === "mysql" ? "required" : "require",
+                          e.target.value,
+                        )
+                      }
+                    />
+                    <button
+                      type="button"
+                      aria-label="Choose CA certificate file"
+                      onClick={() => void chooseCa()}
+                    >
+                      <FolderOpen size={17} />
+                    </button>
+                    {tls.ca && (
+                      <button
+                        type="button"
+                        onClick={() => changeTls(tls.mode, "")}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <small>
+                    PEM bundle or DER file, up to 1 MiB. Saved as a file path.
+                    Certificate and hostname checks stay enabled; a custom CA
+                    requires TLS. Client certificates are not yet supported.
+                  </small>
+                </label>
+              </details>
               <label>
                 Password
                 <input

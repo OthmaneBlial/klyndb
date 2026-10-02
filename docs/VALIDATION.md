@@ -177,3 +177,12 @@ The native save dialog wrote artifacts/diagram-native-20261002.svg (3,108 bytes)
 
 
 The diagram website update was published in Pages commit `a3f79248033125bc18ecff3f03334cb1eb4d7ff7`; the existing deployment run `37028990338` completed successfully. Both live HTML pages returned HTTP 200 and matched the repository bytes. Real Chrome verification showed the Relationships navigation, native-key/layout/SVG workflow and updated preview limits at [the live diagram docs](https://othmaneblial.github.io/klyndb/docs.html#diagrams). Application-repository GitHub Actions remained disabled.
+
+
+## Verified TLS and custom CA files — 2026-10-02
+
+Real TLS contracts passed against disposable PostgreSQL 16, MySQL 8.4.11 and MariaDB 13.0.2 servers using a private local CA and a DNS-only localhost server certificate. Each contract rejected missing trust roots, an unrelated CA, the wrong hostname (127.0.0.1), invalid/missing CA files and CA-plus-plaintext options. A bundle with an unrelated CA before the correct CA, and the same root in DER form, both connected successfully. PostgreSQL pg_stat_ssl and MySQL/MariaDB Ssl_cipher confirmed encryption. Queries, temporary-table metadata, cancellation and subsequent session reuse passed. Isolated connection tests left the temporary connection store empty. Logs: ignored artifacts/tls-ca-contract.log and artifacts/tls-ca-local-ci.log.
+
+Full local scripts/check.sh passed: frontend lint/typecheck/nine tests/build/audit, site snippet-copy check, workspace formatting/Clippy/tests, real PostgreSQL/MariaDB driver contracts, all three configured TLS contracts, native compilation and security/license audits. Two existing upstream audit warnings remain documented; no registry package/version was added. CA parsing and URL handling reuse existing native-tls/url dependencies. GitHub Actions permissions remained enabled=false.
+
+The certificate picker returns only a path; Rust reads a bounded public PEM/DER file for each connection. URL validation rejects duplicate options, relative/NUL paths and CA-plus-fallback settings. Additional focused CA-file guards cover empty, oversized, malformed and relative files. Client certificate identities, SSH/bastions and native Windows/Linux validation remain pending.

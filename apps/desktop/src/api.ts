@@ -260,6 +260,7 @@ interface Commands {
   save_document: { args: { id: string; data: unknown }; result: void };
   history: { args: undefined; result: History[] };
   clear_history: { args: undefined; result: void };
+  choose_ca_file: { args: undefined; result: string | null };
   choose_database_file: { args: { create: boolean }; result: string | null };
   choose_import_file: {
     args: { options: CsvOptions };

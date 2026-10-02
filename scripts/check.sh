@@ -23,6 +23,15 @@ if [[ -n "${KLYNDB_TEST_MYSQL_URL:-}" ]]; then
 else
   echo 'MySQL/MariaDB integration skipped: set KLYNDB_TEST_MYSQL_URL to a disposable test server.'
 fi
+for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
+  variable="KLYNDB_TEST_TLS_${entry%%:*}_URL"
+  if [[ -n "${!variable:-}" ]]; then
+    : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for TLS contracts}"
+    cargo test --locked -p klyndb-core --test tls "${entry#*:}_verified_tls" -- --ignored
+  else
+    echo "TLS integration skipped: set $variable and KLYNDB_TEST_TLS_CERT_DIR."
+  fi
+done
 cargo build --locked -p klyndb-desktop
 cargo audit
 cargo deny check licenses

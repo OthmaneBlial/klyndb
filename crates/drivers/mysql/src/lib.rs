@@ -45,8 +45,28 @@ impl Mysql {
         if !["required", "disabled"].contains(&tls.as_str()) {
             return Err(Error::new("MySQL tls must be required or disabled"));
         }
-        if url.query_pairs().any(|(k, _)| k != "tls") {
+        let mut seen = std::collections::HashSet::new();
+        if url.query_pairs().any(|(k, _)| {
+            !["tls", "sslrootcert"].contains(&k.as_ref()) || !seen.insert(k.into_owned())
+        }) {
             return Err(Error::new("Unsupported MySQL URL option"));
+        }
+        let root = url
+            .query_pairs()
+            .find(|(k, _)| k == "sslrootcert")
+            .map(|(_, v)| v.into_owned());
+        if root.is_some() && tls != "required" {
+            return Err(Error::new("A custom CA certificate requires tls=required"));
+        }
+        let mut ssl = SslOpts::default();
+        if let Some(path) = root {
+            ssl = ssl.with_root_certs(
+                klyndb_driver_api::tls::load_ca_certificates(&path)
+                    .await?
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            );
         }
         url.set_query(None);
         let opts =
@@ -54,11 +74,7 @@ impl Mysql {
         let mut builder = OptsBuilder::from_opts(opts)
             .prefer_socket(false)
             .client_found_rows(true)
-            .ssl_opts(if tls == "required" {
-                Some(SslOpts::default())
-            } else {
-                None
-            })
+            .ssl_opts(if tls == "required" { Some(ssl) } else { None })
             .pool_opts(
                 PoolOpts::default().with_constraints(
                     PoolConstraints::new(0, 1)

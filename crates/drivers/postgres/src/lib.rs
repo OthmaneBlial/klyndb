@@ -122,7 +122,27 @@ impl Postgres {
         }
     }
     pub async fn connect(url: &str, password: Option<&str>, read_only: bool) -> Result<Self> {
-        let mut config: tokio_postgres::Config = url
+        let mut address =
+            url::Url::parse(url).map_err(|_| Error::new("Invalid PostgreSQL connection URL"))?;
+        let roots: Vec<_> = address
+            .query_pairs()
+            .filter(|(k, _)| k == "sslrootcert")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        if roots.len() > 1 {
+            return Err(Error::new("Choose one CA certificate file"));
+        }
+        let remaining: Vec<_> = address
+            .query_pairs()
+            .filter(|(k, _)| k != "sslrootcert")
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        address.set_query(None);
+        if !remaining.is_empty() {
+            address.query_pairs_mut().extend_pairs(remaining);
+        }
+        let mut config: tokio_postgres::Config = address
+            .as_str()
             .parse()
             .map_err(|_| Error::new("Invalid PostgreSQL connection URL"))?;
         if let Some(password) = password {
@@ -130,8 +150,24 @@ impl Postgres {
         }
         config.connect_timeout(std::time::Duration::from_secs(10));
         config.keepalives(true);
+        let mut builder = native_tls::TlsConnector::builder();
+        if let Some(path) = roots.first() {
+            if config.get_ssl_mode() != tokio_postgres::config::SslMode::Require {
+                return Err(Error::new(
+                    "A custom CA certificate requires sslmode=require",
+                ));
+            }
+            for der in klyndb_driver_api::tls::load_ca_certificates(path).await? {
+                builder.add_root_certificate(
+                    native_tls::Certificate::from_der(&der)
+                        .map_err(|_| Error::new("Could not decode the CA certificate"))?,
+                );
+            }
+        }
         let tls = MakeTlsConnector::new(
-            native_tls::TlsConnector::new().map_err(|_| Error::new("Could not initialize TLS"))?,
+            builder
+                .build()
+                .map_err(|_| Error::new("Could not initialize TLS"))?,
         );
         let (client, connection) = config.connect(tls.clone()).await.map_err(err)?;
         let worker = tokio::spawn(async move {

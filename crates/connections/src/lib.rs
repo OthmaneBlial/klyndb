@@ -53,11 +53,29 @@ impl Connection {
                     }));
                 }
                 let options: &[&str] = if mysql {
-                    &["tls"]
+                    &["tls", "sslrootcert"]
                 } else {
-                    &["sslmode", "connect_timeout", "application_name"]
+                    &[
+                        "sslmode",
+                        "connect_timeout",
+                        "application_name",
+                        "sslrootcert",
+                    ]
                 };
+                let mut seen = std::collections::HashSet::new();
                 for (key, value) in url.query_pairs() {
+                    if !seen.insert(key.to_string()) {
+                        return Err(Error::new(
+                            "Repeated connection URL parameters are not supported",
+                        ));
+                    }
+                    if key == "sslrootcert"
+                        && (!std::path::Path::new(value.as_ref()).is_absolute()
+                            || value.len() > 16384
+                            || value.contains('\0'))
+                    {
+                        return Err(Error::new("Choose an absolute CA certificate file path"));
+                    }
                     if mysql && key == "tls" && !["required", "disabled"].contains(&value.as_ref())
                     {
                         return Err(Error::new("MySQL tls must be required or disabled"));
@@ -75,6 +93,15 @@ impl Connection {
                 if !url.query_pairs().any(|(k, _)| k == tls_key) {
                     url.query_pairs_mut()
                         .append_pair(tls_key, if mysql { "required" } else { "require" });
+                }
+                if url.query_pairs().any(|(k, _)| k == "sslrootcert")
+                    && url.query_pairs().any(|(k, v)| {
+                        k == tls_key && v != if mysql { "required" } else { "require" }
+                    })
+                {
+                    return Err(Error::new(
+                        "A custom CA certificate requires verified TLS without plaintext fallback",
+                    ));
                 }
                 self.address = url.to_string();
                 Ok(password)
@@ -243,10 +270,25 @@ mod tests {
         for address in [
             "mysql://alice@localhost/db?tls=invalid",
             "mysql://alice@localhost/db?password=leak",
+            "mysql://alice@localhost/db?tls=required&tls=disabled",
+            "mysql://alice@localhost/db?tls=disabled&sslrootcert=%2Ftmp%2Fca.pem",
+            "mysql://alice@localhost/db?sslrootcert=relative.pem",
+            "mysql://alice@localhost/db?sslrootcert=%2Ftmp%2Fca%00.pem",
         ] {
             let mut invalid = c.clone();
             invalid.address = address.into();
             assert!(invalid.validate().is_err());
+        }
+        let mut ca = c.clone();
+        ca.address = "mysql://alice@localhost/db?sslrootcert=%2Ftmp%2Fca+bundle.pem".into();
+        ca.validate().unwrap();
+        assert!(ca.address.contains("tls=required"));
+        for mode in ["disable", "prefer"] {
+            ca.engine = "postgres".into();
+            ca.address = format!(
+                "postgresql://alice@localhost/db?sslmode={mode}&sslrootcert=%2Ftmp%2Fca.pem"
+            );
+            assert!(ca.validate().is_err());
         }
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("state.db")).unwrap();

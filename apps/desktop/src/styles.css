@@ -1818,3 +1818,11 @@ small {
     padding: 8px;
   }
 }
+
+.tls-options {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.tls-options summary { cursor: pointer; }
+.tls-options[open] summary { margin-bottom: 14px; }
