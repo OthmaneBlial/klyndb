@@ -45,6 +45,7 @@ pub(super) async fn apply(
     abort: &CancellationToken,
     committing: &AtomicBool,
     poison: &AtomicBool,
+    interruptible: Option<&AtomicBool>,
 ) -> Result<MutationResult> {
     let charset: Option<(String, String, Option<String>)> = conn
         .query_first(
@@ -142,6 +143,9 @@ pub(super) async fn apply(
         Ok(MutationResult { affected, pending_transaction: !own })
     }.await;
     if batch.is_err() {
+        if let Some(flag) = interruptible {
+            flag.store(false, Ordering::Relaxed);
+        }
         let rollback = if own {
             "ROLLBACK AND NO CHAIN NO RELEASE".into()
         } else if has_savepoint {

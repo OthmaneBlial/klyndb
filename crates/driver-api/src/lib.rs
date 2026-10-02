@@ -54,6 +54,7 @@ pub struct Capabilities {
     pub explain: bool,
     pub explain_analyze: bool,
     pub edit_rows: bool,
+    pub import_rows: bool,
     pub cancel: bool,
     pub tls: bool,
 }
@@ -193,6 +194,32 @@ pub enum Batch {
     Complete { affected: u64, truncated: bool },
 }
 
+/// A producer must explicitly finish; a dropped/failed producer must never commit.
+pub enum InsertBatch {
+    Rows(Vec<Change>),
+    Complete,
+}
+pub async fn next_insert_batch(
+    input: &mut mpsc::Receiver<Result<InsertBatch>>,
+    cancel: &CancellationToken,
+) -> Result<InsertBatch> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(Error::new("Import cancelled")),
+        batch = input.recv() => batch.ok_or_else(|| Error::new("Import reader stopped before completing the file"))?,
+    }
+}
+pub fn validate_insert_batch(changes: &[Change]) -> Result<()> {
+    validate_change_batch(changes)?;
+    if changes
+        .iter()
+        .any(|change| !matches!(change, Change::Insert { .. }))
+    {
+        return Err(Error::new("Imports can only append rows"));
+    }
+    Ok(())
+}
+
 #[async_trait]
 pub trait Session: Send + Sync {
     fn capabilities(&self) -> Capabilities;
@@ -224,6 +251,15 @@ pub trait Session: Send + Sync {
     async fn inspect(&self, table: &Table) -> Result<TableInfo>;
     async fn transaction_state(&self) -> Result<TransactionState>;
     async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult>;
+    /// Hold the session for the entire stream and roll back every batch on failure.
+    async fn insert_stream(
+        &self,
+        _table: Table,
+        _input: mpsc::Receiver<Result<InsertBatch>>,
+        _cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        Err(Error::new("This driver does not support imports"))
+    }
     async fn disconnect(&self) -> Result<()>;
 }
 

@@ -18,6 +18,87 @@ async fn query(db: Arc<Postgres>, sql: &str) -> Vec<Batch> {
 }
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
+async fn backpressure_cancellation_and_consumer_close() {
+    let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();
+    for case in 0..3 {
+        let db = Arc::new(Postgres::connect(&url, None, false).await.unwrap());
+        let (tx, mut rx) = mpsc::channel(1);
+        let token = CancellationToken::new();
+        let cancel = token.clone();
+        let driver = db.clone();
+        let mut task = tokio::spawn(async move {
+            let sql = if case == 2 {
+                "SELECT pg_sleep(30)"
+            } else {
+                "SELECT generate_series(1,100000); SELECT pg_sleep(30)"
+            };
+            driver.execute(sql.into(), tx, cancel, 10000).await
+        });
+        // Leave the receiver alive and full: cancellation must wake a blocked send.
+        if case != 2 {
+            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                while rx.is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if case != 0 {
+            rx.close();
+        } else {
+            token.cancel();
+        }
+        let result = tokio::time::timeout(std::time::Duration::from_secs(4), &mut task).await;
+        if result.is_err() {
+            task.abort();
+            db.disconnect().await.unwrap();
+            panic!("query did not terminate with a blocked or closed consumer");
+        }
+        assert!(result.unwrap().unwrap().is_err());
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                query(db.clone(), "SELECT 42")
+            )
+            .await
+            .unwrap()
+            .iter()
+            .any(|b| matches!(b, Batch::Rows(rows) if rows[0] == vec![Cell::Text("42".into())]))
+        );
+        db.disconnect().await.unwrap();
+    }
+}
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
+async fn failed_read_only_cleanup_reports_closed_session() {
+    let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();
+    let db = Postgres::connect(&url, None, true).await.unwrap();
+    let (tx, _rx) = mpsc::channel(16);
+    // End only this disposable test connection, making protective ROLLBACK fail.
+    let failure = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        db.execute(
+            "SELECT pg_terminate_backend(pg_backend_pid())".into(),
+            tx,
+            CancellationToken::new(),
+            100,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(
+        failure.message.contains("connection closed"),
+        "{}",
+        failure.message
+    );
+    assert!(db.transaction_state().await.is_err());
+    db.disconnect().await.unwrap();
+}
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
 async fn real_postgres_workflow_and_cancellation() {
     let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").expect("set a disposable test server URL");
     let db = Arc::new(Postgres::connect(&url, None, false).await.unwrap());

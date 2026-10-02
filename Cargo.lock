@@ -2222,6 +2222,7 @@ dependencies = [
  "klyndb-connections",
  "klyndb-driver-api",
  "klyndb-export",
+ "klyndb-import",
  "klyndb-mysql",
  "klyndb-postgres",
  "klyndb-query",
@@ -2279,6 +2280,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "klyndb-import"
+version = "0.1.0"
+dependencies = [
+ "csv-core",
+ "klyndb-driver-api",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "klyndb-mysql"
 version = "0.1.0"
 dependencies = [
@@ -2308,6 +2322,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -2332,6 +2347,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]

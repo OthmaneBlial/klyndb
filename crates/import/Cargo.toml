@@ -1,0 +1,14 @@
+[package]
+name = "klyndb-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../driver-api" }
+csv-core = "0.1"
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true

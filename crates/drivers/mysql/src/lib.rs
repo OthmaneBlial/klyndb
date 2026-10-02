@@ -1,4 +1,5 @@
 mod edit;
+mod import;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use klyndb_driver_api::*;
@@ -281,6 +282,7 @@ impl Session for Mysql {
             explain: true,
             explain_analyze: self.explain_analyze,
             edit_rows: true,
+            import_rows: !self.read_only,
             cancel: true,
             tls: true,
         }
@@ -434,6 +436,7 @@ impl Session for Mysql {
                 &abort,
                 &committing,
                 &poison,
+                None,
             ));
             tokio::select! {
                 result=&mut operation=>(result,false),
@@ -454,6 +457,44 @@ impl Session for Mysql {
             conn.disconnect().await.map_err(err)?;
         }
         self.control.clone().disconnect().await.map_err(err)
+    }
+    async fn insert_stream(
+        &self,
+        table: Table,
+        input: mpsc::Receiver<Result<InsertBatch>>,
+        cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let mut guard = tokio::select! { biased; _=cancel.cancelled()=>return Err(Error::new("Import cancelled")), guard=self.connection.lock()=>guard };
+        let conn = guard
+            .as_mut()
+            .ok_or_else(|| Error::new("Connection is closed. Disconnect and reconnect."))?;
+        let id = conn.id();
+        let committing = AtomicBool::new(false);
+        let poison = AtomicBool::new(false);
+        let interruptible = AtomicBool::new(true);
+        let (result, close) = {
+            let mut operation = Box::pin(import::apply(
+                conn,
+                &table,
+                input,
+                &cancel,
+                &committing,
+                &poison,
+                &interruptible,
+            ));
+            tokio::select! {
+                biased;
+                result=&mut operation=>(result,false),
+                _=cancel.cancelled()=>self.interrupt(id,&mut operation,||interruptible.load(Ordering::Relaxed) && !committing.load(Ordering::Relaxed)).await,
+            }
+        };
+        if close || poison.load(Ordering::Relaxed) {
+            guard.take();
+        }
+        result
     }
 }
 

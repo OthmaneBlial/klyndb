@@ -408,11 +408,18 @@ impl Engine {
             let query = driver.execute(sql.clone(), output, token, limit).await;
             let consumed = consumer.await.map_err(error).and_then(|r| r);
             timer.abort();
-            let outcome = consumed.and(query);
+            // Preserve an unconfirmed termination warning over a spool cancellation
+            // or quota error: the user must know the session was closed.
+            let outcome = match query {
+                Err(e) if e.message.contains("connection closed") => Err(e),
+                query => consumed.and(query),
+            };
             let elapsed = began.elapsed().as_millis() as u64;
             let transaction = driver.transaction_state().await.ok();
             let message = outcome.err().map(|e| {
-                if timed_out.load(std::sync::atomic::Ordering::Relaxed) {
+                if timed_out.load(std::sync::atomic::Ordering::Relaxed)
+                    && !e.message.contains("connection closed")
+                {
                     format!("Query timed out after {timeout_seconds} seconds")
                 } else if job.cancel.is_cancelled()
                     && ["Query cancelled", "interrupted"].contains(&e.message.as_str())

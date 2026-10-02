@@ -1,4 +1,5 @@
 mod edit;
+mod import;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use klyndb_driver_api::*;
@@ -28,6 +29,98 @@ fn err(e: tokio_postgres::Error) -> Error {
     }
 }
 impl Postgres {
+    async fn request_cancel(&self) -> Result<()> {
+        if !matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                self.client.cancel_token().cancel_query(self.tls.clone())
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            self.worker.abort();
+            return Err(Error::new(
+                "Cancellation request could not be sent; connection closed. Verify writes before retrying.",
+            ));
+        }
+        Ok(())
+    }
+    async fn interrupt_stream<S>(&self, stream: &mut S, message: &str) -> Result<()>
+    where
+        S: futures_util::Stream<
+                Item = std::result::Result<SimpleQueryMessage, tokio_postgres::Error>,
+            > + Unpin,
+    {
+        // If the response is already complete, discard it without sending a late
+        // cancel packet that could strike the next statement on this session.
+        if tokio::time::timeout(std::time::Duration::from_millis(10), async {
+            let mut messages = 0;
+            while stream.next().await.is_some() {
+                messages += 1;
+                if messages % 64 == 0 {
+                    tokio::task::yield_now().await;
+                }
+            }
+        })
+        .await
+        .is_ok()
+        {
+            return Err(Error::new(message));
+        }
+        self.request_cancel().await?;
+        let drained = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            let mut acknowledged = false;
+            while let Some(item) = stream.next().await {
+                if let Err(e) = item {
+                    acknowledged |= e.code()
+                        == Some(&tokio_postgres::error::SqlState::QUERY_CANCELED)
+                        && e.as_db_error().is_some_and(|db| {
+                            db.message() == "canceling statement due to user request"
+                        });
+                }
+            }
+            acknowledged
+        })
+        .await;
+        if matches!(drained, Ok(true)) {
+            return Err(Error::new(message));
+        }
+        self.worker.abort();
+        Err(Error::new(format!(
+            "{message}. Cancellation could not be synchronized; connection closed. Verify writes before retrying."
+        )))
+    }
+    async fn deliver<S>(
+        &self,
+        output: &mpsc::Sender<Batch>,
+        batch: Batch,
+        stream: &mut S,
+        cancel: &CancellationToken,
+    ) -> Result<()>
+    where
+        S: futures_util::Stream<
+                Item = std::result::Result<SimpleQueryMessage, tokio_postgres::Error>,
+            > + Unpin,
+    {
+        let sent = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => false,
+            sent = output.send(batch) => sent.is_ok(),
+        };
+        if sent {
+            Ok(())
+        } else {
+            self.interrupt_stream(
+                stream,
+                if cancel.is_cancelled() {
+                    "Query cancelled"
+                } else {
+                    "Result consumer closed"
+                },
+            )
+            .await
+        }
+    }
     pub async fn connect(url: &str, password: Option<&str>, read_only: bool) -> Result<Self> {
         let mut config: tokio_postgres::Config = url
             .parse()
@@ -77,10 +170,10 @@ impl Postgres {
             let item = tokio::select! {
                 biased;
                 _ = cancel.cancelled() => {
-                    self.client.cancel_token().cancel_query(self.tls.clone()).await.map_err(err)?;
-                    // Drain ReadyForQuery before another query can use this session.
-                    while stream.next().await.is_some() {}
-                    return Err(Error::new("Query cancelled"));
+                    return self.interrupt_stream(&mut stream, "Query cancelled").await;
+                }
+                _ = output.closed() => {
+                    return self.interrupt_stream(&mut stream, "Result consumer closed").await;
                 }
                 item = stream.next() => item,
             };
@@ -91,12 +184,13 @@ impl Postgres {
                 SimpleQueryMessage::RowDescription(columns) => {
                     count = 0;
                     has_columns = true;
-                    output
-                        .send(Batch::Columns(
-                            columns.iter().map(|c| c.name().to_string()).collect(),
-                        ))
-                        .await
-                        .map_err(|_| Error::new("Result consumer closed"))?;
+                    self.deliver(
+                        &output,
+                        Batch::Columns(columns.iter().map(|c| c.name().to_string()).collect()),
+                        &mut stream,
+                        &cancel,
+                    )
+                    .await?;
                 }
                 SimpleQueryMessage::Row(row) => {
                     if count >= limit {
@@ -106,15 +200,8 @@ impl Postgres {
                         .map(|i| row.get(i).map_or(0, str::len))
                         .sum::<usize>();
                     if row_bytes > 8 * 1024 * 1024 {
-                        self.client
-                            .cancel_token()
-                            .cancel_query(self.tls.clone())
-                            .await
-                            .map_err(err)?;
-                        while stream.next().await.is_some() {}
-                        return Err(Error::new(
-                            "A result row exceeds 8 MiB. Select smaller values or use database-native export.",
-                        ));
+                        return self.interrupt_stream(&mut stream,
+                            "A result row exceeds 8 MiB. Select smaller values or use database-native export.").await;
                     }
                     buffer_bytes += row_bytes;
                     buffer.push(
@@ -129,32 +216,39 @@ impl Postgres {
                     count += 1;
                     if buffer.len() == 256 || buffer_bytes >= 256 * 1024 {
                         buffer_bytes = 0;
-                        output
-                            .send(Batch::Rows(std::mem::take(&mut buffer)))
-                            .await
-                            .map_err(|_| Error::new("Result consumer closed"))?;
+                        self.deliver(
+                            &output,
+                            Batch::Rows(std::mem::take(&mut buffer)),
+                            &mut stream,
+                            &cancel,
+                        )
+                        .await?;
                     }
                 }
                 SimpleQueryMessage::CommandComplete(affected) => {
                     if !buffer.is_empty() {
-                        output
-                            .send(Batch::Rows(std::mem::take(&mut buffer)))
-                            .await
-                            .map_err(|_| Error::new("Result consumer closed"))?;
+                        self.deliver(
+                            &output,
+                            Batch::Rows(std::mem::take(&mut buffer)),
+                            &mut stream,
+                            &cancel,
+                        )
+                        .await?;
                     }
                     if !has_columns {
-                        output
-                            .send(Batch::Columns(vec![]))
-                            .await
-                            .map_err(|_| Error::new("Result consumer closed"))?;
+                        self.deliver(&output, Batch::Columns(vec![]), &mut stream, &cancel)
+                            .await?;
                     }
-                    output
-                        .send(Batch::Complete {
+                    self.deliver(
+                        &output,
+                        Batch::Complete {
                             affected: if has_columns { 0 } else { affected },
                             truncated: affected > limit as u64 && has_columns,
-                        })
-                        .await
-                        .map_err(|_| Error::new("Result consumer closed"))?;
+                        },
+                        &mut stream,
+                        &cancel,
+                    )
+                    .await?;
                     has_columns = false;
                 }
                 _ => {}
@@ -172,6 +266,7 @@ impl Session for Postgres {
             explain: true,
             explain_analyze: !self.read_only,
             edit_rows: true,
+            import_rows: !self.read_only,
             cancel: true,
             tls: true,
         }
@@ -211,8 +306,14 @@ impl Session for Postgres {
                 .map_err(err)?;
         }
         let result = self.stream(sql, output, cancel, limit).await;
-        if self.read_only {
-            self.client.batch_execute("ROLLBACK").await.map_err(err)?;
+        if self.read_only && self.client.batch_execute("ROLLBACK").await.is_err() {
+            self.worker.abort();
+            let cause = result
+                .err()
+                .map_or(String::new(), |e| format!("{} ", e.message));
+            return Err(Error::new(format!(
+                "{cause}Read-only transaction cleanup failed; connection closed."
+            )));
         }
         result
     }
@@ -264,7 +365,60 @@ impl Session for Postgres {
         }
         validate_change_batch(&changes)?;
         let _guard = self.serial.lock().await;
-        edit::apply(&self.client, &table, &changes).await
+        edit::apply(
+            &self.client,
+            &table,
+            &changes,
+            &CancellationToken::new(),
+            None,
+        )
+        .await
+    }
+    async fn insert_stream(
+        &self,
+        table: Table,
+        input: mpsc::Receiver<Result<InsertBatch>>,
+        cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let _guard = tokio::select! { biased; _=cancel.cancelled()=>return Err(Error::new("Import cancelled")), guard=self.serial.lock()=>guard };
+        let committing = std::sync::atomic::AtomicBool::new(false);
+        let poison = std::sync::atomic::AtomicBool::new(false);
+        let interruptible = std::sync::atomic::AtomicBool::new(true);
+        let mut operation = Box::pin(import::apply(
+            &self.client,
+            &table,
+            input,
+            &cancel,
+            &committing,
+            &poison,
+            &interruptible,
+        ));
+        let result = tokio::select! {
+            biased;
+            result=&mut operation=>result,
+            _=cancel.cancelled()=>{
+                let requested = interruptible.load(std::sync::atomic::Ordering::Relaxed) && !committing.load(std::sync::atomic::Ordering::Relaxed);
+                if requested { self.request_cancel().await?; }
+                match tokio::time::timeout(std::time::Duration::from_secs(3), operation.as_mut()).await {
+                    Ok(result)=>{
+                        if requested && !poison.load(std::sync::atomic::Ordering::Relaxed)
+                            && result.as_ref().err().is_none_or(|e| e.message != "canceling statement due to user request (SQLSTATE 57014)") {
+                            self.worker.abort();
+                            return Err(Error::new("Import cancellation could not be synchronized; connection closed. Verify data before retrying."));
+                        }
+                        result
+                    },
+                    Err(_)=>{ self.worker.abort(); return Err(Error::new("Import termination could not be confirmed; connection closed. Verify data before retrying.")); }
+                }
+            }
+        };
+        if poison.load(std::sync::atomic::Ordering::Relaxed) {
+            self.worker.abort();
+        }
+        result
     }
     async fn disconnect(&self) -> Result<()> {
         self.worker.abort();

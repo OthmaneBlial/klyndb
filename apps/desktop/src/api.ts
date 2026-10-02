@@ -17,6 +17,7 @@ export interface Capabilities {
   explain: boolean;
   explain_analyze: boolean;
   edit_rows: boolean;
+  import_rows: boolean;
   cancel: boolean;
   tls: boolean;
 }

@@ -14,6 +14,8 @@ pub(super) async fn apply(
     client: &Client,
     table: &Table,
     changes: &[Change],
+    cancel: &tokio_util::sync::CancellationToken,
+    interruptible: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<MutationResult> {
     // SAVEPOINT distinguishes an existing user transaction without BEGIN accidentally committing it later.
     let own_transaction = match client.batch_execute("SAVEPOINT klyndb_edit").await {
@@ -39,6 +41,7 @@ pub(super) async fn apply(
         for change in changes {change.validate(&columns)?;}
         let mut affected=0;
         for change in changes {
+            if cancel.is_cancelled() { return Err(Error::new("Import cancelled")); }
             let mut params:Vec<Option<String>>=vec![];
             let mut names=vec![];
             let mut bindings=vec![];
@@ -75,6 +78,9 @@ pub(super) async fn apply(
         Ok(MutationResult{affected,pending_transaction:!own_transaction})
     }.await;
     if batch.is_err() {
+        if let Some(flag) = interruptible {
+            flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
         let rollback = if own_transaction {
             "ROLLBACK"
         } else {

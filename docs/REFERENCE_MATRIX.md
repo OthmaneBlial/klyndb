@@ -8,7 +8,7 @@ Reviewed the public README and user workflow documentation of [Beekeeper Studio]
 | SQL | Highlighting, completion, selections, tabs and history | CodeMirror 6, native drivers, AST safety, disk history; executable comments rejected | Native macOS workflows verified; alias completion and error locations pending |
 | Table view | Open table, inspect cells, sort/filter/edit records | On-demand inspection, paged grid, staged insert/update/delete with savepoint rollback | SQLite/PostgreSQL and MySQL/MariaDB InnoDB editing; native macOS checks passed; server filters pending |
 | Export | Query/table results into files or clipboard | Rust streaming serializers and native save dialogs | CSV/JSON/JSONL/SQL/Markdown implemented |
-| Import | Choose file, map fields, preview/import | Planned transaction-backed native import | Pending |
+| Import | Choose file, map fields, preview/import | Independent streaming CSV parser/snapshot, typed mapping and native transaction-backed inserts | Rust foundation implemented; desktop selection/preview/mapping/progress and JSON/SQL imports pending; see [import contract](IMPORTS.md) |
 | Query plans | Inspect EXPLAIN and runtime plans alongside results | Native driver formats, Rust tree normalization, raw output and server messages | All four backend contracts verified; native macOS MySQL/SQLite workflows passed |
 | Diagrams | Explore tables and relationships across schemas | Independent diagram UI planned from driver metadata | Pending |
 | NoSQL | Specialized engine behavior | Separate document/key experiences planned | Pending |

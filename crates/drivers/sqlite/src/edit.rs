@@ -38,6 +38,7 @@ pub(super) fn apply(
     conn: &Connection,
     table: &Table,
     changes: &[Change],
+    cancel: tokio_util::sync::CancellationToken,
 ) -> Result<MutationResult> {
     let table_name = format!(
         "{}.{}",
@@ -47,7 +48,10 @@ pub(super) fn apply(
     let began = std::time::Instant::now();
     conn.progress_handler(
         1000,
-        Some(move || began.elapsed() > std::time::Duration::from_secs(60)),
+        Some({
+            let token = cancel.clone();
+            move || token.is_cancelled() || began.elapsed() > std::time::Duration::from_secs(60)
+        }),
     )
     .map_err(err)?;
     let result = (|| {
@@ -69,6 +73,9 @@ pub(super) fn apply(
             }
             let mut affected = 0;
             for change in changes {
+                if cancel.is_cancelled() {
+                    return Err(Error::new("Import cancelled"));
+                }
                 let mut params = vec![];
                 let sql = match change {
                     Change::Insert { values } if values.is_empty() => {

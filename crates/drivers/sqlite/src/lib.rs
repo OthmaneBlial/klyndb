@@ -68,6 +68,7 @@ impl Session for Sqlite {
             explain: true,
             explain_analyze: false,
             edit_rows: true,
+            import_rows: !self.read_only,
             cancel: true,
             tls: false,
         }
@@ -188,8 +189,50 @@ impl Session for Sqlite {
             return Err(Error::new("This connection is read-only"));
         }
         validate_change_batch(&changes)?;
-        self.with(move |conn| edit::apply(conn, &table, &changes))
+        self.with(move |conn| edit::apply(conn, &table, &changes, CancellationToken::new()))
             .await
+    }
+    async fn insert_stream(
+        &self,
+        table: Table,
+        mut input: mpsc::Receiver<Result<InsertBatch>>,
+        cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let connection = self.connection.clone();
+        let runtime = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let mut guard = connection.lock().map_err(err)?;
+            let conn = guard.as_ref().ok_or_else(|| Error::new("Connection is closed"))?;
+            if cancel.is_cancelled() { return Err(Error::new("Import cancelled")); }
+            let savepoint = format!("klyndb_import_{}", uuid::Uuid::new_v4().simple());
+            let pending = !conn.is_autocommit();
+            conn.execute_batch(&format!("SAVEPOINT {savepoint}")).map_err(err)?;
+            let result = (|| {
+                let mut affected = 0;
+                loop {
+                    if cancel.is_cancelled() { return Err(Error::new("Import cancelled")); }
+                    match runtime.block_on(next_insert_batch(&mut input, &cancel))? {
+                        InsertBatch::Rows(changes) => {
+                            validate_insert_batch(&changes)?;
+                            affected += edit::apply(conn, &table, &changes, cancel.clone())?.affected;
+                        },
+                        InsertBatch::Complete => break,
+                    }
+                }
+                if cancel.is_cancelled() { return Err(Error::new("Import cancelled")); }
+                // No cancellation once releasing the outer savepoint can commit.
+                conn.execute_batch(&format!("RELEASE {savepoint}")).map_err(err)?;
+                Ok(MutationResult { affected, pending_transaction: pending })
+            })();
+            if result.is_err() && conn.execute_batch(&format!("ROLLBACK TO {savepoint}; RELEASE {savepoint}")).is_err() {
+                guard.take();
+                return Err(Error::new("Import rollback could not be confirmed; connection closed. Verify data before retrying."));
+            }
+            result
+        }).await.map_err(err)?
     }
     async fn disconnect(&self) -> Result<()> {
         let connection = self.connection.clone();

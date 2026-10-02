@@ -21,3 +21,4 @@ tempfile.workspace = true
 zeroize = "1"
 tracing = "0.1"
 klyndb-export = { path = "../export" }
+klyndb-import = { path = "../import" }

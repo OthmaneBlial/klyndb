@@ -14,3 +14,4 @@ serde_json.workspace = true
 tokio-postgres = "0.7"
 postgres-native-tls = "0.5"
 native-tls = "0.2"
+uuid.workspace = true

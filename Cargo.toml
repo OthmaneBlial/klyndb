@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "apps/desktop/src-tauri"]
-default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql"]
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "apps/desktop/src-tauri"]
+default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,7 +11,7 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 rusqlite = { version = "0.40", default-features = false, features = ["libsqlite3-sys", "bundled", "hooks"] }
