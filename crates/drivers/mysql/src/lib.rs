@@ -373,6 +373,28 @@ impl Session for Mysql {
         let editable = editable(conn, table).await?;
         let indexes:Vec<(String,Option<String>,String,u64)>=conn.exec("SELECT INDEX_NAME,COLUMN_NAME,INDEX_TYPE,NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY INDEX_NAME,SEQ_IN_INDEX",(&table.schema,&table.name)).await.map_err(err)?;
         let foreign:Vec<(String,String,String,String,String)>=conn.exec("SELECT CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_SCHEMA,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND REFERENCED_TABLE_NAME IS NOT NULL",(&table.schema,&table.name)).await.map_err(err)?;
+        let constraints: Vec<(String,String)> = conn.exec("SELECT CONSTRAINT_NAME,CONSTRAINT_TYPE FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY CONSTRAINT_NAME", (&table.schema,&table.name)).await.map_err(err)?;
+        let triggers: Vec<(String,String,String,String)> = conn.exec("SELECT TRIGGER_NAME,ACTION_TIMING,EVENT_MANIPULATION,ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA=? AND EVENT_OBJECT_TABLE=? ORDER BY TRIGGER_NAME", (&table.schema,&table.name)).await.map_err(err)?;
+        let triggers = triggers
+            .into_iter()
+            .map(|(name, timing, event, body)| Trigger {
+                name,
+                definition: format!(
+                    "{timing} {event} ON {}.{} FOR EACH ROW\n{body}",
+                    self.quote_identifier(&table.schema),
+                    self.quote_identifier(&table.name)
+                ),
+                state: None,
+            })
+            .collect();
+        let constraints = constraints
+            .into_iter()
+            .map(|(name, kind)| Constraint {
+                name,
+                kind,
+                definition: None,
+            })
+            .collect();
         let ddl: Option<mysql_async::Row> = conn
             .query_first(format!(
                 "SHOW CREATE TABLE {}.{}",
@@ -393,6 +415,8 @@ impl Session for Mysql {
             ddl,
             indexes,
             foreign_keys,
+            constraints: Some(constraints),
+            triggers,
         })
     }
     fn quote_filter_value(&self, value: &str) -> String {

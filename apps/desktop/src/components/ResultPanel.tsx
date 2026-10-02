@@ -144,6 +144,51 @@ export function ResultPanel({
           <pre>{JSON.stringify(inspector.info.indexes, null, 2)}</pre>
           <h4>Foreign keys</h4>
           <pre>{JSON.stringify(inspector.info.foreign_keys, null, 2)}</pre>
+          <h4>Constraints</h4>
+          {inspector.info.constraints === null ? (
+            <p className="muted">
+              Constraint definitions are shown in the table DDL below.
+            </p>
+          ) : inspector.info.constraints.length ? (
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Definition</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inspector.info.constraints.map((c) => (
+                  <tr key={c.name}>
+                    <td>{c.name}</td>
+                    <td>{c.kind}</td>
+                    <td>{c.definition ?? "See table DDL below"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">No constraints visible to this connection.</p>
+          )}
+          <h4>Triggers</h4>
+          <p className="muted">
+            User triggers visible to this connection. Server permissions can
+            hide metadata.
+          </p>
+          {inspector.info.triggers.length ? (
+            inspector.info.triggers.map((t) => (
+              <details key={t.name}>
+                <summary>
+                  {t.name}
+                  {t.state && <small> · {t.state}</small>}
+                </summary>
+                <pre>{t.definition}</pre>
+              </details>
+            ))
+          ) : (
+            <p className="muted">No user triggers visible.</p>
+          )}
           {inspector.info.ddl && (
             <>
               <h4>DDL</h4>

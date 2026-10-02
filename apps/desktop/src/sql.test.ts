@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type TransactionSpec } from "@codemirror/state";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
-import { currentStatement } from "./sql";
+import { currentStatement, replaceDocument } from "./sql";
 describe("execute current statement", () => {
   it("uses the SQL parser for semicolons inside strings and dollar quotes", () => {
     const doc = "SELECT ';'; SELECT $$a;b$$; SELECT 3;";
@@ -36,4 +36,23 @@ describe("execute current statement", () => {
     });
     expect(currentStatement(state)).toBe("SELECT 2");
   });
+});
+
+it("synchronizes generated SQL without dispatching unchanged documents", () => {
+  let updates = 0;
+  const editor = {
+    state: EditorState.create({
+      doc: "SELECT * FROM items LIMIT 500 OFFSET 0;",
+    }),
+    dispatch: (...specs: TransactionSpec[]) => {
+      editor.state = editor.state.update(...specs).state;
+      updates++;
+    },
+  };
+  const next =
+    "SELECT * FROM items WHERE id >= 9500 ORDER BY id DESC LIMIT 500 OFFSET 500;";
+  replaceDocument(editor, next);
+  expect(editor.state.doc.toString()).toBe(next);
+  replaceDocument(editor, next);
+  expect(updates).toBe(1);
 });

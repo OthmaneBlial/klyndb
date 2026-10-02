@@ -84,12 +84,27 @@ pub struct Column {
     pub generated: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Constraint {
+    pub name: String,
+    pub kind: String,
+    pub definition: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Trigger {
+    pub name: String,
+    pub definition: String,
+    pub state: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableInfo {
     pub editable: bool,
     pub columns: Vec<Column>,
     pub ddl: Option<String>,
     pub indexes: Vec<serde_json::Value>,
     pub foreign_keys: Vec<serde_json::Value>,
+    /// None means definitions are available in DDL rather than a native constraint catalog.
+    pub constraints: Option<Vec<Constraint>>,
+    pub triggers: Vec<Trigger>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

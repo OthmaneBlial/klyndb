@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { EditorState, type TransactionSpec } from "@codemirror/state";
 import { ensureSyntaxTree } from "@codemirror/language";
 export function currentStatement(state: EditorState): string {
   const selected = state.selection.main;
@@ -13,4 +13,14 @@ export function currentStatement(state: EditorState): string {
   while (previous && previous.name !== "Statement")
     previous = previous.prevSibling;
   return previous ? state.sliceDoc(previous.from, previous.to) : "";
+}
+
+export function replaceDocument(
+  editor: { state: EditorState; dispatch: (spec: TransactionSpec) => void },
+  text: string,
+) {
+  if (editor.state.doc.toString() !== text)
+    editor.dispatch({
+      changes: { from: 0, to: editor.state.doc.length, insert: text },
+    });
 }

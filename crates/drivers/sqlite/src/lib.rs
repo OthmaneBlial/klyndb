@@ -286,6 +286,22 @@ fn inspect(conn: &Connection, table: &Table) -> Result<TableInfo> {
         )
         .map_err(err)?;
     let foreign_keys = stmt.query_map([&name], |r| Ok(serde_json::json!({"table":r.get::<_, String>(0)?, "from":r.get::<_, String>(1)?, "to":r.get::<_, Option<String>>(2)?, "on_update":r.get::<_, String>(3)?, "on_delete":r.get::<_, String>(4)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND tbl_name=? ORDER BY name",
+        )
+        .map_err(err)?;
+    let triggers = stmt
+        .query_map([&name], |r| {
+            Ok(Trigger {
+                name: r.get(0)?,
+                definition: r.get(1)?,
+                state: None,
+            })
+        })
+        .map_err(err)?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(err)?;
     let editable = conn
         .query_row(
             "SELECT type='table' FROM sqlite_schema WHERE name=?",
@@ -299,6 +315,8 @@ fn inspect(conn: &Connection, table: &Table) -> Result<TableInfo> {
         ddl,
         indexes,
         foreign_keys,
+        constraints: None,
+        triggers,
     })
 }
 

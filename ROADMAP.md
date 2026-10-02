@@ -29,7 +29,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Native CSV import foundation: private immutable snapshot, bounded strict UTF-8 parsing, clipped preview, typed column mapping and whole-stream transaction/savepoint rollback.
 - [x] CSV desktop file picker, opaque source/job IDs, mapping/preview, production confirmation, deadlines, progress/cancel and result refresh. Core contracts pass on all four engines; packaged macOS SQLite file selection, mapping/preview, append and grid refresh verified.
 - [ ] Streaming JSON/SQL imports.
-- [x] Server-side table filters/sort/pagination for SQLite/PostgreSQL/MySQL/MariaDB: real-engine contracts and full local CI pass; packaged macOS initial 500-row table view verified. Further native filter/page interaction checks remain pending after the UI controller lost window access.
+- [x] Server-side table filters/sort/pagination for SQLite/PostgreSQL/MySQL/MariaDB: real-engine contracts and full local CI pass; packaged macOS SQLite initial/next/previous pages, numeric column filtering, descending sort and generated SQL synchronization verified after native UI access recovered. Windows/Linux UI checks remain pending.
 - [ ] Equivalent Windows/Linux import workflows and automated desktop import E2E.
 - [x] Publish the original Klyndb showcase/docs at OthmaneBlial.github.io/klyndb/: portable static pages, real screenshots, local fonts, mobile layout and snippet copy; live HTTPS verified. Snippet-copy check is included in local CI. The server-side table-browsing update is published and verified on the live landing/docs pages (Pages cc14a26).
 - [x] MySQL/MariaDB native connection/query/metadata slice, exact numeric/binary/NULL cells, multiple results, row cap, cancellation, read-only validation, native identifier quoting and actual transaction state. Real MySQL 8.4.11 / MariaDB 13.0.2 contracts and native macOS MySQL workflow passed.
@@ -43,7 +43,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Native estimated plans and confirmed runtime analysis: PostgreSQL JSON, MySQL JSON/TREE, MariaDB JSON and SQLite QUERY PLAN; bounded Rust tree decoding, raw output, native metrics and server warnings. Real-engine cancellation/timeouts and explicit transaction behavior verified.
 - [x] Native macOS MySQL estimated/runtime tree, raw output/copy, confirmation, server messages, cancellation and session reuse; SQLite QUERY PLAN without invented runtime metrics.
 - [ ] PostgreSQL/MariaDB native desktop plan checks, Windows/Linux plan workflows and MySQL runtime DML beyond the verified SELECT slice.
-- [ ] ER diagrams with saved layouts, DDL/statistics/triggers/constraints.
+- [x] Table Structure constraint/trigger inspection: PostgreSQL native definitions/firing state, MySQL/MariaDB names/types/timing/body and SQLite native trigger definitions with constraint DDL. Real four-engine contracts and UI rendering check pass; rebuilt macOS SQLite Structure view, expanded trigger definition and constraint DDL verified. Windows/Linux UI validation remains pending.
+- [ ] ER diagrams with saved layouts, PostgreSQL table DDL, statistics, trigger functions, structured SQLite constraint extraction and safe schema editing.
 - [ ] MongoDB document/aggregation/editing UI and Redis typed keys/TTL/explorer.
 - [ ] CockroachDB/Redshift/TiDB compatibility verified against actual servers.
 - [ ] Broader engines: Oracle, Cassandra/Scylla, Firebird, LibSQL, BigQuery, Snowflake, DynamoDB, Trino/Presto, SurrealDB and practical HANA support.

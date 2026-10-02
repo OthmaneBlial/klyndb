@@ -21,7 +21,7 @@ import {
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { sql, SQLite, PostgreSQL, MySQL } from "@codemirror/lang-sql";
-import { currentStatement } from "../sql";
+import { currentStatement, replaceDocument } from "../sql";
 export interface EditorHandle {
   runText: () => string;
   allText: () => string;
@@ -118,10 +118,7 @@ export function SqlEditor({
     editorRef.current = {
       runText: () => currentStatement(editor.state),
       allText: () => editor.state.doc.toString(),
-      replace: (text) =>
-        editor.dispatch({
-          changes: { from: 0, to: editor.state.doc.length, insert: text },
-        }),
+      replace: (text) => replaceDocument(editor, text),
     };
     return () => {
       editor.destroy();
@@ -131,5 +128,8 @@ export function SqlEditor({
     // Each tab owns its editor; callbacks retain the current handlers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, schema]);
+  useEffect(() => {
+    if (view.current) replaceDocument(view.current, value);
+  }, [value]);
   return <div className="sql-editor" ref={element} />;
 }

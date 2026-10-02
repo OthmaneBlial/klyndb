@@ -35,12 +35,24 @@ export interface Column {
   default: string | null;
   generated: boolean;
 }
+export interface Constraint {
+  name: string;
+  kind: string;
+  definition: string | null;
+}
+export interface Trigger {
+  name: string;
+  definition: string;
+  state: string | null;
+}
 export interface TableInfo {
   editable: boolean;
   columns: Column[];
   ddl: string | null;
   indexes: Record<string, unknown>[];
   foreign_keys: Record<string, unknown>[];
+  constraints: Constraint[] | null;
+  triggers: Trigger[];
 }
 export type FilterOp =
   | "equal"
