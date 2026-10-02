@@ -4,7 +4,34 @@ import {
   updateConnectTimeout,
   tlsSettings,
   updateTls,
+  sshSettings,
+  updateSsh,
 } from "./connection";
+it("round-trips SSH settings without losing database TLS and removes unused key paths", () => {
+  const original =
+    "postgresql://alice@db.internal/db?sslmode=require&sslrootcert=%2Ftmp%2Fca.pem&connect_timeout=45";
+  const settings = {
+    ...sshSettings(original),
+    enabled: true,
+    host: "bastion.example.com",
+    user: "alice",
+    auth: "key",
+    identity: "/tmp/private key",
+    fingerprint: `SHA256:${"A".repeat(43)}`,
+  };
+  const address = updateSsh(original, settings);
+  expect(sshSettings(address)).toEqual(settings);
+  expect(tlsSettings("postgres", address)).toEqual(
+    tlsSettings("postgres", original),
+  );
+  expect(connectionTimeout(address)).toBe("45");
+  const agent = updateSsh(address, { ...settings, auth: "agent" });
+  expect(new URL(agent).searchParams.has("ssh_identity")).toBe(false);
+  expect(updateSsh(address, { ...settings, enabled: false })).toBe(
+    new URL(original).toString(),
+  );
+  expect(() => updateSsh("sqlite:///tmp/db", settings)).toThrow();
+});
 it("round-trips TLS certificate paths without dropping connection options", () => {
   const ca = "/tmp/private database/ca.pem";
   const address = updateTls(

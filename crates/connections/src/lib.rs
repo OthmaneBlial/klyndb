@@ -1,3 +1,4 @@
+pub mod ssh;
 use klyndb_driver_api::{Error, Result};
 use rusqlite::{Connection as LocalDb, params};
 use serde::{Deserialize, Serialize};
