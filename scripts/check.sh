@@ -7,6 +7,7 @@ npm --prefix apps/desktop ci
 npm --prefix apps/desktop run lint
 npm --prefix apps/desktop run typecheck
 npm --prefix apps/desktop test
+node scripts/check_site.mjs
 npm --prefix apps/desktop run build
 npm --prefix apps/desktop audit
 cargo fmt --all -- --check
