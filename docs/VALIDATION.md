@@ -21,3 +21,13 @@ This proves the described workflows on the local macOS debug bundle, not all pro
 - Native UI: opening a table immediately returned 10,000 real rows. Switching to the unrelated SQL tab removed its Structure inspector.
 - Changed SQL and immediately closed the window; relaunch restored the exact new text. Cmd+K focused the command search field.
 - This commit updates ROADMAP.md and makes same-commit roadmap maintenance an explicit contribution rule.
+
+## Safe table editing slice — 2026-10-02
+
+- Rust tests and Clippy passed; PostgreSQL 16 real-server contract passed with bound update/delete values, conflict detection, whole-batch rollback and preservation of an outer manual transaction.
+- SQLite regression covered bound text containing SQL-like syntax, exact signed 64-bit integer keys, binary values, NULL updates, generated-column guards, no-PK rejection, conflicts after a preceding insert and manual rollback.
+- PostgreSQL idle/active/failed transaction-state checks passed, including recovery with ROLLBACK. Core production-write confirmation is enforced in Rust.
+- Frontend lint/typecheck/tests/build passed; native macOS debug bundle rebuilt (54.10 MiB).
+- Real native UI: opened a table, staged an update and an insert, reviewed their concrete old/new values, applied both in one batch and saw the re-read values. Staged deletion of the inserted test row required confirmation and was applied successfully.
+- Executing BEGIN showed an active-transaction indicator. Executing ROLLBACK removed it. Keyboard navigation opened the row editor.
+- Filesystem verification independently checked 10,000 records, absence of the deleted test row and the persisted updated value. Automated desktop E2E and Windows/Linux native editing remain pending.

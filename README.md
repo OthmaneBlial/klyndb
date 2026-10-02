@@ -18,7 +18,7 @@ npm run tauri dev
 
 Build a native package with `npm run tauri build`. macOS distribution signing and notarization require your own Apple credentials. Platform build status is reported by CI; a local macOS build does not prove Windows or Linux behavior.
 
-## Available in the first slice
+## Available now
 
 - SQLite files and PostgreSQL servers; native Rust drivers, verified TLS by default for PostgreSQL.
 - Saved connection metadata, groups, favorites, environment labels and OS keychain passwords.
@@ -27,9 +27,10 @@ Build a native package with `npm run tauri build`. macOS distribution signing an
 - Rust cancellation, query timeout, destructive-query confirmation and read-only connection mode.
 - Disk-backed incremental results, a virtualized 500-row page, resizing/reordering, page sort/filter, cell/row/column copying and cell inspection.
 - Rust CSV, lossless typed JSON/JSONL, SQL INSERT and Markdown export using native save dialogs and atomic file replacement.
+- Staged SQLite/PostgreSQL table inserts, updates and deletes; atomic batches, conflict detection, PK/generation guards and manual transaction visibility.
 - Local SQL history, saved/favorite queries, theme/settings and automatic workspace restoration.
 
-Only implemented engines appear in the connection form. See the [compatibility matrix](docs/COMPATIBILITY.md) for limitations. This is not yet a replacement for all everyday database workflows: table editing, import, SSH, further drivers and release gates remain in progress.
+Only implemented engines appear in the connection form. See the [compatibility matrix](docs/COMPATIBILITY.md) for limitations. This is not yet a replacement for all everyday database workflows: import, SSH, further drivers and release gates remain in progress.
 
 ## Checks
 

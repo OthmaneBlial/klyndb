@@ -6,6 +6,8 @@ import {
   ArrowDown,
   ArrowUp,
   Search,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { api, cellText, type Cell, type ResultSet, type Row } from "../api";
 import { Modal } from "./Modal";
@@ -16,11 +18,15 @@ export function ResultGrid({
   set,
   metadata,
   onError,
+  onEdit,
+  onDelete,
 }: {
   id: string;
   set: number;
   metadata: ResultSet;
   onError: (s: string) => void;
+  onEdit?: (row: Row) => void;
+  onDelete?: (row: Row) => void;
 }) {
   const [page, setPage] = useState(0),
     [rows, setRows] = useState<Row[]>([]),
@@ -73,7 +79,7 @@ export function ResultGrid({
   }, [rows, filter, sort]);
   const start = Math.max(0, Math.floor(scroll / ROW) - 4),
     end = Math.min(display.length, start + Math.ceil(height / ROW) + 8);
-  const template = `54px ${order.map((i) => `${widths[i] ?? 180}px`).join(" ")}`;
+  const template = `54px ${onEdit || onDelete ? "78px " : ""}${order.map((i) => `${widths[i] ?? 180}px`).join(" ")}`;
   function resize(event: React.PointerEvent, index: number) {
     event.preventDefault();
     event.stopPropagation();
@@ -143,6 +149,7 @@ export function ResultGrid({
           <div className="row-number" role="columnheader">
             #
           </div>
+          {(onEdit || onDelete) && <div role="columnheader">Edit</div>}
           {order.map((i) => (
             <div
               role="columnheader"
@@ -220,6 +227,28 @@ export function ResultGrid({
               >
                 {page * PAGE + index + 1}
               </button>
+              {(onEdit || onDelete) && (
+                <div className="row-actions" role="cell">
+                  {onEdit && (
+                    <button
+                      className="icon"
+                      aria-label={`Edit row ${page * PAGE + index + 1}`}
+                      onClick={() => onEdit(row)}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      className="icon"
+                      aria-label={`Stage deletion of row ${page * PAGE + index + 1}`}
+                      onClick={() => onDelete(row)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              )}
               {order.map((i) => (
                 <button
                   role="cell"

@@ -1,3 +1,4 @@
+mod edit;
 use async_trait::async_trait;
 use klyndb_driver_api::*;
 use rusqlite::fallible_iterator::FallibleIterator;
@@ -8,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 pub struct Sqlite {
     connection: Arc<Mutex<Option<Connection>>>,
+    read_only: bool,
 }
 fn err(e: impl std::fmt::Display) -> Error {
     Error::new(e.to_string())
@@ -35,6 +37,7 @@ impl Sqlite {
         .map_err(err)??;
         Ok(Self {
             connection: Arc::new(Mutex::new(Some(connection))),
+            read_only,
         })
     }
     async fn with<T: Send + 'static>(
@@ -156,17 +159,26 @@ impl Session for Sqlite {
         }).await
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
-        let name = table.name.clone();
-        self.with(move |conn| {
-            let mut stmt = conn.prepare("SELECT name,type,\"notnull\",dflt_value,pk FROM pragma_table_info(?)").map_err(err)?;
-            let columns = stmt.query_map([&name], |row| Ok(Column { name: row.get(0)?, data_type: row.get(1)?, nullable: row.get::<_, i64>(2)? == 0, default: row.get(3)?, primary_key: row.get::<_, i64>(4)? > 0 })).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
-            let ddl = conn.query_row("SELECT sql FROM sqlite_schema WHERE name=?", [&name], |r| r.get(0)).ok();
-            let mut stmt = conn.prepare("SELECT name,\"unique\",origin,partial FROM pragma_index_list(?)").map_err(err)?;
-            let indexes = stmt.query_map([&name], |r| Ok(serde_json::json!({"name": r.get::<_, String>(0)?, "unique":r.get::<_, bool>(1)?, "origin":r.get::<_, String>(2)?, "partial":r.get::<_, bool>(3)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
-            let mut stmt = conn.prepare("SELECT \"table\",\"from\",\"to\",on_update,on_delete FROM pragma_foreign_key_list(?)").map_err(err)?;
-            let foreign_keys = stmt.query_map([&name], |r| Ok(serde_json::json!({"table":r.get::<_, String>(0)?, "from":r.get::<_, String>(1)?, "to":r.get::<_, Option<String>>(2)?, "on_update":r.get::<_, String>(3)?, "on_delete":r.get::<_, String>(4)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
-            Ok(TableInfo { columns, ddl, indexes, foreign_keys })
-        }).await
+        let table = table.clone();
+        self.with(move |conn| inspect(conn, &table)).await
+    }
+    async fn transaction_state(&self) -> Result<TransactionState> {
+        self.with(|conn| {
+            Ok(if conn.is_autocommit() {
+                TransactionState::Idle
+            } else {
+                TransactionState::Active
+            })
+        })
+        .await
+    }
+    async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        validate_change_batch(&changes)?;
+        self.with(move |conn| edit::apply(conn, &table, &changes))
+            .await
     }
     async fn disconnect(&self) -> Result<()> {
         let connection = self.connection.clone();
@@ -177,6 +189,49 @@ impl Session for Sqlite {
         .await
         .map_err(err)?
     }
+}
+
+fn inspect(conn: &Connection, table: &Table) -> Result<TableInfo> {
+    if table.schema != "main" {
+        return Err(Error::new("Only the main SQLite schema is supported"));
+    }
+    let name = table.name.clone();
+    let mut stmt = conn.prepare("SELECT name,type,\"notnull\",dflt_value,pk,hidden FROM pragma_table_xinfo(?) WHERE hidden!=1").map_err(err)?;
+    let columns = stmt
+        .query_map([&name], |row| {
+            Ok(Column {
+                name: row.get(0)?,
+                data_type: row.get(1)?,
+                nullable: row.get::<_, i64>(2)? == 0,
+                default: row.get(3)?,
+                primary_key: row.get::<_, i64>(4)? > 0,
+                generated: row.get::<_, i64>(5)? > 0,
+            })
+        })
+        .map_err(err)?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(err)?;
+    let ddl = conn
+        .query_row("SELECT sql FROM sqlite_schema WHERE name=?", [&name], |r| {
+            r.get(0)
+        })
+        .ok();
+    let mut stmt = conn
+        .prepare("SELECT name,\"unique\",origin,partial FROM pragma_index_list(?)")
+        .map_err(err)?;
+    let indexes = stmt.query_map([&name], |r| Ok(serde_json::json!({"name": r.get::<_, String>(0)?, "unique":r.get::<_, bool>(1)?, "origin":r.get::<_, String>(2)?, "partial":r.get::<_, bool>(3)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT \"table\",\"from\",\"to\",on_update,on_delete FROM pragma_foreign_key_list(?)",
+        )
+        .map_err(err)?;
+    let foreign_keys = stmt.query_map([&name], |r| Ok(serde_json::json!({"table":r.get::<_, String>(0)?, "from":r.get::<_, String>(1)?, "to":r.get::<_, Option<String>>(2)?, "on_update":r.get::<_, String>(3)?, "on_delete":r.get::<_, String>(4)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+    Ok(TableInfo {
+        columns,
+        ddl,
+        indexes,
+        foreign_keys,
+    })
 }
 
 #[cfg(test)]

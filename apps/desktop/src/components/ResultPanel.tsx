@@ -1,10 +1,11 @@
 import { Download, KeyRound, Table2 } from "lucide-react";
-import type { QueryStatus, Table, TableInfo } from "../api";
+import type { QueryStatus, Table, TableInfo, Row } from "../api";
 import { ResultGrid } from "./ResultGrid";
 export type ResultView = "results" | "messages" | "structure";
 export interface Inspector {
   table: Table;
   info: TableInfo;
+  query: string;
 }
 export function ResultPanel({
   status,
@@ -16,6 +17,9 @@ export function ResultPanel({
   busy,
   onError,
   onExport,
+  onEdit,
+  onDelete,
+  editing,
 }: {
   status?: QueryStatus;
   set: number;
@@ -26,6 +30,9 @@ export function ResultPanel({
   busy: boolean;
   onError: (message: string) => void;
   onExport: () => void;
+  onEdit?: (row: Row) => void;
+  onDelete?: (row: Row) => void;
+  editing?: React.ReactNode;
 }) {
   return (
     <section className="result-area">
@@ -70,6 +77,7 @@ export function ResultPanel({
           )}
         </div>
       </div>
+      {editing}
       {status && status.sets.length > 1 && view === "results" && (
         <div className="result-set-tabs">
           {status.sets.map((s, i) => (
@@ -152,6 +160,8 @@ export function ResultPanel({
           set={set}
           metadata={status.sets[set]}
           onError={onError}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       ) : (
         <div className="result-empty">

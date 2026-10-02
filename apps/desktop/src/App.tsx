@@ -41,6 +41,8 @@ import {
   type QueryStatus,
   type History,
   type Capabilities,
+  type Change,
+  type Row,
 } from "./api";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
@@ -55,6 +57,7 @@ import {
 } from "./components/ResultPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { RowDialog } from "./components/RowDialog";
 import { Modal } from "./components/Modal";
 import {
   defaults,
@@ -104,13 +107,45 @@ export default function App() {
     } | null>(null),
     [exportOpen, setExportOpen] = useState(false),
     [exportFormat, setExportFormat] = useState("csv");
+  const [staged, setStaged] = useState<Record<string, Change[]>>({}),
+    [tableJobs, setTableJobs] = useState<Record<string, string>>({}),
+    [reviewChanges, setReviewChanges] = useState(false),
+    [rowDialog, setRowDialog] = useState<{
+      tab: Tab;
+      inspector: Inspector;
+      old: Row | null;
+    } | null>(null),
+    [applying, setApplying] = useState<Record<string, boolean>>({}),
+    [transactionStates, setTransactionStates] = useState<
+      Record<string, "idle" | "active" | "failed">
+    >({});
+  const applyingRef = useRef(applying);
+  applyingRef.current = applying;
+  const stagedRef = useRef(staged);
+  stagedRef.current = staged;
   const editorRef = useRef<EditorHandle | null>(null);
   const current = tabs.find((t) => t.id === active),
     connection = connections.find((c) => c.id === current?.connection),
     status = statuses[active],
     inspector = inspectors[active],
-    busy = !!status && !status.done,
+    busy = (!!status && !status.done) || !!applying[active],
     set = resultSets[active] ?? 0;
+  const editable = !!(
+    connection &&
+    connected[connection.id]?.edit_rows &&
+    !connection.read_only &&
+    inspector &&
+    tableJobs[active] === status?.id &&
+    status?.done &&
+    !status.error &&
+    set === 0 &&
+    ["table", "base table"].includes(inspector.table.kind) &&
+    status.sets[0]?.columns.every(
+      (name, i) => name === inspector.info.columns[i]?.name,
+    ) &&
+    status.sets[0]?.columns.length === inspector.info.columns.length
+  );
+  const keyed = !!inspector?.info.columns.some((c) => c.primary_key);
   const report = useCallback((message: string) => setNotice(message), []);
   const updateTab = useCallback(
     (id: string, patch: Partial<Tab>) =>
@@ -184,12 +219,28 @@ export default function App() {
     getCurrentWindow()
       .onCloseRequested(async (event) => {
         event.preventDefault();
-        try {
-          if (loadedRef.current) await persistWorkspace();
-          await getCurrentWindow().destroy();
-        } catch (e) {
-          report(`Could not save before closing: ${e}`);
+        if (Object.values(applyingRef.current).some(Boolean)) {
+          report("Wait for the editing batch to finish before closing.");
+          return;
         }
+        const close = async () => {
+          try {
+            if (loadedRef.current) await persistWorkspace();
+            await getCurrentWindow().destroy();
+          } catch (e) {
+            report(`Could not save before closing: ${e}`);
+          }
+        };
+        if (
+          Object.values(stagedRef.current).some((changes) => changes.length)
+        ) {
+          setConfirm({
+            title: "Discard staged changes and close?",
+            message:
+              "Staged edits have not been applied. SQL tabs and workspace will be saved.",
+            action: () => void close(),
+          });
+        } else await close();
       })
       .then((unlisten) => {
         if (live) dispose = unlisten;
@@ -219,6 +270,11 @@ export default function App() {
         const [tab, id] = item.split(":");
         api("query_status", { id })
           .then((status) => {
+            if (live && status.done && status.transaction)
+              setTransactionStates((s) => ({
+                ...s,
+                [status.connection_id]: status.transaction!,
+              }));
             if (live)
               setStatuses((s) =>
                 s[tab]?.id === id ? { ...s, [tab]: status } : s,
@@ -262,7 +318,24 @@ export default function App() {
     setView("results");
     return tab;
   }
-  async function closeTab(id: string) {
+  async function closeTab(id: string, discard = false) {
+    if (applyingRef.current[id]) {
+      report("Wait for this editing batch to finish.");
+      return;
+    }
+    if (!discard && stagedRef.current[id]?.length) {
+      setConfirm({
+        title: "Discard staged changes?",
+        message: "These changes have not been applied to the database.",
+        action: () => void closeTab(id, true).catch((e) => report(String(e))),
+      });
+      return;
+    }
+    setStaged((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
     const result = statuses[id];
     if (result) await api("release_result", { id: result.id });
     setStatuses((s) => {
@@ -279,6 +352,10 @@ export default function App() {
     if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
   }
   async function switchTabConnection(id: string, connection: string) {
+    if (stagedRef.current[id]?.length) {
+      report("Apply or discard staged changes before switching connection.");
+      return;
+    }
     if (statuses[id]) await api("release_result", { id: statuses[id].id });
     setStatuses((s) => {
       const next = { ...s };
@@ -341,9 +418,18 @@ export default function App() {
     sql = editorRef.current?.runText() ?? current?.sql ?? "",
     confirmed = false,
   ) {
+    if (stagedRef.current[active]?.length) {
+      report("Apply or discard staged changes before running another query.");
+      return;
+    }
     if (current) await executeTab(current, sql, confirmed);
   }
-  async function executeTab(tab: Tab, sql: string, confirmed = false) {
+  async function executeTab(
+    tab: Tab,
+    sql: string,
+    confirmed = false,
+    inspected = inspectors[tab.id],
+  ) {
     const c = connections.find((c) => c.id === tab.connection),
       previous = statuses[tab.id];
     if (!c || starting.current.has(tab.id) || (previous && !previous.done))
@@ -377,8 +463,22 @@ export default function App() {
       if (previous) await api("release_result", { id: previous.id });
       setStatuses((s) => ({
         ...s,
-        [tab.id]: { id, sets: [], done: false, error: null, elapsed_ms: 0 },
+        [tab.id]: {
+          id,
+          sets: [],
+          done: false,
+          error: null,
+          elapsed_ms: 0,
+          connection_id: c.id,
+          transaction: null,
+        },
       }));
+      setTableJobs((s) => {
+        const next = { ...s };
+        if (inspected?.query === sql) next[tab.id] = id;
+        else delete next[tab.id];
+        return next;
+      });
       setResultSets((s) => ({ ...s, [tab.id]: 0 }));
       setView("results");
     } catch (e) {
@@ -404,11 +504,73 @@ export default function App() {
         table.name,
       );
       if (tab) {
-        setInspectors((s) => ({ ...s, [tab.id]: { table, info } }));
-        await executeTab(tab, tab.sql);
+        const inspected = { table, info, query: tab.sql };
+        setInspectors((s) => ({ ...s, [tab.id]: inspected }));
+        await executeTab(tab, tab.sql, false, inspected);
       }
     } catch (e) {
       report(String(e));
+    }
+  }
+  function stage(tab: string, change: Change) {
+    setStaged((s) => {
+      const changes = s[tab] ?? [];
+      const old = change.kind === "insert" ? null : JSON.stringify(change.old);
+      return {
+        ...s,
+        [tab]: [
+          ...changes.filter(
+            (c) => !old || c.kind === "insert" || JSON.stringify(c.old) !== old,
+          ),
+          change,
+        ],
+      };
+    });
+  }
+  async function applyStaged(
+    tab: Tab,
+    inspected: Inspector,
+    confirmed = false,
+  ) {
+    const changes = stagedRef.current[tab.id] ?? [],
+      c = connections.find((c) => c.id === tab.connection);
+    if (!changes.length || !c || starting.current.has(tab.id)) return;
+    if (
+      !confirmed &&
+      (c.environment === "production" ||
+        changes.some((change) => change.kind === "delete"))
+    ) {
+      setConfirm({
+        title: "Confirm table changes",
+        message: `${c.name} · ${c.environment}: apply ${changes.length} staged changes to ${inspected.table.schema}.${inspected.table.name}?`,
+        action: () => void applyStaged(tab, inspected, true),
+      });
+      return;
+    }
+    starting.current.add(tab.id);
+    setApplying((s) => ({ ...s, [tab.id]: true }));
+    try {
+      const result = await api("apply_changes", {
+        id: c.id,
+        table: inspected.table,
+        changes,
+        confirmed,
+      });
+      setStaged((s) => ({ ...s, [tab.id]: [] }));
+      setTransactionStates((s) => ({
+        ...s,
+        [c.id]: result.pending_transaction ? "active" : "idle",
+      }));
+      starting.current.delete(tab.id);
+      await executeTab(tab, inspected.query, false, inspected);
+      report(
+        `${result.affected} changes applied${result.pending_transaction ? " · uncommitted transaction: use COMMIT or ROLLBACK in the editor." : "."}`,
+      );
+    } catch (e) {
+      report(String(e));
+    } finally {
+      starting.current.delete(tab.id);
+      setApplying((s) => ({ ...s, [tab.id]: false }));
     }
   }
   async function formatSql() {
@@ -874,7 +1036,9 @@ export default function App() {
                 >
                   <Bookmark size={14} />
                 </button>
-                {busy ? (
+                {applying[active] ? (
+                  <span className="muted">Applying batch…</span>
+                ) : busy ? (
                   <button
                     className="danger"
                     onClick={() =>
@@ -932,6 +1096,59 @@ export default function App() {
               busy={busy}
               onError={report}
               onExport={() => setExportOpen(true)}
+              onEdit={
+                editable && keyed && !busy
+                  ? (old) => setRowDialog({ tab: current, inspector, old })
+                  : undefined
+              }
+              onDelete={
+                editable && keyed && !busy
+                  ? (old) => stage(active, { kind: "delete", old })
+                  : undefined
+              }
+              editing={
+                editable && (
+                  <div className="table-editing">
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        setRowDialog({ tab: current, inspector, old: null })
+                      }
+                    >
+                      <Plus size={14} /> Insert row
+                    </button>
+                    <span className="muted">
+                      {staged[active]?.length ?? 0} staged changes
+                      {!keyed ? " · no primary key: insert only" : ""}
+                    </span>
+                    {!!staged[active]?.length && (
+                      <>
+                        <button
+                          disabled={busy}
+                          onClick={() => setReviewChanges(true)}
+                        >
+                          Review
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            setStaged((s) => ({ ...s, [active]: [] }))
+                          }
+                        >
+                          Discard
+                        </button>
+                        <button
+                          className="primary"
+                          disabled={busy}
+                          onClick={() => void applyStaged(current, inspector)}
+                        >
+                          Apply batch
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              }
             />
             <footer className="statusbar">
               <span>
@@ -942,6 +1159,11 @@ export default function App() {
                   ? `${connection.engine} · connected`
                   : "Disconnected"}
                 {connection?.read_only ? " · read-only" : ""}
+                {connection &&
+                transactionStates[connection.id] !== undefined &&
+                transactionStates[connection.id] !== "idle"
+                  ? ` · transaction ${transactionStates[connection!.id]}${transactionStates[connection!.id] === "failed" ? " (ROLLBACK required)" : " (COMMIT or ROLLBACK)"}`
+                  : ""}
               </span>
               <span>
                 Limit {preferences.rowLimit.toLocaleString()} · Timeout{" "}
@@ -1149,6 +1371,45 @@ export default function App() {
             </footer>
           </form>
         </Modal>
+      )}
+      {reviewChanges && (
+        <Modal
+          title="Staged changes"
+          onClose={() => setReviewChanges(false)}
+          wide
+        >
+          {(staged[active] ?? []).map((change, i) => (
+            <div className="staged-change" key={i}>
+              <strong>
+                {i + 1}. {change.kind}
+              </strong>
+              <button
+                className="icon"
+                aria-label={`Remove staged change ${i + 1}`}
+                onClick={() =>
+                  setStaged((s) => ({
+                    ...s,
+                    [active]: s[active].filter((_, j) => j !== i),
+                  }))
+                }
+              >
+                <X size={14} />
+              </button>
+              <pre>{JSON.stringify(change, null, 2)}</pre>
+            </div>
+          ))}
+          <footer>
+            <button onClick={() => setReviewChanges(false)}>Done</button>
+          </footer>
+        </Modal>
+      )}
+      {rowDialog && (
+        <RowDialog
+          info={rowDialog.inspector.info}
+          old={rowDialog.old}
+          onStage={(change) => stage(rowDialog.tab.id, change)}
+          onClose={() => setRowDialog(null)}
+        />
       )}
       {exportOpen && status && (
         <Modal title="Export results" onClose={() => setExportOpen(false)}>

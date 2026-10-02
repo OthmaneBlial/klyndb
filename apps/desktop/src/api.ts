@@ -30,6 +30,7 @@ export interface Column {
   nullable: boolean;
   primary_key: boolean;
   default: string | null;
+  generated: boolean;
 }
 export interface TableInfo {
   columns: Column[];
@@ -43,6 +44,14 @@ export type Cell =
   | { kind: "boolean"; value: boolean }
   | { kind: "json"; value: unknown };
 export type Row = Cell[];
+export type Change =
+  | { kind: "insert"; values: Record<string, Cell> }
+  | { kind: "update"; old: Row; values: Record<string, Cell> }
+  | { kind: "delete"; old: Row };
+export interface MutationResult {
+  affected: number;
+  pending_transaction: boolean;
+}
 export interface ResultSet {
   columns: string[];
   rows: number;
@@ -55,6 +64,8 @@ export interface QueryStatus {
   done: boolean;
   error: string | null;
   elapsed_ms: number;
+  connection_id: string;
+  transaction: "idle" | "active" | "failed" | null;
 }
 export interface Analysis {
   statements: string[];
@@ -87,6 +98,10 @@ interface Commands {
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
   inspect_table: { args: { id: string; table: Table }; result: TableInfo };
+  apply_changes: {
+    args: { id: string; table: Table; changes: Change[]; confirmed: boolean };
+    result: MutationResult;
+  };
   analyze_query: { args: { sql: string; engine: string }; result: Analysis };
   start_query: {
     args: {

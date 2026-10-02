@@ -25,6 +25,8 @@ pub struct QueryStatus {
     pub done: bool,
     pub error: Option<String>,
     pub elapsed_ms: u64,
+    pub connection_id: String,
+    pub transaction: Option<TransactionState>,
 }
 pub struct Job {
     pub status: Mutex<QueryStatus>,
@@ -50,6 +52,8 @@ impl Job {
                 done: false,
                 error: None,
                 elapsed_ms: 0,
+                connection_id: connection_id.clone(),
+                transaction: None,
             }),
             db: Mutex::new(db),
             cancel: CancellationToken::new(),
@@ -289,6 +293,7 @@ impl Engine {
             timer.abort();
             let outcome = consumed.and(query);
             let elapsed = began.elapsed().as_millis() as u64;
+            let transaction = driver.transaction_state().await.ok();
             let message = outcome.err().map(|e| {
                 if timed_out.load(std::sync::atomic::Ordering::Relaxed) {
                     format!("Query timed out after {timeout_seconds} seconds")
@@ -304,6 +309,7 @@ impl Engine {
                 status.done = true;
                 status.error = message.clone();
                 status.elapsed_ms = elapsed;
+                status.transaction = transaction;
             }
             if let Err(e) = store.add_history(&connection, &sql, message.as_deref(), elapsed) {
                 tracing::warn!(error=%e,"could not save query history");
@@ -315,6 +321,36 @@ impl Engine {
             );
         });
         Ok(id)
+    }
+    pub async fn apply_changes(
+        &self,
+        id: &str,
+        table: Table,
+        changes: Vec<Change>,
+        confirmed: bool,
+    ) -> Result<MutationResult> {
+        validate_change_batch(&changes)?;
+        let sessions = self.sessions.lock().await;
+        let open = sessions
+            .get(id)
+            .ok_or_else(|| Error::new("Connect to the database first"))?;
+        if open.config.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        if !open.driver.capabilities().edit_rows {
+            return Err(Error::new("This driver does not support table editing"));
+        }
+        if !confirmed
+            && (open.config.environment == "production"
+                || changes.iter().any(|c| matches!(c, Change::Delete { .. })))
+        {
+            return Err(Error::new(
+                "Confirmation required for production writes or row deletion",
+            ));
+        }
+        let driver = open.driver.clone();
+        drop(sessions);
+        driver.apply_changes(table, changes).await
     }
     pub fn job(&self, id: &str) -> Result<Arc<Job>> {
         self.jobs
@@ -364,6 +400,25 @@ mod tests {
                 .start(connection.id.clone(), "DROP TABLE t".into(), 100, 5, false)
                 .await
                 .is_err()
+        );
+        assert!(
+            engine
+                .apply_changes(
+                    &connection.id,
+                    Table {
+                        schema: "main".into(),
+                        name: "t".into(),
+                        kind: "table".into()
+                    },
+                    vec![Change::Insert {
+                        values: std::collections::BTreeMap::new()
+                    }],
+                    false
+                )
+                .await
+                .unwrap_err()
+                .message
+                .contains("Confirmation required")
         );
         let id=engine.start(connection.id.clone(),"CREATE TABLE t(id INTEGER PRIMARY KEY); WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000) SELECT x FROM n".into(),10_000,5,false).await.unwrap();
         let job = engine.job(&id).unwrap();

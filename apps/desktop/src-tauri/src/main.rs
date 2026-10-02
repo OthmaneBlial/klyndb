@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use klyndb_connections::{Connection, Store};
 use klyndb_core::{Engine, QueryStatus};
-use klyndb_driver_api::{Capabilities, Row, Table, TableInfo};
+use klyndb_driver_api::{Capabilities, Change, MutationResult, Row, Table, TableInfo};
 use std::sync::Arc;
 use tauri::{Manager, State};
 
@@ -90,6 +90,19 @@ async fn inspect_table(
         .await
         .map_err(api)?
         .inspect(&table)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn apply_changes(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    table: Table,
+    changes: Vec<Change>,
+    confirmed: bool,
+) -> ApiResult<MutationResult> {
+    engine
+        .apply_changes(&id, table, changes, confirmed)
         .await
         .map_err(api)
 }
@@ -258,6 +271,7 @@ fn main() {
             disconnect,
             tables,
             inspect_table,
+            apply_changes,
             analyze_query,
             start_query,
             query_status,

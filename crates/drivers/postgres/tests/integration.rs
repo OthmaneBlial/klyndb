@@ -1,4 +1,4 @@
-use klyndb_driver_api::{Batch, Cell, Session};
+use klyndb_driver_api::{Batch, Cell, Change, Session, TransactionState};
 use klyndb_postgres::Postgres;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -74,6 +74,108 @@ async fn real_postgres_workflow_and_cancellation() {
             .await
             .iter()
             .any(|b| matches!(b, Batch::Rows(_)))
+    );
+    let old = vec![Cell::Text("9223372036854775807".into()), Cell::Null];
+    let literal = "x'; DROP SCHEMA klyndb_test CASCADE; --";
+    let changes = vec![Change::Update {
+        old: old.clone(),
+        values: std::collections::BTreeMap::from([("value".into(), Cell::Text(literal.into()))]),
+    }];
+    assert!(
+        !db.apply_changes(table.clone(), changes.clone())
+            .await
+            .unwrap()
+            .pending_transaction
+    );
+    let insert = Change::Insert {
+        values: std::collections::BTreeMap::from([("id".into(), Cell::Number("1".into()))]),
+    };
+    assert!(
+        db.apply_changes(table.clone(), vec![insert, changes[0].clone()])
+            .await
+            .unwrap_err()
+            .message
+            .contains("Row changed")
+    );
+    assert!(
+        query(db.clone(), "SELECT count(*) FROM klyndb_test.items")
+            .await
+            .iter()
+            .any(|b| matches!(b,Batch::Rows(rows) if rows[0]==vec![Cell::Text("1".into())]))
+    );
+    let current = vec![old[0].clone(), Cell::Text(literal.into())];
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Idle
+    );
+    query(db.clone(), "BEGIN").await;
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Active
+    );
+    assert!(
+        db.apply_changes(
+            table.clone(),
+            vec![Change::Update {
+                old: current.clone(),
+                values: std::collections::BTreeMap::from([(
+                    "value".into(),
+                    Cell::Text("pending".into())
+                )])
+            }]
+        )
+        .await
+        .unwrap()
+        .pending_transaction
+    );
+    // A stale edit must roll back only its savepoint, keeping the prior user's uncommitted write.
+    assert!(db.apply_changes(table.clone(), changes).await.is_err());
+    assert!(
+        query(db.clone(), "SELECT value FROM klyndb_test.items")
+            .await
+            .iter()
+            .any(|b| matches!(b,Batch::Rows(rows) if rows[0]==vec![Cell::Text("pending".into())]))
+    );
+    query(db.clone(), "ROLLBACK").await;
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Idle
+    );
+    let (failed_tx, mut failed_rx) = mpsc::channel(16);
+    assert!(
+        db.execute(
+            "BEGIN; SELECT klyndb_missing_column".into(),
+            failed_tx,
+            CancellationToken::new(),
+            100
+        )
+        .await
+        .is_err()
+    );
+    while failed_rx.recv().await.is_some() {}
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Failed
+    );
+    query(db.clone(), "ROLLBACK").await;
+    let ro = Postgres::connect(&url, None, true).await.unwrap();
+    assert!(
+        ro.apply_changes(
+            table.clone(),
+            vec![Change::Delete {
+                old: current.clone()
+            }]
+        )
+        .await
+        .is_err()
+    );
+    ro.disconnect().await.unwrap();
+    assert_eq!(
+        db.apply_changes(table.clone(), vec![Change::Delete { old: current }])
+            .await
+            .unwrap()
+            .affected,
+        1
     );
     query(db.clone(), "DROP SCHEMA klyndb_test CASCADE").await;
     db.disconnect().await.unwrap();

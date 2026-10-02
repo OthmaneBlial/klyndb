@@ -19,7 +19,9 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 
 ## Next working slices
 
-- [ ] Safe parameterized table editing, insert/delete/bulk changes with optimistic concurrency and transaction rollback.
+- [x] Parameterized SQLite/PostgreSQL insert/update/delete batches; optimistic old-value checks, PK guards, generated-column protection and savepoint rollback. Native Rust checks passed, including PostgreSQL 16.
+- [x] Real native macOS staged update/insert batch, review, confirmed deletion and transaction-state indicator; production writes enforced in Rust.
+- [ ] Automated desktop E2E for the editing workflow and equivalent native Windows/Linux behavior.
 - [ ] Streaming CSV/JSON/SQL imports and server-side table filters/sort/pagination.
 - [ ] MySQL/MariaDB, pooling/reconnect, connection testing, timeouts and complete metadata.
 - [ ] Verified TLS options/client certificates and SSH tunnels/bastion support.
@@ -32,7 +34,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 ## Product and release gates
 
 - [ ] Editor error locations, robust alias/column completion, query favorites/recent refinements and shortcut preferences.
-- [ ] First-class simultaneous connection and transaction state; configurable production confirmations.
+- [x] Actual SQLite/PostgreSQL transaction state after queries; failed PostgreSQL transactions require ROLLBACK.
+- [ ] Refine simultaneous connection lifecycle and configurable production confirmations.
 - [ ] Cold/warm interactive startup, process-tree memory, five connections, 100k rows, large schema, 100 tabs, scroll frames, query overhead/throughput/cancellation benchmark history.
 - [ ] Address measured bottlenecks without relaxing targets; compare against other clients only with reproducible evidence.
 - [ ] GitHub formatting/clippy/tests/lint/typecheck/audits, real database integration and desktop E2E.
