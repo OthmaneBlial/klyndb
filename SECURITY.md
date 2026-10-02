@@ -18,6 +18,8 @@ Local state includes SQL history, editor text and saved queries. These may conta
 
 Logs record engine type, timings and failure booleans; they omit submitted SQL and credentials. Dependency checks use `cargo audit` and `npm audit`. Advisory exceptions, if any, must be documented rather than silently ignored.
 
+Saved credential reads run on a bounded blocking worker and share the connection setup deadline. An expired caller cannot insert a session from a late lookup result. The OS read itself may continue waiting for authorization; its permit stays held so retries cannot accumulate blocked readers. Credential writes/deletions still require OS completion before metadata is reported saved or deleted. No Keychain ACL or authorization setting is bypassed.
+
 Report vulnerabilities privately through GitHub's security reporting for OthmaneBlial/klyndb. Do not publish credentials or exploitable database dumps in public issues.
 
 ## Current transitive advisories

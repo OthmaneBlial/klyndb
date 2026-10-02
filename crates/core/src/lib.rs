@@ -1,3 +1,4 @@
+mod credentials;
 pub mod diagram;
 pub mod import;
 use klyndb_connections::{Connection, Store};
@@ -339,46 +340,63 @@ impl Engine {
         ssh_password: Option<String>,
     ) -> Result<Capabilities> {
         let config = self.store.connection(id)?;
+        let timeout = config.connect_timeout()?;
+        let deadline = tokio::time::Instant::now() + timeout;
         let password = if let Some(p) = password {
             Some(Zeroizing::new(p))
         } else if config.engine != "sqlite" {
-            klyndb_connections::password(id)?
+            credentials::password(id, deadline).await?
         } else {
             None
         };
         let identity_password = if config.has_client_identity() {
             match identity_password {
                 Some(p) => Some(Zeroizing::new(p)),
-                None => klyndb_connections::password(&klyndb_connections::client_identity_key(id))?,
+                None => {
+                    credentials::password(&klyndb_connections::client_identity_key(id), deadline)
+                        .await?
+                }
             }
         } else {
             None
         };
-        let ssh_password = self.ssh_password(&config, ssh_password, true)?;
-        // ponytail: serialize session creation; use per-connection gates if overlapping opens become a bottleneck.
-        let mut sessions = self.sessions.lock().await;
-        if let Some(existing) = sessions.get(id) {
-            return Ok(existing.driver.capabilities());
-        }
-        let (driver, tunnel) = open_session(
-            &config,
-            password.as_deref().map(|s| s.as_str()),
-            identity_password.as_deref().map(|s| s.as_str()),
-            ssh_password.as_deref().map(|s| s.as_str()),
-        )
-        .await?;
-        let capabilities = driver.capabilities();
-        sessions.insert(
-            id.into(),
-            OpenConnection {
-                driver,
-                config,
-                tunnel,
-            },
-        );
-        tracing::info!(engine = %self.store.connection(id)?.engine, "connection opened");
-        Ok(capabilities)
+        let ssh_password = self
+            .ssh_password(&config, ssh_password, true, deadline)
+            .await?;
+        tokio::time::timeout_at(deadline, async {
+            // ponytail: serialize session creation; use per-connection gates if overlapping opens become a bottleneck.
+            let mut sessions = self.sessions.lock().await;
+            if let Some(existing) = sessions.get(id) {
+                return Ok(existing.driver.capabilities());
+            }
+            let (driver, tunnel) = open_session(
+                &config,
+                password.as_deref().map(|s| s.as_str()),
+                identity_password.as_deref().map(|s| s.as_str()),
+                ssh_password.as_deref().map(|s| s.as_str()),
+            )
+            .await?;
+            let capabilities = driver.capabilities();
+            sessions.insert(
+                id.into(),
+                OpenConnection {
+                    driver,
+                    config,
+                    tunnel,
+                },
+            );
+            tracing::info!(engine = %self.store.connection(id)?.engine, "connection opened");
+            Ok(capabilities)
+        })
+        .await
+        .map_err(|_| {
+            Error::new(format!(
+                "Connection timed out after {} seconds",
+                timeout.as_secs()
+            ))
+        })?
     }
+
     pub async fn test_connection(
         &self,
         mut config: Connection,
@@ -393,28 +411,35 @@ impl Engine {
         }
         let embedded = config.validate()?;
         let password = password.or(embedded);
+        let timeout = config.connect_timeout()?;
+        let deadline = tokio::time::Instant::now() + timeout;
         let password = if password.is_none() && saved && config.engine != "sqlite" {
-            klyndb_connections::password(&config.id)?
+            credentials::password(&config.id, deadline).await?
         } else {
             password
         };
         let identity_password = if config.has_client_identity() {
             match identity_password {
                 Some(p) => Some(Zeroizing::new(p)),
-                None if saved => klyndb_connections::password(
-                    &klyndb_connections::client_identity_key(&config.id),
-                )?,
+                None if saved => {
+                    credentials::password(
+                        &klyndb_connections::client_identity_key(&config.id),
+                        deadline,
+                    )
+                    .await?
+                }
                 None => None,
             }
         } else {
             None
         };
-        let ssh_password = self.ssh_password(&config, ssh_password, saved)?;
+        let ssh_password = self
+            .ssh_password(&config, ssh_password, saved, deadline)
+            .await?;
         // Testing opens an isolated read-only session and never creates a user database file.
         config.read_only = true;
         config.create_file = false;
-        let timeout = config.connect_timeout()?;
-        tokio::time::timeout(timeout, async {
+        tokio::time::timeout_at(deadline, async {
             let (driver, mut tunnel) = open_session(
                 &config,
                 password.as_deref().map(|s| s.as_str()),
@@ -456,11 +481,12 @@ impl Engine {
         }
         Ok(())
     }
-    fn ssh_password(
+    async fn ssh_password(
         &self,
         config: &Connection,
         supplied: Option<String>,
         saved: bool,
+        deadline: tokio::time::Instant,
     ) -> Result<Option<Zeroizing<String>>> {
         match config.ssh()? {
             Some(ssh) if ssh.auth != "agent" => {
@@ -473,9 +499,11 @@ impl Engine {
                             .into_iter()
                             .find(|c| c.id == config.id);
                         if previous.map(|c| c.ssh()).transpose()?.flatten().as_ref() == Some(&ssh) {
-                            klyndb_connections::password(&klyndb_connections::ssh::credential_key(
-                                &config.id,
-                            ))?
+                            credentials::password(
+                                &klyndb_connections::ssh::credential_key(&config.id),
+                                deadline,
+                            )
+                            .await?
                         } else {
                             None
                         }
@@ -694,9 +722,9 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
+    #[tokio::test]
     #[ignore = "writes and removes a synthetic, uniquely named OS keychain entry"]
-    fn ssh_keychain_credentials_are_scoped_to_the_saved_bastion() {
+    async fn ssh_keychain_credentials_are_scoped_to_the_saved_bastion() {
         let dir = tempfile::tempdir().unwrap();
         let engine = Engine::new(Store::open(&dir.path().join("state.db")).unwrap());
         let mut config = Connection {
@@ -725,9 +753,11 @@ mod tests {
         }
         let _cleanup = Cleanup(key.clone());
         klyndb_connections::save_password(&key, "synthetic-scope-secret").unwrap();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
         assert_eq!(
             engine
-                .ssh_password(&config, None, true)
+                .ssh_password(&config, None, true, deadline)
+                .await
                 .unwrap()
                 .as_deref()
                 .map(|s| s.as_str()),
@@ -752,9 +782,21 @@ mod tests {
                 .extend_pairs(options)
                 .append_pair(option, value);
             changed.address = url.to_string();
-            assert!(engine.ssh_password(&changed, None, true).unwrap().is_none());
+            assert!(
+                engine
+                    .ssh_password(&changed, None, true, deadline)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
         }
-        assert!(engine.ssh_password(&config, None, false).unwrap().is_none());
+        assert!(
+            engine
+                .ssh_password(&config, None, false, deadline)
+                .await
+                .unwrap()
+                .is_none()
+        );
         klyndb_connections::delete_password(&key).unwrap();
         assert!(klyndb_connections::password(&key).unwrap().is_none());
     }
