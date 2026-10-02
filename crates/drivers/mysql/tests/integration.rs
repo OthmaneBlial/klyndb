@@ -182,14 +182,21 @@ async fn real_mysql_workflow_and_cancellation() {
         "UPDATE klyndb_items SET value='bad'",
         "DROP TABLE klyndb_items",
         "COMMIT; INSERT INTO klyndb_items(id) VALUES(1)",
+        "SELECT 1; /*! COMMIT */; /*! UPDATE klyndb_items SET value='hidden write' */",
+        "SELECT 1; /*M! COMMIT */; /*M! UPDATE klyndb_items SET value='hidden write' */",
     ] {
         let (tx, _rx) = mpsc::channel(16);
         assert!(
             ro.execute(sql.into(), tx, CancellationToken::new(), 100)
                 .await
-                .is_err()
+                .is_err(),
+            "read-only execution accepted: {sql}"
         );
     }
+    assert_eq!(
+        rows(db.clone(), "SELECT value FROM klyndb_items").await,
+        vec![vec![Cell::Null]]
+    );
     ro.disconnect().await.unwrap();
     // Default TLS must fail against this explicitly plaintext-only local fixture.
     if url.ends_with("?tls=disabled") {

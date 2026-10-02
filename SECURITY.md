@@ -8,6 +8,8 @@ The frontend has no shell or general filesystem permissions. Database paths are 
 
 Read-only mode and destructive SQL confirmations reduce accidents. They do not replace database roles, permissions, backups or DBA review. SQL parsing rejects unrecognized syntax rather than silently bypassing validation. Production connections are labeled. Actual manual transaction state is displayed; further safeguards remain on the roadmap.
 
+Executable MySQL/MariaDB comments (`/*!...*/`, `/*M!...*/`, including version guards) are rejected before query submission because their meaning depends on the server and version. Write the SQL explicitly so read-only and destructive-query validation can inspect it. Ordinary comments, optimizer hints and SQL strings remain supported.
+
 Local state includes SQL history, editor text and saved queries. These may contain sensitive SQL literals even though connection passwords are excluded. Avoid putting credentials in queries. Clear history when appropriate. Result spools are private temporary directories removed when released or on normal shutdown; unexpected termination may leave files for OS temporary-directory cleanup.
 
 Logs record engine type, timings and failure booleans; they omit submitted SQL and credentials. Dependency checks use `cargo audit` and `npm audit`. Advisory exceptions, if any, must be documented rather than silently ignored.

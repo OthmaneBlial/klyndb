@@ -41,6 +41,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 
 ## Product and release gates
 
+- [x] Reject executable MySQL/MariaDB comments in shared SQL validation, preventing MariaDB comments from escaping read-only transactions or bypassing destructive-query checks. Regression reproduced the write on a disposable MariaDB server before the fix.
 - [x] Current-statement execution waits for a complete parser tree and fails closed when unavailable; regression protects against accidental whole-file execution.
 - [ ] Editor error locations, robust alias/column completion, query favorites/recent refinements and shortcut preferences.
 - [x] Actual transaction state after queries and successful/failed edit batches; failed PostgreSQL transactions require ROLLBACK, closed sessions show an unavailable state.

@@ -5,6 +5,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-sqlparser = { version = "0.63", features = ["visitor"] }
+sqlparser = { version = "0.63", features = ["visitor", "derive-dialect"] }
 serde.workspace = true
 klyndb-driver-api = { path = "../driver-api" }

@@ -4,9 +4,9 @@ Reviewed the public README and user workflow documentation of [Beekeeper Studio]
 
 | Feature | Reference workflow | Klyndb implementation | Status / next check |
 | --- | --- | --- | --- |
-| Connections | Saved database configurations and tabbed sessions | Rust metadata DB, OS keychain, explicit environment, independent sessions | SQLite and PostgreSQL implemented |
-| SQL | Highlighting, completion, selections, tabs and history | CodeMirror 6, native drivers, AST safety, disk history | Desktop verification pending |
-| Table view | Open table, inspect cells, sort/filter/edit records | On-demand inspection and query tab, paged grid | Editing and server filters next |
+| Connections | Saved database configurations and tabbed sessions | Rust metadata DB, OS keychain, explicit environment, independent sessions, isolated draft tests | SQLite/PostgreSQL/MySQL/MariaDB implemented; TLS customization and SSH pending |
+| SQL | Highlighting, completion, selections, tabs and history | CodeMirror 6, native drivers, AST safety, disk history; executable comments rejected | Native macOS workflows verified; alias completion and error locations pending |
+| Table view | Open table, inspect cells, sort/filter/edit records | On-demand inspection, paged grid, staged insert/update/delete with savepoint rollback | SQLite/PostgreSQL and MySQL/MariaDB InnoDB editing; native macOS checks passed; server filters pending |
 | Export | Query/table results into files or clipboard | Rust streaming serializers and native save dialogs | CSV/JSON/JSONL/SQL/Markdown implemented |
 | Import | Choose file, map fields, preview/import | Planned transaction-backed native import | Pending |
 | Diagrams | Explore tables and relationships across schemas | Independent diagram UI planned from driver metadata | Pending |
