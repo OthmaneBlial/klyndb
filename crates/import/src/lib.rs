@@ -1,8 +1,12 @@
 mod json;
 pub use json::JsonReader;
+mod sql;
+pub use sql::{SqlPreview, SqlReader};
 
 use csv_core::{ReadRecordResult, ReaderBuilder};
-use klyndb_driver_api::{Cell, Change, Column, Error, InsertBatch, Result, validate_insert_batch};
+use klyndb_driver_api::{
+    Cell, Change, Column, Error, InsertBatch, Result, ScriptBatch, validate_insert_batch,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -30,6 +34,72 @@ pub struct Snapshot {
     pub bytes: u64,
 }
 impl Snapshot {
+    pub fn sql_reader(&self, engine: &str) -> Result<SqlReader<File>> {
+        SqlReader::new(File::open(&self.path).map_err(error)?, engine)
+    }
+    pub fn preview_sql(&self, engine: &str) -> Result<SqlPreview> {
+        let mut reader = self.sql_reader(engine)?;
+        let mut preview = SqlPreview {
+            statements: 0,
+            sample: vec![],
+            warnings: vec![],
+        };
+        while let Some(sql) = reader.next_statement()? {
+            preview.statements += 1;
+            if preview.sample.len() < 5 {
+                let end = sql
+                    .char_indices()
+                    .map(|(i, _)| i)
+                    .find(|&i| i >= 512)
+                    .unwrap_or(sql.len());
+                preview.sample.push(if end < sql.len() {
+                    format!("{}…", &sql[..end])
+                } else {
+                    sql.clone()
+                });
+            }
+            for warning in reader.warnings() {
+                if !preview.warnings.contains(warning) {
+                    preview.warnings.push(warning.clone());
+                }
+            }
+        }
+        if preview.statements == 0 {
+            return Err(Error::new("The SQL file contains no statements"));
+        }
+        Ok(preview)
+    }
+    pub fn produce_sql(
+        &self,
+        engine: &str,
+        output: mpsc::Sender<Result<ScriptBatch>>,
+        cancel: CancellationToken,
+        read: &AtomicU64,
+    ) -> Result<u64> {
+        let result = (|| {
+            let mut reader = self.sql_reader(engine)?;
+            reader.set_cancel(cancel.clone());
+            let mut count = 0;
+            while let Some(sql) = reader.next_statement()? {
+                output
+                    .blocking_send(Ok(ScriptBatch::Statement(sql)))
+                    .map_err(|_| Error::new("SQL writer stopped"))?;
+                count += 1;
+                read.store(count, Ordering::Relaxed);
+            }
+            if cancel.is_cancelled() {
+                return Err(Error::new("SQL import cancelled"));
+            }
+            output
+                .blocking_send(Ok(ScriptBatch::Complete))
+                .map_err(|_| Error::new("SQL writer stopped"))?;
+            Ok(count)
+        })();
+        if let Err(e) = &result {
+            let _ = output.blocking_send(Err(Error::new(&e.message)));
+        }
+        result
+    }
     pub fn copy(source: &Path) -> Result<Self> {
         let file =
             File::open(source).map_err(|_| Error::new("Could not open the selected file"))?;

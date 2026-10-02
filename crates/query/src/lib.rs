@@ -8,6 +8,7 @@ use sqlparser::{
 };
 use std::ops::ControlFlow;
 pub mod plan;
+pub const SQL_LIMIT: usize = 4 * 1024 * 1024;
 
 // Keep executable comments visible: their meaning varies with the server/version.
 sqlparser::derive_dialect!(
@@ -75,7 +76,7 @@ impl Visitor for Safety {
     }
 }
 fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
-    if sql.len() > 4 * 1024 * 1024 {
+    if sql.len() > SQL_LIMIT {
         return Err(Error::new(
             "SQL exceeds the 4 MiB editor limit. Import a file instead.",
         ));
@@ -127,9 +128,6 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
         .with_tokens_with_locations(tokens)
         .parse_statements()
         .map_err(|e| Error::new(format!("SQL could not be validated: {e}")))?;
-    if statements.is_empty() {
-        return Err(Error::new("Enter a SQL statement."));
-    }
     Ok((statements, end))
 }
 fn byte_offset(sql: &str, target: Location) -> usize {
@@ -164,22 +162,63 @@ pub fn explain_target<'a>(sql: &'a str, engine: &str) -> DriverResult<&'a str> {
 }
 pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
     let (statements, _) = parse(sql, engine)?;
+    if statements.is_empty() {
+        return Err(Error::new("Enter a SQL statement."));
+    }
+    Ok(analyze_statements(&statements))
+}
+fn analyze_statements(statements: &[Statement]) -> Analysis {
     let mut safety = Safety {
         warnings: vec![],
         read_only: true,
     };
-    for statement in &statements {
+    for statement in statements {
         if matches!(statement, Statement::Explain { .. }) && !executes_plan(statement) {
             continue;
         }
         let _ = statement.visit(&mut safety);
     }
     // Execute original SQL: AST formatting can change vendor syntax and comments.
-    Ok(Analysis {
+    Analysis {
         statements: statements.iter().map(ToString::to_string).collect(),
         warnings: safety.warnings,
         read_only: safety.read_only,
-    })
+    }
+}
+
+/// Validate file statements with the same safety rules as the editor.
+/// Client commands and COPY streams need separate protocols, not simple SQL execution.
+pub fn analyze_script(sql: &str, engine: &str) -> DriverResult<Option<Analysis>> {
+    let (statements, _) = parse(sql, engine)?;
+    if statements.is_empty() {
+        return Ok(None);
+    }
+    if statements.len() != 1 {
+        return Err(Error::new(
+            "SQL file framing produced more than one statement",
+        ));
+    }
+    // Lexical settings can make server statement boundaries disagree with the file reader.
+    if matches!(statements[0], Statement::Set(_)) {
+        let normalized = statements[0].to_string().to_ascii_lowercase();
+        if normalized.contains("sql_mode") || normalized.contains("standard_conforming_strings") {
+            return Err(Error::new(
+                "Changing SQL lexical settings inside imports is unsupported. Remove sql_mode/standard_conforming_strings assignments.",
+            ));
+        }
+    }
+    if matches!(
+        statements[0],
+        Statement::Copy {
+            target: sqlparser::ast::CopyTarget::Stdin | sqlparser::ast::CopyTarget::Stdout,
+            ..
+        }
+    ) {
+        return Err(Error::new(
+            "COPY STDIN/STDOUT dumps are not supported. Use SQL INSERT statements or CSV import instead.",
+        ));
+    }
+    Ok(Some(analyze_statements(&statements)))
 }
 
 #[cfg(test)]

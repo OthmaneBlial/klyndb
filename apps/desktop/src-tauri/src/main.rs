@@ -2,6 +2,7 @@
 use klyndb_connections::{Connection, Store};
 use klyndb_core::import::{
     ImportFormat, ImportOptions, ImportRequest, ImportSource, ImportStatus, Preview,
+    SqlImportRequest, SqlSource,
 };
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
@@ -415,6 +416,31 @@ async fn preview_import(
     engine.imports.preview(&id, options).await.map_err(api)
 }
 #[tauri::command]
+async fn choose_sql_import_file(
+    engine: State<'_, Arc<Engine>>,
+    connection: String,
+) -> ApiResult<Option<SqlSource>> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter("SQL script", &["sql", "txt"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    engine
+        .prepare_sql_import(file.path().to_owned(), &connection)
+        .await
+        .map(Some)
+        .map_err(api)
+}
+#[tauri::command]
+async fn start_sql_import(
+    engine: State<'_, Arc<Engine>>,
+    request: SqlImportRequest,
+) -> ApiResult<String> {
+    engine.start_sql_import(request).await.map_err(api)
+}
+#[tauri::command]
 async fn start_import(engine: State<'_, Arc<Engine>>, request: ImportRequest) -> ApiResult<String> {
     engine.start_import(request).await.map_err(api)
 }
@@ -516,6 +542,8 @@ fn main() {
             choose_client_identity_file,
             choose_ssh_identity_file,
             choose_import_file,
+            choose_sql_import_file,
+            start_sql_import,
             preview_import,
             start_import,
             import_status,

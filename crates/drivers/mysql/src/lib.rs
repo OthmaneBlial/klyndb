@@ -346,6 +346,7 @@ impl Session for Mysql {
             explain_analyze: self.explain_analyze,
             edit_rows: true,
             import_rows: !self.read_only,
+            import_sql: !self.read_only,
             cancel: true,
             tls: true,
         }
@@ -425,6 +426,66 @@ impl Session for Mysql {
             .into_iter()
             .map(|(schema, name, kind)| Table { schema, name, kind })
             .collect())
+    }
+    async fn execute_script(
+        &self,
+        mut input: mpsc::Receiver<Result<ScriptBatch>>,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        completed: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ) -> Result<()> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let mut guard = tokio::select! {
+            guard = self.connection.lock() => guard,
+            _ = cancel.cancelled() => return Err(Error::new("SQL import cancelled while waiting for the session")),
+        };
+        let conn = guard
+            .as_mut()
+            .ok_or_else(|| Error::new("Connection is closed"))?;
+        while let Some(sql) = next_script_statement(&mut input, &cancel).await? {
+            let mode = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => None,
+                mode = tokio::time::timeout(std::time::Duration::from_secs(3), conn.query_first::<String, _>("SELECT @@SESSION.sql_mode")) => mode.ok(),
+            };
+            let Some(mode) = mode else {
+                guard.take();
+                return Err(Error::new(
+                    "SQL import lexical check interrupted; connection closed. Reconnect and verify earlier writes.",
+                ));
+            };
+            let mode = mode.map_err(err)?.unwrap_or_default();
+            if mode
+                .split(',')
+                .any(|m| ["ANSI_QUOTES", "NO_BACKSLASH_ESCAPES"].contains(&m))
+            {
+                return Err(Error::new(
+                    "SQL file imports require ANSI_QUOTES and NO_BACKSLASH_ESCAPES to be disabled",
+                ));
+            }
+            let id = conn.id();
+            let mut close = false;
+            let result = {
+                let mut query = Box::pin(stream(conn, sql, output.clone(), cancel.clone(), 0));
+                tokio::select! {
+                    result = &mut query => result,
+                    _ = cancel.cancelled() => {
+                        let (result, closed) = self.interrupt(id, &mut query, || true).await;
+                        close = closed;
+                        if closed { result } else { Err(Error::new("SQL import cancelled")) }
+                    }
+                }
+            };
+            if close {
+                guard.take();
+                return result;
+            }
+            result?;
+            completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(())
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
         let mut guard = self.connection.lock().await;

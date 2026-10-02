@@ -362,6 +362,7 @@ impl Session for Postgres {
             explain_analyze: !self.read_only,
             edit_rows: true,
             import_rows: !self.read_only,
+            import_sql: !self.read_only,
             cancel: true,
             tls: true,
         }
@@ -419,6 +420,44 @@ impl Session for Postgres {
     async fn tables(&self) -> Result<Vec<Table>> {
         let _guard = self.serial.lock().await;
         self.client.query("SELECT table_schema,table_name,lower(table_type) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema,table_name", &[]).await.map_err(err).map(|rows| rows.iter().map(|r| Table { schema:r.get(0), name:r.get(1), kind:r.get(2) }).collect())
+    }
+    async fn execute_script(
+        &self,
+        mut input: mpsc::Receiver<Result<ScriptBatch>>,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        completed: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ) -> Result<()> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let _guard = tokio::select! {
+            guard = self.serial.lock() => guard,
+            _ = cancel.cancelled() => return Err(Error::new("SQL import cancelled while waiting for the session")),
+        };
+        while let Some(sql) = next_script_statement(&mut input, &cancel).await? {
+            // Recheck after every statement: functions can change lexical settings too.
+            let mode = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => None,
+                mode = tokio::time::timeout(std::time::Duration::from_secs(3), self.client.query_one("SHOW standard_conforming_strings", &[])) => mode.ok(),
+            };
+            let Some(mode) = mode else {
+                self.worker.abort();
+                return Err(Error::new(
+                    "SQL import lexical check interrupted; connection closed. Reconnect and verify earlier writes.",
+                ));
+            };
+            let mode: String = mode.map_err(err)?.get(0);
+            if mode != "on" {
+                return Err(Error::new(
+                    "SQL file imports require standard_conforming_strings=on",
+                ));
+            }
+            self.stream(sql, output.clone(), cancel.clone(), 0).await?;
+            completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(())
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
         let _guard = self.serial.lock().await;

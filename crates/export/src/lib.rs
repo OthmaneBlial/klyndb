@@ -2,11 +2,22 @@ use klyndb_driver_api::{Cell, Error, Result, Row, quote_identifier};
 use std::io::Write;
 
 pub fn export(
+    out: impl Write,
+    columns: &[String],
+    rows: impl Iterator<Item = Result<Row>>,
+    format: &str,
+    table: &str,
+) -> Result<u64> {
+    export_for_engine(out, columns, rows, format, table, "sqlite")
+}
+
+pub fn export_for_engine(
     mut out: impl Write,
     columns: &[String],
     rows: impl Iterator<Item = Result<Row>>,
     format: &str,
     table: &str,
+    engine: &str,
 ) -> Result<u64> {
     let io = |e: std::io::Error| Error::new(e.to_string());
     let mut count = 0;
@@ -44,6 +55,13 @@ pub fn export(
             }
         }
         "sql" => {
+            let quote = |name: &str| {
+                if engine == "mysql" {
+                    format!("`{}`", name.replace('`', "``"))
+                } else {
+                    quote_identifier(name)
+                }
+            };
             if table.trim().is_empty() {
                 return Err(Error::new(
                     "Enter a target table name for SQL INSERT export",
@@ -62,17 +80,36 @@ pub fn export(
                                 "FALSE".into()
                             }
                         }
+                        Cell::Binary(b) if engine == "postgres" => format!("decode('{b}', 'hex')"),
                         Cell::Binary(b) => format!("X'{b}'"),
+                        _ if engine == "mysql" => {
+                            // Hex UTF-8 avoids mode-dependent backslash and quote interpretation.
+                            let hex: String = c
+                                .text()
+                                .bytes()
+                                .flat_map(|b| {
+                                    let digits = b"0123456789abcdef";
+                                    [
+                                        digits[(b >> 4) as usize] as char,
+                                        digits[(b & 15) as usize] as char,
+                                    ]
+                                })
+                                .collect();
+                            format!("CONVERT(X'{hex}' USING utf8mb4)")
+                        }
+                        _ if engine == "postgres" => {
+                            format!("E'{}'", c.text().replace('\\', "\\\\").replace('\'', "''"))
+                        }
                         _ => format!("'{}'", c.text().replace('\'', "''")),
                     })
                     .collect::<Vec<String>>();
                 writeln!(
                     out,
                     "INSERT INTO {} ({}) VALUES ({});",
-                    quote_identifier(table),
+                    quote(table),
                     columns
                         .iter()
-                        .map(|c| quote_identifier(c))
+                        .map(|c| quote(c))
                         .collect::<Vec<_>>()
                         .join(", "),
                     values.join(", ")

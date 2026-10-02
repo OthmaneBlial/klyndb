@@ -20,6 +20,7 @@ export interface Capabilities {
   explain_analyze: boolean;
   edit_rows: boolean;
   import_rows: boolean;
+  import_sql: boolean;
   cancel: boolean;
   tls: boolean;
 }
@@ -135,10 +136,17 @@ export interface ImportStatus {
   connection_id: string;
   done: boolean;
   read_rows: number;
+  completed_statements: number;
   elapsed_ms: number;
   result: MutationResult | null;
   transaction: "idle" | "active" | "failed" | null;
   error: string | null;
+}
+export interface SqlSource {
+  id: string;
+  name: string;
+  bytes: number;
+  preview: { statements: number; sample: string[]; warnings: string[] };
 }
 export interface ResultSet {
   columns: string[];
@@ -287,6 +295,21 @@ interface Commands {
   preview_import: {
     args: { id: string; options: ImportOptions };
     result: ImportPreview;
+  };
+  choose_sql_import_file: {
+    args: { connection: string };
+    result: SqlSource | null;
+  };
+  start_sql_import: {
+    args: {
+      request: {
+        source: string;
+        connection: string;
+        timeout_seconds: number;
+        confirmed: boolean;
+      };
+    };
+    result: string;
   };
   start_import: {
     args: {

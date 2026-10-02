@@ -1,7 +1,7 @@
 use super::{Engine, error};
 use klyndb_driver_api::*;
 use klyndb_import::{FILE_LIMIT, Snapshot, validate_mapping};
-pub use klyndb_import::{ImportFormat, ImportOptions, Mapping, Preview};
+pub use klyndb_import::{ImportFormat, ImportOptions, Mapping, Preview, SqlPreview};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -22,6 +22,20 @@ pub struct ImportSource {
     pub bytes: u64,
     pub preview: Preview,
 }
+#[derive(Serialize)]
+pub struct SqlSource {
+    pub id: String,
+    pub name: String,
+    pub bytes: u64,
+    pub preview: SqlPreview,
+}
+#[derive(Deserialize)]
+pub struct SqlImportRequest {
+    pub source: String,
+    pub connection: String,
+    pub timeout_seconds: u64,
+    pub confirmed: bool,
+}
 #[derive(Deserialize)]
 pub struct ImportRequest {
     pub source: String,
@@ -38,6 +52,7 @@ pub struct ImportStatus {
     pub connection_id: String,
     pub done: bool,
     pub read_rows: u64,
+    pub completed_statements: u64,
     pub elapsed_ms: u64,
     pub result: Option<MutationResult>,
     pub transaction: Option<TransactionState>,
@@ -46,6 +61,7 @@ pub struct ImportStatus {
 struct ImportJob {
     status: Mutex<ImportStatus>,
     read_rows: AtomicU64,
+    completed: Arc<AtomicU64>,
     began: Instant,
     cancel: CancellationToken,
     // A sticky completion signal: disconnect must wait for writer + reader cleanup.
@@ -54,6 +70,7 @@ struct ImportJob {
 }
 struct Source {
     snapshot: Arc<Snapshot>,
+    script_engine: Option<String>,
     job: Option<Arc<ImportJob>>,
 }
 #[derive(Default)]
@@ -63,6 +80,51 @@ pub struct Imports {
     closing: AtomicBool,
 }
 impl Imports {
+    // Caller holds the session registry until the job is registered.
+    fn register(&self, source: &str, connection: &str) -> Result<Arc<ImportJob>> {
+        let job = Arc::new(ImportJob {
+            status: Mutex::new(ImportStatus {
+                id: source.to_owned(),
+                connection_id: connection.to_owned(),
+                done: false,
+                read_rows: 0,
+                completed_statements: 0,
+                elapsed_ms: 0,
+                result: None,
+                transaction: None,
+                error: None,
+            }),
+            read_rows: AtomicU64::new(0),
+            completed: Arc::new(AtomicU64::new(0)),
+            began: Instant::now(),
+            cancel: CancellationToken::new(),
+            finished: CancellationToken::new(),
+            connection: connection.to_owned(),
+        });
+        {
+            let mut sources = self.sources.lock().map_err(error)?;
+            if self.closing.load(Ordering::Relaxed) {
+                return Err(Error::new("The application is closing; no import started"));
+            }
+            if sources
+                .values()
+                .filter_map(|s| s.job.as_ref())
+                .any(|j| j.connection == connection && !j.finished.is_cancelled())
+            {
+                return Err(Error::new(
+                    "Wait for the current import on this connection to finish",
+                ));
+            }
+            let entry = sources
+                .get_mut(source)
+                .ok_or_else(|| Error::new("Selected file has expired"))?;
+            if entry.job.is_some() {
+                return Err(Error::new("This file has already started importing"));
+            }
+            entry.job = Some(job.clone());
+        }
+        Ok(job)
+    }
     fn snapshot(&self, id: &str) -> Result<Arc<Snapshot>> {
         let sources = self.sources.lock().map_err(error)?;
         let source = sources
@@ -73,7 +135,44 @@ impl Imports {
                 "This file has already started importing; choose it again to run another import",
             ));
         }
+        if source.script_engine.is_some() {
+            return Err(Error::new("Choose a CSV/JSON file for row imports"));
+        }
         Ok(source.snapshot.clone())
+    }
+    pub async fn prepare_sql(self: &Arc<Self>, path: PathBuf, engine: String) -> Result<SqlSource> {
+        let gate = self.gate.clone().lock_owned().await;
+        let imports = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _gate = gate;
+            {
+                let sources = imports.sources.lock().map_err(error)?;
+                Self::check_capacity(&sources, 0)?;
+            }
+            let snapshot = Arc::new(Snapshot::copy(&path)?);
+            // Preflight every statement before exposing an executable source, not just the sample.
+            let preview = snapshot.preview_sql(&engine)?;
+            let mut sources = imports.sources.lock().map_err(error)?;
+            Self::check_capacity(&sources, snapshot.bytes)?;
+            let id = uuid::Uuid::new_v4().to_string();
+            let response = SqlSource {
+                id: id.clone(),
+                name: snapshot.name.clone(),
+                bytes: snapshot.bytes,
+                preview,
+            };
+            sources.insert(
+                id,
+                Source {
+                    snapshot,
+                    script_engine: Some(engine),
+                    job: None,
+                },
+            );
+            Ok(response)
+        })
+        .await
+        .map_err(error)?
     }
     fn check_capacity(sources: &HashMap<String, Source>, bytes: u64) -> Result<()> {
         if sources.len() >= 4
@@ -115,6 +214,7 @@ impl Imports {
                 id,
                 Source {
                     snapshot,
+                    script_engine: None,
                     job: None,
                 },
             );
@@ -146,6 +246,7 @@ impl Imports {
         let job = self.job(id)?;
         let mut status = job.status.lock().map_err(error)?.clone();
         status.read_rows = job.read_rows.load(Ordering::Relaxed);
+        status.completed_statements = job.completed.load(Ordering::Relaxed);
         if !status.done {
             status.elapsed_ms = job.began.elapsed().as_millis() as u64;
         }
@@ -217,6 +318,122 @@ impl Imports {
 }
 
 impl Engine {
+    pub async fn prepare_sql_import(&self, path: PathBuf, connection: &str) -> Result<SqlSource> {
+        let engine = {
+            let sessions = self.sessions.lock().await;
+            let open = sessions
+                .get(connection)
+                .ok_or_else(|| Error::new("Connect to the database first"))?;
+            if open.config.read_only || !open.driver.capabilities().import_sql {
+                return Err(Error::new("This connection does not allow SQL imports"));
+            }
+            open.config.engine.clone()
+        };
+        self.imports.prepare_sql(path, engine).await
+    }
+    pub async fn start_sql_import(&self, request: SqlImportRequest) -> Result<String> {
+        let SqlImportRequest {
+            source,
+            connection,
+            timeout_seconds,
+            confirmed,
+        } = request;
+        if !(1..=3600).contains(&timeout_seconds) {
+            return Err(Error::new("Timeout must be 1–3600 seconds"));
+        }
+        if !confirmed {
+            return Err(Error::new(
+                "Review and confirm the SQL file before executing it. Earlier statements may remain committed after failure or cancellation.",
+            ));
+        }
+        let sessions = self.sessions.lock().await;
+        let open = sessions
+            .get(&connection)
+            .ok_or_else(|| Error::new("Connect to the database first"))?;
+        if open.config.read_only || !open.driver.capabilities().import_sql {
+            return Err(Error::new("This connection does not allow SQL imports"));
+        }
+        let driver = open.driver.clone();
+        let dialect = open.config.engine.clone();
+        let snapshot = {
+            let sources = self.imports.sources.lock().map_err(error)?;
+            let selected = sources
+                .get(&source)
+                .ok_or_else(|| Error::new("Selected SQL file has expired"))?;
+            if selected.script_engine.as_deref() != Some(&dialect) {
+                return Err(Error::new(
+                    "Choose and review a SQL file for this database engine",
+                ));
+            }
+            selected.snapshot.clone()
+        };
+        let job = self.imports.register(&source, &connection)?;
+        tokio::spawn(async move {
+            let timed_out = Arc::new(AtomicBool::new(false));
+            let timer_flag = timed_out.clone();
+            let token = job.cancel.clone();
+            let timer = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(timeout_seconds)).await;
+                timer_flag.store(true, Ordering::Relaxed);
+                token.cancel();
+            });
+            let (output, input) = mpsc::channel(2);
+            let reader_job = job.clone();
+            let producer = tokio::task::spawn_blocking(move || {
+                snapshot.produce_sql(
+                    &dialect,
+                    output,
+                    reader_job.cancel.clone(),
+                    &reader_job.read_rows,
+                )
+            });
+            let (results, mut batches) = mpsc::channel(2);
+            let drain = async move {
+                let mut affected = 0u64;
+                while let Some(batch) = batches.recv().await {
+                    if let Batch::Complete { affected: n, .. } = batch {
+                        affected = affected.saturating_add(n);
+                    }
+                }
+                affected
+            };
+            let (written, affected) = tokio::join!(
+                driver.execute_script(input, results, job.cancel.clone(), job.completed.clone()),
+                drain
+            );
+            if written.is_err() {
+                job.cancel.cancel();
+            }
+            let parsed = producer.await.map_err(error).and_then(|r| r);
+            timer.abort();
+            let completed = job.completed.load(Ordering::Relaxed);
+            let result = written.and_then(|()| {
+                if parsed.is_ok_and(|n| n == completed) {
+                    Ok(())
+                } else {
+                    Err(Error::new("SQL reader completion could not be verified"))
+                }
+            });
+            let transaction =
+                tokio::time::timeout(Duration::from_secs(3), driver.transaction_state())
+                    .await
+                    .ok()
+                    .and_then(std::result::Result::ok);
+            if let Ok(mut status) = job.status.lock() {
+                status.done = true;
+                status.elapsed_ms = job.began.elapsed().as_millis() as u64;
+                status.transaction = transaction.clone();
+                status.result = result.as_ref().ok().map(|_| MutationResult {
+                    affected,
+                    pending_transaction: transaction != Some(TransactionState::Idle),
+                });
+                status.error = result.err().map(|e| format!("{}{} statements completed. {} Earlier effects may remain committed; verify data before retrying and inspect the transaction state.", if timed_out.load(Ordering::Relaxed) { format!("SQL import timed out after {timeout_seconds} seconds. ") } else { String::new() }, completed, e.message));
+            }
+            job.finished.cancel();
+        });
+        drop(sessions);
+        Ok(source)
+    }
     pub async fn start_import(&self, request: ImportRequest) -> Result<String> {
         let ImportRequest {
             source,
@@ -276,45 +493,7 @@ impl Engine {
                 "Connection changed; reconnect and review the import again",
             ));
         }
-        let job = Arc::new(ImportJob {
-            status: Mutex::new(ImportStatus {
-                id: source.clone(),
-                connection_id: connection.clone(),
-                done: false,
-                read_rows: 0,
-                elapsed_ms: 0,
-                result: None,
-                transaction: None,
-                error: None,
-            }),
-            read_rows: AtomicU64::new(0),
-            began: Instant::now(),
-            cancel: CancellationToken::new(),
-            finished: CancellationToken::new(),
-            connection: connection.clone(),
-        });
-        {
-            let mut sources = self.imports.sources.lock().map_err(error)?;
-            if self.imports.closing.load(Ordering::Relaxed) {
-                return Err(Error::new("The application is closing; no import started"));
-            }
-            if sources
-                .values()
-                .filter_map(|s| s.job.as_ref())
-                .any(|j| j.connection == connection && !j.finished.is_cancelled())
-            {
-                return Err(Error::new(
-                    "Wait for the current import on this connection to finish",
-                ));
-            }
-            let entry = sources
-                .get_mut(&source)
-                .ok_or_else(|| Error::new("Selected file has expired"))?;
-            if entry.job.is_some() {
-                return Err(Error::new("This file has already started importing"));
-            }
-            entry.job = Some(job.clone());
-        }
+        let job = self.imports.register(&source, &connection)?;
         tokio::spawn(async move {
             let timed_out = Arc::new(AtomicBool::new(false));
             let timer_flag = timed_out.clone();

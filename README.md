@@ -60,7 +60,7 @@
 | **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
 | **🛡️ Stay in control** | Cancellation, configurable connection/query timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
 | **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export. [Diagram guide](docs/DIAGRAMS.md). |
-| **📥 Import CSV / JSON** | Native file picker, CSV or JSON arrays, typed JSON export roundtrips, column mapping, streaming inserts and progress/cancel. [Import guide](docs/IMPORTS.md). |
+| **📥 Import CSV / JSON / SQL** | Native file pickers, mapped CSV/JSON inserts and streamed SQL scripts with review, transaction visibility and progress/cancel. [Import guide](docs/IMPORTS.md). |
 | **📤 Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
 | **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
 
@@ -77,7 +77,7 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-**Development preview:** Klyndb is already runnable from source. SQL imports, additional drivers and native release packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
+**Development preview:** Klyndb is already runnable from source. Additional drivers and native release packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 
 ## ⚡ Rust does the heavy lifting
 

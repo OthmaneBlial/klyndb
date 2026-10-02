@@ -39,9 +39,10 @@ pub struct Job {
     pub cancel: CancellationToken,
     pub connection_id: String,
     _directory: tempfile::TempDir,
+    engine: String,
 }
 impl Job {
-    fn new(connection_id: String) -> Result<Self> {
+    fn new(connection_id: String, engine: String) -> Result<Self> {
         let directory = tempfile::Builder::new()
             .prefix("klyndb-result-")
             .tempdir()
@@ -66,6 +67,7 @@ impl Job {
             cancel: CancellationToken::new(),
             connection_id,
             _directory: directory,
+            engine,
         })
     }
     pub fn status(&self) -> Result<QueryStatus> {
@@ -121,7 +123,7 @@ impl Job {
             .query_map([set as i64], |row| row.get::<_, String>(0))
             .map_err(error)?
             .map(|row| serde_json::from_str(&row.map_err(error)?).map_err(error));
-        klyndb_export::export(out, &result.columns, rows, format, table)
+        klyndb_export::export_for_engine(out, &result.columns, rows, format, table, &self.engine)
     }
     pub fn plan(&self) -> Result<klyndb_query::plan::Plan> {
         let status = self.status()?;
@@ -572,8 +574,9 @@ impl Engine {
             )));
         }
         let driver = open.driver.clone();
+        let dialect = open.config.engine.clone();
         drop(sessions);
-        let job = Arc::new(Job::new(connection.clone())?);
+        let job = Arc::new(Job::new(connection.clone(), dialect)?);
         let id = job.status()?.id;
         {
             let mut jobs = self.jobs.lock().map_err(error)?;

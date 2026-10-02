@@ -2717,6 +2717,7 @@ version = "0.1.0"
 dependencies = [
  "csv-core",
  "klyndb-driver-api",
+ "klyndb-query",
  "serde",
  "serde_json",
  "tempfile",

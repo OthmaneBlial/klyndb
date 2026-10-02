@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 klyndb-driver-api = { path = "../driver-api" }
+klyndb-query = { path = "../query" }
 csv-core = "0.1"
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }

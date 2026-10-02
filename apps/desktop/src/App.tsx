@@ -63,6 +63,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { RowDialog } from "./components/RowDialog";
 import { TableControls } from "./components/TableControls";
 import { ImportDialog } from "./components/ImportDialog";
+import { SqlImportDialog } from "./components/SqlImportDialog";
 import { Modal } from "./components/Modal";
 const DiagramDialog = lazy(() =>
   import("./components/DiagramDialog").then((m) => ({
@@ -133,6 +134,7 @@ export default function App() {
       inspector: Inspector;
       connection: Connection;
     } | null>(null),
+    [sqlImport, setSqlImport] = useState<Connection | null>(null),
     [applying, setApplying] = useState<Record<string, boolean>>({}),
     [transactionStates, setTransactionStates] = useState<
       Record<string, "idle" | "active" | "failed" | "unknown">
@@ -141,6 +143,8 @@ export default function App() {
   applyingRef.current = applying;
   const importDialogRef = useRef(importDialog);
   importDialogRef.current = importDialog;
+  const sqlImportRef = useRef(sqlImport);
+  sqlImportRef.current = sqlImport;
   const diagramRef = useRef(diagramConnection);
   diagramRef.current = diagramConnection;
   const stagedRef = useRef(staged);
@@ -256,7 +260,7 @@ export default function App() {
           );
           return;
         }
-        if (importDialogRef.current) {
+        if (importDialogRef.current || sqlImportRef.current) {
           report("Close the import dialog before closing the workspace.");
           return;
         }
@@ -777,6 +781,15 @@ export default function App() {
       action: () => void run(editorRef.current?.allText()),
     },
     { name: "Format SQL", key: "⇧ ⌘ F", action: formatSql },
+    ...(connection && connected[connection.id]?.import_sql
+      ? [
+          {
+            name: "Import SQL file",
+            key: "",
+            action: () => setSqlImport(connection),
+          },
+        ]
+      : []),
     {
       name: "Refresh schema",
       key: "",
@@ -822,7 +835,8 @@ export default function App() {
   ];
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (importDialogRef.current || diagramRef.current) return;
+      if (importDialogRef.current || sqlImportRef.current || diagramRef.current)
+        return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -1192,6 +1206,11 @@ export default function App() {
                   </button>
                 ) : (
                   <>
+                    {connection && connected[connection.id]?.import_sql && (
+                      <button onClick={() => setSqlImport(connection)}>
+                        <FileUp size={14} /> Import SQL
+                      </button>
+                    )}
                     {connection && connected[connection.id]?.explain && (
                       <>
                         <button
@@ -1618,6 +1637,22 @@ export default function App() {
           old={rowDialog.old}
           onStage={(change) => stage(rowDialog.tab.id, change)}
           onClose={() => setRowDialog(null)}
+        />
+      )}
+      {sqlImport && (
+        <SqlImportDialog
+          connection={sqlImport}
+          timeout={preferences.timeout}
+          onClose={() => setSqlImport(null)}
+          onComplete={(result) => {
+            setTransactionStates((s) => ({
+              ...s,
+              [result.connection_id]: result.transaction ?? "unknown",
+            }));
+            if (/connection (?:is )?closed/i.test(result.error ?? ""))
+              void disconnect(sqlImport);
+            else void refresh(result.connection_id);
+          }}
         />
       )}
       {importDialog && (

@@ -85,6 +85,7 @@ pub struct Capabilities {
     pub explain_analyze: bool,
     pub edit_rows: bool,
     pub import_rows: bool,
+    pub import_sql: bool,
     pub cancel: bool,
     pub tls: bool,
 }
@@ -305,6 +306,23 @@ pub enum InsertBatch {
     Rows(Vec<Change>),
     Complete,
 }
+pub enum ScriptBatch {
+    Statement(String),
+    Complete,
+}
+pub async fn next_script_statement(
+    input: &mut mpsc::Receiver<Result<ScriptBatch>>,
+    cancel: &CancellationToken,
+) -> Result<Option<String>> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(Error::new("SQL import cancelled")),
+        batch = input.recv() => match batch.ok_or_else(|| Error::new("SQL reader stopped before completing the file"))?? {
+            ScriptBatch::Statement(sql) => Ok(Some(sql)),
+            ScriptBatch::Complete => Ok(None),
+        },
+    }
+}
 pub async fn next_insert_batch(
     input: &mut mpsc::Receiver<Result<InsertBatch>>,
     cancel: &CancellationToken,
@@ -479,6 +497,17 @@ pub trait Session: Send + Sync {
         Err(Error::new("This driver does not support imports"))
     }
     async fn disconnect(&self) -> Result<()>;
+    /// Execute original statements while owning the session across the entire file.
+    /// Preserve script transactions as written; earlier statements may be committed on failure.
+    async fn execute_script(
+        &self,
+        _input: mpsc::Receiver<Result<ScriptBatch>>,
+        _output: mpsc::Sender<Batch>,
+        _cancel: CancellationToken,
+        _completed: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ) -> Result<()> {
+        Err(Error::new("This driver does not support SQL file imports"))
+    }
 }
 
 pub fn quote_identifier(name: &str) -> String {

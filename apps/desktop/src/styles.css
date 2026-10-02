@@ -1829,3 +1829,13 @@ small {
 }
 .tls-options summary { cursor: pointer; }
 .tls-options[open] summary { margin-bottom: 14px; }
+
+.sql-preview {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}

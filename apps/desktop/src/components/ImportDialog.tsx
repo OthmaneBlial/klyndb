@@ -70,6 +70,7 @@ export function ImportDialog({
         if (!live) return;
         setStatus(next);
         if (next.done) {
+          setError("");
           live = false;
           setJob(null);
           setBusy(false);
@@ -177,6 +178,7 @@ export function ImportDialog({
         connection_id: connection.id,
         done: false,
         read_rows: 0,
+        completed_statements: 0,
         elapsed_ms: 0,
         result: null,
         transaction: null,

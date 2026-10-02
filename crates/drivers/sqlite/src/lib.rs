@@ -59,6 +59,99 @@ impl Sqlite {
         .map_err(err)?
     }
 }
+fn stream(
+    conn: &Connection,
+    sql: String,
+    output: mpsc::Sender<Batch>,
+    cancel: CancellationToken,
+    limit: usize,
+) -> Result<()> {
+    let token = cancel.clone();
+    conn.progress_handler(1000, Some(move || token.is_cancelled()))
+        .map_err(err)?;
+    let result = (|| {
+        let mut statements = rusqlite::Batch::new(conn, &sql);
+        while let Some(mut statement) = statements.next().map_err(err)? {
+            let before = conn.total_changes();
+            if cancel.is_cancelled() {
+                return Err(Error::new("Query cancelled"));
+            }
+            let columns = statement
+                .column_names()
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>();
+            let width = columns.len();
+            output.blocking_send(Batch::Columns(columns)).map_err(err)?;
+            let mut count = 0;
+            let mut truncated = false;
+            if width == 0 {
+                statement.execute([]).map_err(err)?;
+            } else {
+                let mut rows = statement.query([]).map_err(err)?;
+                let mut buffer = Vec::with_capacity(256);
+                let mut buffer_bytes = 0;
+                while let Some(row) = rows.next().map_err(err)? {
+                    if cancel.is_cancelled() {
+                        return Err(Error::new("Query cancelled"));
+                    }
+                    if limit == 0 {
+                        continue;
+                    }
+                    if count >= limit {
+                        truncated = true;
+                        break;
+                    }
+                    let mut cells = Vec::with_capacity(width);
+                    for i in 0..width {
+                        cells.push(match row.get_ref(i).map_err(err)? {
+                            ValueRef::Null => Cell::Null,
+                            ValueRef::Integer(n) => Cell::Number(n.to_string()),
+                            ValueRef::Real(n) => Cell::Number(n.to_string()),
+                            ValueRef::Text(s) => Cell::Text(String::from_utf8_lossy(s).into()),
+                            ValueRef::Blob(b) => Cell::Binary(hex::encode(b)),
+                        });
+                    }
+                    let row_bytes = cells.iter().map(Cell::byte_len).sum::<usize>();
+                    if row_bytes > 8 * 1024 * 1024 {
+                        return Err(Error::new(
+                            "A result row exceeds 8 MiB. Select smaller values or use database-native export.",
+                        ));
+                    }
+                    buffer_bytes += row_bytes;
+                    buffer.push(cells);
+                    count += 1;
+                    if buffer.len() == 256 || buffer_bytes >= 256 * 1024 {
+                        buffer_bytes = 0;
+                        output
+                            .blocking_send(Batch::Rows(std::mem::take(&mut buffer)))
+                            .map_err(err)?;
+                    }
+                }
+                if !buffer.is_empty() {
+                    output.blocking_send(Batch::Rows(buffer)).map_err(err)?;
+                }
+            }
+            output
+                .blocking_send(Batch::Complete {
+                    affected: if limit == 0 {
+                        conn.total_changes() - before
+                    } else if width == 0 {
+                        conn.changes()
+                    } else {
+                        0
+                    },
+                    truncated,
+                })
+                .map_err(err)?;
+        }
+        Ok(())
+    })();
+    conn.progress_handler(0, None::<fn() -> bool>)
+        .map_err(err)?;
+    result
+}
+
 #[async_trait]
 impl Session for Sqlite {
     fn capabilities(&self) -> Capabilities {
@@ -71,6 +164,7 @@ impl Session for Sqlite {
             explain_analyze: false,
             edit_rows: true,
             import_rows: !self.read_only,
+            import_sql: !self.read_only,
             cancel: true,
             tls: false,
         }
@@ -90,87 +184,34 @@ impl Session for Sqlite {
         cancel: CancellationToken,
         limit: usize,
     ) -> Result<()> {
-        self.with(move |conn| {
-            let token = cancel.clone();
-            conn.progress_handler(1000, Some(move || token.is_cancelled()))
-                .map_err(err)?;
-            let result = (|| {
-                let mut statements = rusqlite::Batch::new(conn, &sql);
-                while let Some(mut statement) = statements.next().map_err(err)? {
-                    if cancel.is_cancelled() {
-                        return Err(Error::new("Query cancelled"));
-                    }
-                    let columns = statement
-                        .column_names()
-                        .iter()
-                        .map(|n| n.to_string())
-                        .collect::<Vec<_>>();
-                    let width = columns.len();
-                    output.blocking_send(Batch::Columns(columns)).map_err(err)?;
-                    let mut count = 0;
-                    let mut truncated = false;
-                    if width == 0 {
-                        statement.execute([]).map_err(err)?;
-                    } else {
-                        let mut rows = statement.query([]).map_err(err)?;
-                        let mut buffer = Vec::with_capacity(256);
-                        let mut buffer_bytes=0;
-                        while let Some(row) = rows.next().map_err(err)? {
-                            if cancel.is_cancelled() {
-                                return Err(Error::new("Query cancelled"));
-                            }
-                            if count >= limit {
-                                truncated = true;
-                                break;
-                            }
-                            let mut cells = Vec::with_capacity(width);
-                            for i in 0..width {
-                                cells.push(match row.get_ref(i).map_err(err)? {
-                                    ValueRef::Null => Cell::Null,
-                                    ValueRef::Integer(n) => Cell::Number(n.to_string()),
-                                    ValueRef::Real(n) => Cell::Number(n.to_string()),
-                                    ValueRef::Text(s) => {
-                                        Cell::Text(String::from_utf8_lossy(s).into())
-                                    }
-                                    ValueRef::Blob(b) => Cell::Binary(hex::encode(b)),
-                                });
-                            }
-                            let row_bytes=cells.iter().map(Cell::byte_len).sum::<usize>();
-                            if row_bytes>8*1024*1024 { return Err(Error::new("A result row exceeds 8 MiB. Select smaller values or use database-native export.")); }
-                            buffer_bytes+=row_bytes;
-                            buffer.push(cells);
-                            count += 1;
-                            if buffer.len() == 256 || buffer_bytes>=256*1024 {
-                                buffer_bytes=0;
-                                output
-                                    .blocking_send(Batch::Rows(std::mem::take(&mut buffer)))
-                                    .map_err(err)?;
-                            }
-                        }
-                        if !buffer.is_empty() {
-                            output.blocking_send(Batch::Rows(buffer)).map_err(err)?;
-                        }
-                    }
-                    output
-                        .blocking_send(Batch::Complete {
-                            affected: if width == 0 { conn.changes() } else { 0 },
-                            truncated,
-                        })
-                        .map_err(err)?;
-                }
-                Ok(())
-            })();
-            conn.progress_handler(0, None::<fn() -> bool>)
-                .map_err(err)?;
-            result
-        })
-        .await
+        self.with(move |conn| stream(conn, sql, output, cancel, limit))
+            .await
     }
     async fn tables(&self) -> Result<Vec<Table>> {
         self.with(|conn| {
             let mut stmt = conn.prepare("SELECT name,type FROM sqlite_schema WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name").map_err(err)?;
             stmt.query_map([], |row| Ok(Table { schema: "main".into(), name: row.get(0)?, kind: row.get(1)? })).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)
         }).await
+    }
+    async fn execute_script(
+        &self,
+        mut input: mpsc::Receiver<Result<ScriptBatch>>,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        completed: Arc<std::sync::atomic::AtomicU64>,
+    ) -> Result<()> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let runtime = tokio::runtime::Handle::current();
+        self.with(move |conn| {
+            while let Some(sql) = runtime.block_on(next_script_statement(&mut input, &cancel))? {
+                stream(conn, sql, output.clone(), cancel.clone(), 0)?;
+                completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            Ok(())
+        })
+        .await
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
         let table = table.clone();
