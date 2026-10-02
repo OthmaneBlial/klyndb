@@ -50,6 +50,7 @@ pub type Row = Vec<Cell>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capabilities {
     pub table_browse: bool,
+    pub diagrams: bool,
     pub transactions: bool,
     pub schemas: bool,
     pub explain: bool,
@@ -82,6 +83,34 @@ pub struct Column {
     pub primary_key: bool,
     pub default: Option<String>,
     pub generated: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ForeignKey {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub target_schema: String,
+    pub target_table: String,
+    pub target_columns: Vec<Option<String>>,
+}
+/// Metadata rows must be ordered by native key-column ordinal.
+pub fn group_foreign_keys(
+    rows: impl IntoIterator<Item = (String, String, String, String, Option<String>)>,
+) -> Vec<ForeignKey> {
+    let mut keys = std::collections::BTreeMap::new();
+    for (name, column, schema, table, target) in rows {
+        let key = keys
+            .entry((name.clone(), schema.clone(), table.clone()))
+            .or_insert_with(|| ForeignKey {
+                name,
+                columns: vec![],
+                target_schema: schema,
+                target_table: table,
+                target_columns: vec![],
+            });
+        key.columns.push(column);
+        key.target_columns.push(target);
+    }
+    keys.into_values().collect()
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Constraint {
@@ -405,6 +434,11 @@ pub trait Session: Send + Sync {
     ) -> Result<()>;
     async fn tables(&self) -> Result<Vec<Table>>;
     async fn inspect(&self, table: &Table) -> Result<TableInfo>;
+    async fn relationships(&self, _table: &Table) -> Result<Vec<ForeignKey>> {
+        Err(Error::new(
+            "This driver does not support relationship diagrams",
+        ))
+    }
     async fn transaction_state(&self) -> Result<TransactionState>;
     async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult>;
     /// Hold the session for the entire stream and roll back every batch on failure.

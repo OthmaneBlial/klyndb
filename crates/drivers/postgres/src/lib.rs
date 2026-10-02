@@ -262,6 +262,7 @@ impl Session for Postgres {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             table_browse: true,
+            diagrams: true,
             transactions: true,
             schemas: true,
             explain: true,
@@ -343,6 +344,13 @@ impl Session for Postgres {
             constraints: Some(constraints),
             triggers,
         })
+    }
+    async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {
+        let _guard = self.serial.lock().await;
+        let rows=self.client.query("SELECT c.conname,a.attname,tn.nspname,tt.relname,b.attname FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_class tt ON tt.oid=c.confrelid JOIN pg_namespace tn ON tn.oid=tt.relnamespace CROSS JOIN LATERAL unnest(c.conkey,c.confkey) WITH ORDINALITY AS k(local_col,target_col,ordinal) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.local_col JOIN pg_attribute b ON b.attrelid=c.confrelid AND b.attnum=k.target_col WHERE c.contype='f' AND n.nspname=$1 AND t.relname=$2 ORDER BY c.conname,k.ordinal", &[&table.schema,&table.name]).await.map_err(err)?;
+        Ok(group_foreign_keys(rows.iter().map(|r| {
+            (r.get(0), r.get(1), r.get(2), r.get(3), Some(r.get(4)))
+        })))
     }
     async fn transaction_state(&self) -> Result<TransactionState> {
         let _guard = self.serial.lock().await;

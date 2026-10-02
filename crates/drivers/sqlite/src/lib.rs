@@ -2,7 +2,7 @@ mod edit;
 use async_trait::async_trait;
 use klyndb_driver_api::*;
 use rusqlite::fallible_iterator::FallibleIterator;
-use rusqlite::{Connection, OpenFlags, types::ValueRef};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, types::ValueRef};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -64,6 +64,7 @@ impl Session for Sqlite {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             table_browse: true,
+            diagrams: true,
             transactions: true,
             schemas: false,
             explain: true,
@@ -174,6 +175,22 @@ impl Session for Sqlite {
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
         let table = table.clone();
         self.with(move |conn| inspect(conn, &table)).await
+    }
+    async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {
+        let table = table.clone();
+        self.with(move |conn| {
+            if table.schema!="main" {return Err(Error::new("Only the main SQLite schema is supported"));}
+            let mut stmt=conn.prepare("SELECT id,seq,\"from\",\"table\",\"to\" FROM pragma_foreign_key_list(?) ORDER BY id,seq").map_err(err)?;
+            let rows=stmt.query_map([&table.name], |r| Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
+            let mut result=vec![];
+            for (id,seq,column,target_table,mut target_column) in rows {
+                if target_column.is_none() {
+                    target_column=conn.query_row("SELECT name FROM pragma_table_info(?) WHERE pk>0 ORDER BY pk LIMIT 1 OFFSET ?", rusqlite::params![&target_table,seq], |r| r.get(0)).optional().map_err(err)?;
+                }
+                result.push((format!("FK #{id}"),column,"main".into(),target_table,target_column));
+            }
+            Ok(group_foreign_keys(result))
+        }).await
     }
     async fn transaction_state(&self) -> Result<TransactionState> {
         self.with(|conn| {

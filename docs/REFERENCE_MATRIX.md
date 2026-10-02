@@ -11,7 +11,7 @@ Reviewed the public README and user workflow documentation of [Beekeeper Studio]
 | Export | Query/table results into files or clipboard | Rust streaming serializers and native save dialogs | CSV/JSON/JSONL/SQL/Markdown implemented |
 | Import | Choose file, map fields, preview/import | Independent streaming CSV parser/snapshot, typed mapping and native transaction-backed inserts | CSV native file selection, preview/mapping, confirmation and progress/cancel implemented; JSON/SQL pending; see [import contract](IMPORTS.md) |
 | Query plans | Inspect EXPLAIN and runtime plans alongside results | Native driver formats, Rust tree normalization, raw output and server messages | All four backend contracts verified; native macOS MySQL/SQLite workflows passed |
-| Diagrams | Explore tables and relationships across schemas | Independent diagram UI planned from driver metadata | Pending |
+| Diagrams | Explore tables and relationships across schemas | Native typed foreign keys, SVG workspace, manual/grid layout, pan/zoom, local layouts and native SVG export | Four-engine composite/self-FK contracts pass; native and large-catalog checks are recorded in validation evidence |
 | NoSQL | Specialized engine behavior | Separate document/key experiences planned | Pending |
 
 References are behavior only. No branded icons, logos, screenshots or source were copied. Analyze each major area just before implementing it, and update this matrix from actual behavior.

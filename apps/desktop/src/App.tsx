@@ -33,6 +33,7 @@ import {
   Command,
   ArrowUpRight,
   FileCode2,
+  Network,
 } from "lucide-react";
 
 import {
@@ -63,6 +64,11 @@ import { RowDialog } from "./components/RowDialog";
 import { TableControls } from "./components/TableControls";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
+const DiagramDialog = lazy(() =>
+  import("./components/DiagramDialog").then((m) => ({
+    default: m.DiagramDialog,
+  })),
+);
 import {
   defaults,
   restoreWorkspace,
@@ -92,6 +98,9 @@ export default function App() {
     [connecting, setConnecting] = useState<string[]>([]);
   const [dialog, setDialog] = useState<Connection | true | null>(null),
     [settings, setSettings] = useState(false),
+    [diagramConnection, setDiagramConnection] = useState<Connection | null>(
+      null,
+    ),
     [palette, setPalette] = useState(false),
     [sidebarSearch, setSidebarSearch] = useState(""),
     [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -132,6 +141,8 @@ export default function App() {
   applyingRef.current = applying;
   const importDialogRef = useRef(importDialog);
   importDialogRef.current = importDialog;
+  const diagramRef = useRef(diagramConnection);
+  diagramRef.current = diagramConnection;
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
   const editorRef = useRef<EditorHandle | null>(null);
@@ -239,6 +250,12 @@ export default function App() {
     getCurrentWindow()
       .onCloseRequested(async (event) => {
         event.preventDefault();
+        if (diagramRef.current) {
+          report(
+            "Close the diagram to save its layout before closing the workspace.",
+          );
+          return;
+        }
         if (importDialogRef.current) {
           report("Close the import dialog before closing the workspace.");
           return;
@@ -755,6 +772,18 @@ export default function App() {
       key: "",
       action: () => connection && void refresh(connection.id),
     },
+    {
+      name: "Open relationship diagram",
+      key: "",
+      action: () => {
+        if (connection && connected[connection.id]?.diagrams)
+          setDiagramConnection(connection);
+        else
+          report(
+            "Connect to a supported database and select its SQL tab first.",
+          );
+      },
+    },
     { name: "Saved queries", key: "", action: () => setSavedOpen(true) },
     {
       name: "Query history",
@@ -783,7 +812,7 @@ export default function App() {
   ];
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (importDialogRef.current) return;
+      if (importDialogRef.current || diagramRef.current) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -962,6 +991,14 @@ export default function App() {
                         </div>
                         {expanded[c.id] && connected[c.id] && (
                           <div className="tables-list">
+                            {connected[c.id]?.diagrams && (
+                              <button
+                                className="diagram-open"
+                                onClick={() => setDiagramConnection(c)}
+                              >
+                                <Network size={13} /> Relationships
+                              </button>
+                            )}
                             <div className="tables-heading">
                               <span>
                                 Tables & views <small>{allTables.length}</small>
@@ -1591,6 +1628,24 @@ export default function App() {
             }
           }}
         />
+      )}
+      {diagramConnection && (
+        <Suspense
+          fallback={
+            <Modal
+              title="Opening diagram"
+              onClose={() => setDiagramConnection(null)}
+            >
+              <p>Loading…</p>
+            </Modal>
+          }
+        >
+          <DiagramDialog
+            connection={diagramConnection}
+            tables={tables[diagramConnection.id] ?? []}
+            onClose={() => setDiagramConnection(null)}
+          />
+        </Suspense>
       )}
       {exportOpen && status && (
         <Modal title="Export results" onClose={() => setExportOpen(false)}>

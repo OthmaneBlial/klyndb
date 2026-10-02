@@ -59,6 +59,7 @@
 | **✍️ Edit data** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |
 | **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
 | **🛡️ Stay in control** | Cancellation, timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
+| **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export. [Diagram guide](docs/DIAGRAMS.md). |
 | **📥 Import CSV** | Native file picker, preview, column mapping, streaming inserts and progress/cancel. [Import guide](docs/IMPORTS.md). |
 | **📤 Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
 | **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |

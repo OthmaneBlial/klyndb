@@ -1,3 +1,4 @@
+pub mod diagram;
 pub mod import;
 use klyndb_connections::{Connection, Store};
 use klyndb_driver_api::*;

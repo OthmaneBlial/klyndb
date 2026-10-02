@@ -134,6 +134,40 @@ async fn table_query_sql(
         .map_err(api)
 }
 #[tauri::command]
+async fn diagram_tables(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    tables: Vec<Table>,
+) -> ApiResult<klyndb_core::diagram::Diagram> {
+    engine.diagram(&id, &tables).await.map_err(api)
+}
+#[tauri::command]
+async fn export_diagram(
+    model: klyndb_core::diagram::Diagram,
+    positions: klyndb_core::diagram::Positions,
+) -> ApiResult<Option<u64>> {
+    let svg = model.svg(&positions).map_err(api)?;
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter("SVG diagram", &["svg"])
+        .set_file_name("relationship-diagram.svg")
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let path = file.path().to_owned();
+    blocking(move || {
+        use std::io::Write;
+        let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or("Invalid export path")?)
+            .map_err(api)?;
+        temp.write_all(svg.as_bytes()).map_err(api)?;
+        temp.as_file().sync_all().map_err(api)?;
+        temp.persist(path).map_err(api)?;
+        Ok(Some(svg.len() as u64))
+    })
+    .await
+}
+#[tauri::command]
 async fn transaction_state(
     engine: State<'_, Arc<Engine>>,
     id: String,
@@ -369,6 +403,8 @@ fn main() {
             inspect_table,
             table_select_sql,
             table_query_sql,
+            diagram_tables,
+            export_diagram,
             apply_changes,
             transaction_state,
             analyze_query,

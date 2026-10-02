@@ -278,6 +278,7 @@ impl Session for Mysql {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             table_browse: true,
+            diagrams: true,
             transactions: true,
             schemas: true,
             explain: true,
@@ -418,6 +419,14 @@ impl Session for Mysql {
             constraints: Some(constraints),
             triggers,
         })
+    }
+    async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {
+        let mut guard = self.connection.lock().await;
+        let conn = guard
+            .as_mut()
+            .ok_or_else(|| Error::new("Connection is closed"))?;
+        let rows: Vec<(String,String,String,String,Option<String>)> = conn.exec("SELECT CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_SCHEMA,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY CONSTRAINT_NAME,ORDINAL_POSITION", (&table.schema,&table.name)).await.map_err(err)?;
+        Ok(group_foreign_keys(rows))
     }
     fn quote_filter_value(&self, value: &str) -> String {
         format!(

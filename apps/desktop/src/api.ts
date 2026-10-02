@@ -13,6 +13,7 @@ export interface Connection {
 }
 export interface Capabilities {
   table_browse: boolean;
+  diagrams: boolean;
   transactions: boolean;
   schemas: boolean;
   explain: boolean;
@@ -44,6 +45,21 @@ export interface Trigger {
   name: string;
   definition: string;
   state: string | null;
+}
+export interface ForeignKey {
+  name: string;
+  columns: string[];
+  target_schema: string;
+  target_table: string;
+  target_columns: (string | null)[];
+}
+export interface DiagramTable {
+  table: Table;
+  columns: Column[];
+  relationships: ForeignKey[];
+}
+export interface Diagram {
+  tables: DiagramTable[];
 }
 export interface TableInfo {
   editable: boolean;
@@ -186,6 +202,14 @@ interface Commands {
   };
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
+  diagram_tables: { args: { id: string; tables: Table[] }; result: Diagram };
+  export_diagram: {
+    args: {
+      model: Diagram;
+      positions: Record<string, { x: number; y: number }>;
+    };
+    result: number | null;
+  };
   inspect_table: { args: { id: string; table: Table }; result: TableInfo };
   table_select_sql: {
     args: { id: string; table: Table; limit: number };

@@ -1,0 +1,15 @@
+# Relationship diagrams
+
+Connect to SQLite, PostgreSQL, MySQL or MariaDB and choose **Relationships** above that connection's table list. The command palette also offers **Open relationship diagram** for the current connected SQL tab.
+
+Search and select tables, then choose **Load selected**. Klyndb reads native columns and foreign-key metadata. It does not scan table rows or modify the database. Arrows run from foreign-key columns to the referenced columns; composite keys keep their native column order. Primary keys use ◆ and foreign-key columns use ↗. The expandable relationship list names targets outside the current selection so you can add them. Metadata visibility follows database permissions.
+
+- Drag a table to arrange it; focus a table and use arrow keys for keyboard positioning.
+- Drag the background to pan. Use the zoom buttons or **Fit** to frame the selected area.
+- **Auto-layout** places cards in a non-overlapping grid. Manual arrangements can reduce crossing relationship lines.
+- **Save layout** stores the table selection, positions, zoom and pan locally for that connection. Closing the dialog also saves; a save error keeps it open. Reopening reloads current metadata with the saved positions. Close the diagram before closing the application.
+- **Export SVG** uses a native save dialog and exports the full displayed diagram, including tables outside the current viewport. The export contains fixed SVG markup and escaped metadata rather than executable database text. It uses a dark palette independent of the app's theme.
+
+One layout is stored per connection. A diagram supports 1–50 selected tables, up to 2,000 columns, 4,000 relationship column pairs and 4 MiB of metadata. The picker displays up to 200 matching catalog entries; search narrows the list. Loading has a 30-second deadline. Work with a focused area of a large schema rather than loading every table at once. Changes to the selection require **Load selected** before the displayed graph changes.
+
+SQLite currently supports the main schema; implicit referenced primary-key columns are resolved in primary-key order. PostgreSQL and MySQL/MariaDB retain qualified target schemas. No relationship cardinalities are inferred. PNG export, multiple named diagrams, routed graph layout and large-catalog performance validation remain follow-ups.

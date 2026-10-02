@@ -44,7 +44,9 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Native macOS MySQL estimated/runtime tree, raw output/copy, confirmation, server messages, cancellation and session reuse; SQLite QUERY PLAN without invented runtime metrics.
 - [ ] PostgreSQL/MariaDB native desktop plan checks, Windows/Linux plan workflows and MySQL runtime DML beyond the verified SELECT slice.
 - [x] Table Structure constraint/trigger inspection: PostgreSQL native definitions/firing state, MySQL/MariaDB names/types/timing/body and SQLite native trigger definitions with constraint DDL. Real four-engine contracts and UI rendering check pass; rebuilt macOS SQLite Structure view, expanded trigger definition and constraint DDL, plus MySQL constraint table/DDL verified. Windows/Linux UI validation remains pending.
-- [ ] ER diagrams with saved layouts, PostgreSQL table DDL, statistics, trigger functions, structured SQLite constraint extraction and safe schema editing.
+- [x] Native SQL relationship diagrams: composite/self-referencing foreign keys, columns/PKs/FKs, manual/grid layout, pan/zoom/Fit, local saved state and native SVG export. Four-engine contracts and local CI pass; packaged macOS SQLite drag/pan/keyboard/zoom/Fit/auto-layout, save/reopen, search/subset and independently parsed SVG verified.
+- [ ] Large-catalog diagram performance checks, native diagram interactions on PostgreSQL/MySQL/MariaDB and Windows/Linux, additional named layouts and routed layout refinements.
+- [ ] PostgreSQL table DDL, statistics, trigger functions, structured SQLite constraint extraction and safe schema editing.
 - [ ] MongoDB document/aggregation/editing UI and Redis typed keys/TTL/explorer.
 - [ ] CockroachDB/Redshift/TiDB compatibility verified against actual servers.
 - [ ] Broader engines: Oracle, Cassandra/Scylla, Firebird, LibSQL, BigQuery, Snowflake, DynamoDB, Trino/Presto, SurrealDB and practical HANA support.
