@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 pub struct DuckDb {
     connection: Arc<Mutex<Option<FileConnection>>>,
+    read_only: bool,
 }
 struct Database {
     connection: Mutex<Connection>,
@@ -103,6 +104,7 @@ impl DuckDb {
         .map_err(err)??;
         Ok(Self {
             connection: Arc::new(Mutex::new(Some(connection))),
+            read_only,
         })
     }
     async fn with<T: Send + 'static>(
@@ -379,14 +381,28 @@ impl Session for DuckDb {
             diagrams: false,
             transactions: true,
             schemas: true,
-            explain: false,
-            explain_analyze: false,
+            explain: true,
+            explain_analyze: !self.read_only,
             edit_rows: false,
             import_rows: false,
             import_sql: false,
             cancel: true,
             tls: false,
         }
+    }
+    fn explain_sql(&self, sql: &str, analyze: bool) -> Result<(String, PlanFormat)> {
+        if analyze && self.read_only {
+            return Err(Error::new(
+                "ANALYZE executes the statement and is disabled on read-only connections",
+            ));
+        }
+        Ok((
+            format!(
+                "EXPLAIN ({}FORMAT JSON) {sql}",
+                if analyze { "ANALYZE, " } else { "" }
+            ),
+            PlanFormat::DuckDbJson,
+        ))
     }
     async fn execute(
         &self,

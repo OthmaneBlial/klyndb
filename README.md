@@ -74,7 +74,7 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MySQL | ✓ | ✓ · InnoDB | MySQL 8.4.11 |
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
-| DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 real-file contracts |
+| DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 · native macOS workflow |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 

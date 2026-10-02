@@ -37,17 +37,28 @@ async fn run(engine: &Engine, connection: &Connection, sql: &str) -> Vec<Row> {
 async fn real_plan_workflow() {
     let directory = tempfile::tempdir().unwrap();
     let engine = Engine::new(Store::open(&directory.path().join("state.db")).unwrap());
-    let mut servers = vec![(
-        "sqlite",
-        directory
-            .path()
-            .join("data.db")
-            .to_string_lossy()
-            .into_owned(),
-    )];
+    let mut servers = vec![
+        (
+            "sqlite",
+            directory
+                .path()
+                .join("data.db")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        (
+            "duckdb",
+            directory
+                .path()
+                .join("plans.duckdb")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    ];
     for (name, engine) in [
         ("KLYNDB_TEST_POSTGRES_URL", "postgres"),
         ("KLYNDB_TEST_MYSQL_URL", "mysql"),
+        ("KLYNDB_TEST_MARIADB_URL", "mysql"),
     ] {
         if let Ok(url) = std::env::var(name) {
             servers.push((engine, url));
@@ -64,7 +75,7 @@ async fn real_plan_workflow() {
             color: "#93d4b5".into(),
             favorite: false,
             read_only: false,
-            create_file: kind == "sqlite",
+            create_file: matches!(kind, "sqlite" | "duckdb"),
         };
         connection.validate().unwrap();
         engine.store.save(&connection).unwrap();
@@ -157,6 +168,7 @@ async fn real_plan_workflow() {
                     PlanFormat::PostgresJson => "Actual Loops",
                     PlanFormat::MysqlJson => "loops=",
                     PlanFormat::MariaJson => "r_loops",
+                    PlanFormat::DuckDbJson => "operator_timing",
                     _ => panic!("unexpected runtime format"),
                 }),
                 "{encoded}"
@@ -202,10 +214,12 @@ async fn real_plan_workflow() {
                     .text(),
                 "10"
             );
-            let sleep = if kind == "postgres" {
-                "SELECT pg_sleep(30)"
-            } else {
-                "SELECT SLEEP(30)"
+            let sleep = match kind {
+                "postgres" => "SELECT pg_sleep(30)",
+                "duckdb" => {
+                    "SELECT sum(a.i*b.i) FROM range(1000000000) a(i), range(1000000000) b(i)"
+                }
+                _ => "SELECT SLEEP(30)",
             };
             let id = engine
                 .start_plan(connection.id.clone(), sleep.into(), true, 5, true)
@@ -246,6 +260,9 @@ async fn real_plan_workflow() {
                     .is_err()
             );
         }
+        if kind == "duckdb" {
+            engine.disconnect(&connection.id).await.unwrap();
+        }
         let mut readonly = connection.clone();
         readonly.id = String::new();
         readonly.read_only = true;
@@ -282,9 +299,10 @@ async fn real_plan_workflow() {
             .await
             .unwrap();
         let result = completed(&engine, &id).await.plan();
-        // MariaDB/MySQL can reject DML planning inside their native READ ONLY transaction.
+        // Native read-only modes can reject DML planning even without executing the write.
         match result {
             Err(error) if kind == "mysql" => assert!(error.message.contains("READ ONLY")),
+            Err(error) if kind == "duckdb" => assert!(error.message.contains("read-only mode")),
             result => {
                 result.unwrap();
             }
@@ -299,7 +317,11 @@ async fn real_plan_workflow() {
         assert_eq!(
             run(
                 &engine,
-                &connection,
+                if kind == "duckdb" {
+                    &readonly
+                } else {
+                    &connection
+                },
                 &format!("SELECT value FROM {table} WHERE id=1")
             )
             .await[0][0]
@@ -307,6 +329,12 @@ async fn real_plan_workflow() {
             "10"
         );
         engine.disconnect(&readonly.id).await.unwrap();
+        if kind == "duckdb" {
+            engine
+                .connect(&connection.id, None, None, None)
+                .await
+                .unwrap();
+        }
         run(&engine, &connection, &format!("DROP TABLE {table}")).await;
         engine.disconnect(&connection.id).await.unwrap();
     }

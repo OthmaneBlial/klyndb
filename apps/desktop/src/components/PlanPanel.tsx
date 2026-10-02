@@ -102,7 +102,9 @@ export function PlanPanel({ status }: { status: QueryStatus }) {
       <p className="muted plan-note">
         {status.plan_format === "sqlite"
           ? "SQLite reports query structure without runtime timings or costs."
-          : "Metrics retain the database's native names and units. Planner cost is separate from elapsed time."}
+          : status.plan_format === "duck_db_json"
+            ? "DuckDB reports estimated cardinalities or native runtime metrics. latency and operator_timing are seconds; parallel operator times do not add up to elapsed time."
+            : "Metrics retain the database's native names and units. Planner cost is separate from elapsed time."}
         {status.plan_analyze &&
           " This statement was executed; ANALYZE does not roll back automatically."}
       </p>

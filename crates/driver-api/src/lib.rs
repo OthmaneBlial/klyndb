@@ -97,6 +97,7 @@ pub enum PlanFormat {
     MysqlJson,
     MysqlTree,
     MariaJson,
+    DuckDbJson,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Table {

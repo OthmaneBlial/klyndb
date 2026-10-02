@@ -34,7 +34,13 @@ fn json_node(label: &str, value: &Value, depth: usize, count: &mut usize) -> Res
     };
     match value {
         Value::Object(values) => {
-            for key in ["Node Type", "table_name", "access_type"] {
+            for key in [
+                "Node Type",
+                "table_name",
+                "access_type",
+                "operator_name",
+                "name",
+            ] {
                 if let Some(Value::String(name)) = values.get(key) {
                     node.label = format!("{label} · {name}");
                     break;
@@ -125,6 +131,24 @@ pub fn decode(
     let raw = if format == PlanFormat::Sqlite {
         serde_json::to_string_pretty(&serde_json::json!({"columns": columns, "rows": rows}))
             .map_err(|e| Error::new(e.to_string()))?
+    } else if format == PlanFormat::DuckDbJson {
+        if columns != ["explain_key", "explain_value"] || rows.iter().any(|row| row.len() != 2) {
+            return Err(Error::new("Unexpected DuckDB native plan columns"));
+        }
+        let mut plans = rows
+            .iter()
+            .filter(|row| matches!(row[0].text().as_str(), "physical_plan" | "analyzed_plan"));
+        let row = plans.next().ok_or_else(|| {
+            Error::new(
+                "DuckDB returned no physical/runtime plan. Set explain_output='physical_only'.",
+            )
+        })?;
+        if plans.next().is_some() {
+            return Err(Error::new(
+                "DuckDB returned multiple physical/runtime plans",
+            ));
+        }
+        row[1].text()
     } else {
         if rows.len() != 1 || rows[0].len() != 1 {
             return Err(Error::new(
@@ -247,6 +271,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(plan.nodes[0].children.len(), 1);
+        let columns = vec!["explain_key".into(), "explain_value".into()];
+        let raw =
+            r#"[{"name":"SEQ_SCAN","children":[],"extra_info":{"Estimated Cardinality":"2"}}]"#;
+        let duck = |key: &str, value: &str| vec![Cell::Text(key.into()), Cell::Text(value.into())];
+        let plan = decode(
+            PlanFormat::DuckDbJson,
+            &columns,
+            &[duck("logical_plan", "unused"), duck("physical_plan", raw)],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(plan.raw, raw);
+        assert!(plan.nodes[0].children[0].label.contains("SEQ_SCAN"));
+        for rows in [
+            vec![duck("logical_plan", raw)],
+            vec![duck("physical_plan", raw), duck("physical_plan", raw)],
+            vec![duck("physical_plan", "bad JSON")],
+        ] {
+            assert!(decode(PlanFormat::DuckDbJson, &columns, &rows, vec![]).is_err());
+        }
+        assert!(
+            decode(
+                PlanFormat::DuckDbJson,
+                &[],
+                &[duck("physical_plan", raw)],
+                vec![]
+            )
+            .is_err()
+        );
         let row = |id: &str, parent: &str| {
             vec![
                 Cell::Number(id.into()),

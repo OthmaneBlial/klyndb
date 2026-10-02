@@ -166,7 +166,12 @@ export interface QueryStatus {
   plan_analyze: boolean;
 }
 export type PlanFormat =
-  "sqlite" | "postgres_json" | "mysql_json" | "mysql_tree" | "maria_json";
+  | "sqlite"
+  | "postgres_json"
+  | "mysql_json"
+  | "mysql_tree"
+  | "maria_json"
+  | "duck_db_json";
 export interface PlanNode {
   label: string;
   attributes: [string, string][];
