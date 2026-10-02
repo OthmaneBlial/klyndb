@@ -33,6 +33,7 @@ export interface Column {
   generated: boolean;
 }
 export interface TableInfo {
+  editable: boolean;
   columns: Column[];
   ddl: string | null;
   indexes: Record<string, unknown>[];
@@ -101,6 +102,10 @@ interface Commands {
   table_select_sql: {
     args: { id: string; table: Table; limit: number };
     result: string;
+  };
+  transaction_state: {
+    args: { id: string };
+    result: "idle" | "active" | "failed";
   };
   apply_changes: {
     args: { id: string; table: Table; changes: Change[]; confirmed: boolean };

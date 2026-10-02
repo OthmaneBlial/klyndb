@@ -226,7 +226,15 @@ fn inspect(conn: &Connection, table: &Table) -> Result<TableInfo> {
         )
         .map_err(err)?;
     let foreign_keys = stmt.query_map([&name], |r| Ok(serde_json::json!({"table":r.get::<_, String>(0)?, "from":r.get::<_, String>(1)?, "to":r.get::<_, Option<String>>(2)?, "on_update":r.get::<_, String>(3)?, "on_delete":r.get::<_, String>(4)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+    let editable = conn
+        .query_row(
+            "SELECT type='table' FROM sqlite_schema WHERE name=?",
+            [&name],
+            |r| r.get::<_, bool>(0),
+        )
+        .map_err(err)?;
     Ok(TableInfo {
+        editable,
         columns,
         ddl,
         indexes,

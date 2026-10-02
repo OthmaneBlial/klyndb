@@ -209,7 +209,9 @@ impl Session for Postgres {
         let columns = self.client.query("SELECT c.column_name,c.data_type,c.is_nullable,c.column_default,(c.is_generated!='NEVER' OR c.identity_generation='ALWAYS'),EXISTS(SELECT 1 FROM information_schema.table_constraints t JOIN information_schema.key_column_usage k USING(constraint_catalog,constraint_schema,constraint_name) WHERE t.constraint_type='PRIMARY KEY' AND k.table_schema=c.table_schema AND k.table_name=c.table_name AND k.column_name=c.column_name) FROM information_schema.columns c WHERE table_schema=$1 AND table_name=$2 ORDER BY ordinal_position", &[&table.schema, &table.name]).await.map_err(err)?.iter().map(|r| Column { name:r.get(0), data_type:r.get(1), nullable:r.get::<_, String>(2)=="YES", default:r.get(3), primary_key:r.get(5), generated:r.get::<_, Option<bool>>(4).unwrap_or(false) }).collect();
         let indexes = self.client.query("SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=$1 AND tablename=$2", &[&table.schema,&table.name]).await.map_err(err)?.iter().map(|r| serde_json::json!({"name":r.get::<_, String>(0), "definition":r.get::<_, String>(1)})).collect();
         let foreign_keys = self.client.query("SELECT c.conname,pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE c.contype='f' AND n.nspname=$1 AND t.relname=$2", &[&table.schema,&table.name]).await.map_err(err)?.iter().map(|r| serde_json::json!({"name":r.get::<_, String>(0), "definition":r.get::<_, String>(1)})).collect();
+        let editable=self.client.query_opt("SELECT c.relkind IN ('r','p') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname=$2",&[&table.schema,&table.name]).await.map_err(err)?.is_some_and(|r|r.get(0));
         Ok(TableInfo {
+            editable,
             columns,
             ddl: None,
             indexes,

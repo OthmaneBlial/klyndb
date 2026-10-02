@@ -6,7 +6,7 @@ PostgreSQL and MySQL/MariaDB use certificate and hostname verification with OS t
 
 The frontend has no shell or general filesystem permissions. Database paths are explicit user inputs. Export paths come from Rust native dialogs. Export writes a temporary file and replaces the destination only after success. The production CSP restricts scripts and connections to packaged UI and IPC; there is no remote content, CDN, telemetry or schema upload.
 
-Read-only mode and destructive SQL confirmations reduce accidents. They do not replace database roles, permissions, backups or DBA review. SQL parsing rejects unrecognized syntax rather than silently bypassing validation. Production connections are labeled. Manual transaction visibility and further safeguards remain on the roadmap.
+Read-only mode and destructive SQL confirmations reduce accidents. They do not replace database roles, permissions, backups or DBA review. SQL parsing rejects unrecognized syntax rather than silently bypassing validation. Production connections are labeled. Actual manual transaction state is displayed; further safeguards remain on the roadmap.
 
 Local state includes SQL history, editor text and saved queries. These may contain sensitive SQL literals even though connection passwords are excluded. Avoid putting credentials in queries. Clear history when appropriate. Result spools are private temporary directories removed when released or on normal shutdown; unexpected termination may leave files for OS temporary-directory cleanup.
 
@@ -17,3 +17,5 @@ Report vulnerabilities privately through GitHub's security reporting for Othmane
 ## Current transitive advisories
 
 The 2026-10-02 cargo audit returned zero vulnerability entries and two warnings: RUSTSEC-2024-0370 (`proc-macro-error`, unmaintained) and RUSTSEC-2024-0429 (`glib` 0.18 iterator unsoundness). Both enter through Tauri's Linux GTK dependency graph. Klyndb does not call the affected glib iterator API; this does not prove the entire upstream stack unaffected. No advisories are suppressed. Track upstream GTK/Tauri upgrades and reassess before Linux releases.
+
+Staged MySQL/MariaDB editing checks the actual InnoDB table engine and binds all values. Conversion warnings abort the batch. Nontransactional trigger effects cannot be rolled back by the server; unconfirmed rollback/interruption closes the connection and asks the user to verify data before retrying. COMMIT is never deliberately interrupted after submission.

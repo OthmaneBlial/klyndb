@@ -1,3 +1,4 @@
+mod edit;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use klyndb_driver_api::*;
@@ -5,6 +6,11 @@ use mysql_async::{
     Conn, Opts, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts, Value,
     consts::{ColumnType, StatusFlags},
     prelude::Queryable,
+};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
 };
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -44,6 +50,7 @@ impl Mysql {
             Opts::from_url(url.as_str()).map_err(|_| Error::new("Invalid MySQL connection URL"))?;
         let mut builder = OptsBuilder::from_opts(opts)
             .prefer_socket(false)
+            .client_found_rows(true)
             .ssl_opts(if tls == "required" {
                 Some(SslOpts::default())
             } else {
@@ -70,6 +77,45 @@ impl Mysql {
             control: Pool::new(opts),
             read_only,
         })
+    }
+    async fn interrupt<F, T>(
+        &self,
+        id: u32,
+        query: &mut Pin<Box<F>>,
+        can_kill: impl Fn() -> bool + Send + Sync,
+    ) -> (Result<T>, bool)
+    where
+        F: Future<Output = Result<T>> + Send,
+    {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            if can_kill()
+                && !matches!(
+                    tokio::time::timeout_at(deadline, self.kill(id)).await,
+                    Ok(Ok(()))
+                )
+            {
+                return (
+                    Err(Error::new(
+                        "Interruption could not be confirmed; connection closed. Disconnect and reconnect. Verify writes before retrying.",
+                    )),
+                    true,
+                );
+            }
+            // Keep polling the same future: dropping a partially written command can desynchronize the session.
+            match tokio::time::timeout(std::time::Duration::from_millis(50), query.as_mut()).await {
+                Ok(result) => return (result, false),
+                Err(_) if tokio::time::Instant::now() >= deadline => {
+                    return (
+                        Err(Error::new(
+                            "Operation termination could not be confirmed; connection closed. Disconnect and reconnect. Verify writes before retrying.",
+                        )),
+                        true,
+                    );
+                }
+                Err(_) => {}
+            }
+        }
     }
     async fn kill(&self, id: u32) -> Result<()> {
         let mut control = self.control.get_conn().await.map_err(err)?;
@@ -223,7 +269,7 @@ impl Session for Mysql {
             transactions: true,
             schemas: true,
             explain: true,
-            edit_rows: false,
+            edit_rows: true,
             cancel: true,
             tls: true,
         }
@@ -259,16 +305,9 @@ impl Session for Mysql {
             tokio::select! {
                 result=&mut query=>result,
                 _=cancel.cancelled()=>{
-                    let deadline=tokio::time::Instant::now()+std::time::Duration::from_secs(3);
-                    loop{
-                        if !matches!(tokio::time::timeout_at(deadline,self.kill(id)).await,Ok(Ok(()))){close=true;break Err(Error::new("Cancellation timed out; connection closed. Disconnect and reconnect."));}
-                        // Keep polling the same future: dropping a partially written COM_QUERY can desynchronize the session.
-                        match tokio::time::timeout(std::time::Duration::from_millis(50),&mut query).await{
-                            Ok(_)=>break Err(Error::new("Query cancelled")),
-                            Err(_) if tokio::time::Instant::now()>=deadline=>{close=true;break Err(Error::new("Cancellation could not be confirmed; connection closed. Disconnect and reconnect."));},
-                            Err(_)=>{},
-                        }
-                    }
+                    let (result, closed)=self.interrupt(id,&mut query,||true).await;
+                    close=closed;
+                    if close {result} else {Err(Error::new("Query cancelled"))}
                 }
             }
         };
@@ -297,18 +336,8 @@ impl Session for Mysql {
         let conn = guard
             .as_mut()
             .ok_or_else(|| Error::new("Connection is closed"))?;
-        let rows:Vec<(String,String,String,Option<String>,String,String)>=conn.exec("SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,COLUMN_KEY,EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",(&table.schema,&table.name)).await.map_err(err)?;
-        let columns = rows
-            .into_iter()
-            .map(|(name, data_type, nullable, default, key, extra)| Column {
-                name,
-                data_type,
-                nullable: nullable == "YES",
-                default,
-                primary_key: key == "PRI",
-                generated: extra.to_uppercase().contains("GENERATED"),
-            })
-            .collect();
+        let columns = columns(conn, table).await?;
+        let editable = editable(conn, table).await?;
         let indexes:Vec<(String,Option<String>,String,u64)>=conn.exec("SELECT INDEX_NAME,COLUMN_NAME,INDEX_TYPE,NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY INDEX_NAME,SEQ_IN_INDEX",(&table.schema,&table.name)).await.map_err(err)?;
         let foreign:Vec<(String,String,String,String,String)>=conn.exec("SELECT CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_SCHEMA,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND REFERENCED_TABLE_NAME IS NOT NULL",(&table.schema,&table.name)).await.map_err(err)?;
         let ddl: Option<mysql_async::Row> = conn
@@ -326,6 +355,7 @@ impl Session for Mysql {
         let indexes = indexes.into_iter().map(|(name,column,kind,non_unique)|serde_json::json!({"name":name,"column":column,"type":kind,"unique":non_unique==0})).collect();
         let foreign_keys = foreign.into_iter().map(|(name,column,schema,table,target)|serde_json::json!({"name":name,"column":column,"schema":schema,"table":table,"target":target})).collect();
         Ok(TableInfo {
+            editable,
             columns,
             ddl,
             indexes,
@@ -333,7 +363,7 @@ impl Session for Mysql {
         })
     }
     fn quote_identifier(&self, name: &str) -> String {
-        format!("`{}`", name.replace('`', "``"))
+        quote(name)
     }
     async fn transaction_state(&self) -> Result<TransactionState> {
         let mut guard = self.connection.lock().await;
@@ -353,10 +383,41 @@ impl Session for Mysql {
             },
         )
     }
-    async fn apply_changes(&self, _: Table, _: Vec<Change>) -> Result<MutationResult> {
-        Err(Error::new(
-            "This connection supports SQL writes; staged table editing is unavailable.",
-        ))
+    async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        validate_change_batch(&changes)?;
+        let mut guard = self.connection.lock().await;
+        let conn = guard
+            .as_mut()
+            .ok_or_else(|| Error::new("Connection is closed. Disconnect and reconnect."))?;
+        let id = conn.id();
+        let abort = CancellationToken::new();
+        let committing = AtomicBool::new(false);
+        let poison = AtomicBool::new(false);
+        let (result, close) = {
+            let mut operation = Box::pin(edit::apply(
+                conn,
+                &table,
+                &changes,
+                &abort,
+                &committing,
+                &poison,
+            ));
+            tokio::select! {
+                result=&mut operation=>(result,false),
+                _=tokio::time::sleep(std::time::Duration::from_secs(60))=>{
+                    abort.cancel();
+                    // Once COMMIT has started, drain its acknowledgement without interrupting it.
+                    self.interrupt(id,&mut operation,||!committing.load(Ordering::Relaxed)).await
+                }
+            }
+        };
+        if close || poison.load(Ordering::Relaxed) {
+            guard.take();
+        }
+        result
     }
     async fn disconnect(&self) -> Result<()> {
         if let Some(conn) = self.connection.lock().await.take() {
@@ -364,4 +425,34 @@ impl Session for Mysql {
         }
         self.control.clone().disconnect().await.map_err(err)
     }
+}
+
+fn quote(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+async fn columns(conn: &mut Conn, table: &Table) -> Result<Vec<Column>> {
+    let rows:Vec<(String,String,String,Option<String>,String,String)>=conn.exec("SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,COLUMN_KEY,EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION",(&table.schema,&table.name)).await.map_err(err)?;
+    Ok(rows
+        .into_iter()
+        .map(|(name, data_type, nullable, default, key, extra)| Column {
+            name,
+            data_type,
+            nullable: nullable == "YES",
+            default,
+            primary_key: key == "PRI",
+            generated: [
+                "VIRTUAL GENERATED",
+                "STORED GENERATED",
+                "PERSISTENT GENERATED",
+            ]
+            .iter()
+            .any(|kind| extra.to_uppercase().contains(kind)),
+        })
+        .collect())
+}
+async fn editable(conn: &mut Conn, table: &Table) -> Result<bool> {
+    let kind:Option<(String,Option<String>)>=conn.exec_first("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?",(&table.schema,&table.name)).await.map_err(err)?;
+    Ok(kind.is_some_and(|(kind, engine)| {
+        kind == "BASE TABLE" && engine.is_some_and(|e| e.eq_ignore_ascii_case("InnoDB"))
+    }))
 }

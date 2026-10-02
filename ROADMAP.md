@@ -27,7 +27,10 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Automated desktop E2E for the editing workflow and equivalent native Windows/Linux behavior.
 - [ ] Streaming CSV/JSON/SQL imports and server-side table filters/sort/pagination.
 - [x] MySQL/MariaDB native connection/query/metadata slice, exact numeric/binary/NULL cells, multiple results, row cap, cancellation, read-only validation, native identifier quoting and actual transaction state. Real MySQL 8.4.11 / MariaDB 13.0.2 contracts and native macOS MySQL workflow passed.
-- [ ] MySQL/MariaDB safe staged editing; reconnect, connection testing, configurable network timeouts and broader metadata.
+- [x] MySQL/MariaDB InnoDB staged insert/update/delete; exact bound values, optimistic conflicts, savepoint rollback, manual/autocommit-disabled transactions, conversion-warning guards and table-level editability.
+- [x] MySQL/MariaDB real 60-second locked-row edit timeout and incomplete-trigger rollback contracts; unconfirmed rollback closes the session.
+- [x] Native macOS MySQL staged review/update/insert/delete, manual transaction rollback and stale-row rejection.
+- [ ] Reconnect, connection testing, configurable network timeouts and broader metadata.
 - [ ] Verified TLS options/client certificates and SSH tunnels/bastion support.
 - [ ] SQL Server, DuckDB and ClickHouse with actual integration services.
 - [ ] Explain tree, ER diagrams with saved layouts, DDL/statistics/triggers/constraints.
@@ -39,7 +42,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 
 - [x] Current-statement execution waits for a complete parser tree and fails closed when unavailable; regression protects against accidental whole-file execution.
 - [ ] Editor error locations, robust alias/column completion, query favorites/recent refinements and shortcut preferences.
-- [x] Actual SQLite/PostgreSQL transaction state after queries; failed PostgreSQL transactions require ROLLBACK.
+- [x] Actual transaction state after queries and successful/failed edit batches; failed PostgreSQL transactions require ROLLBACK, closed sessions show an unavailable state.
 - [ ] Refine simultaneous connection lifecycle and configurable production confirmations.
 - [ ] Cold/warm interactive startup, process-tree memory, five connections, 100k rows, large schema, 100 tabs, scroll frames, query overhead/throughput/cancellation benchmark history.
 - [ ] Address measured bottlenecks without relaxing targets; compare against other clients only with reproducible evidence.

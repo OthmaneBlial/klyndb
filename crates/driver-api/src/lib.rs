@@ -73,6 +73,7 @@ pub struct Column {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableInfo {
+    pub editable: bool,
     pub columns: Vec<Column>,
     pub ddl: Option<String>,
     pub indexes: Vec<serde_json::Value>,

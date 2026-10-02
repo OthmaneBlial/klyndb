@@ -15,3 +15,4 @@ serde_json.workspace = true
 mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
 url = "2"
 hex = "0.4"
+uuid.workspace = true

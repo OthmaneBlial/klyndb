@@ -117,7 +117,7 @@ export default function App() {
     } | null>(null),
     [applying, setApplying] = useState<Record<string, boolean>>({}),
     [transactionStates, setTransactionStates] = useState<
-      Record<string, "idle" | "active" | "failed">
+      Record<string, "idle" | "active" | "failed" | "unknown">
     >({});
   const applyingRef = useRef(applying);
   applyingRef.current = applying;
@@ -134,7 +134,7 @@ export default function App() {
     connection &&
     connected[connection.id]?.edit_rows &&
     !connection.read_only &&
-    inspector &&
+    inspector?.info.editable &&
     tableJobs[active] === status?.id &&
     status?.done &&
     !status.error &&
@@ -569,6 +569,11 @@ export default function App() {
     } catch (e) {
       report(String(e));
     } finally {
+      // Errors such as a server deadlock can roll back the user's whole transaction.
+      const state = await api("transaction_state", { id: c.id }).catch(
+        () => "unknown" as const,
+      );
+      setTransactionStates((s) => ({ ...s, [c.id]: state }));
       starting.current.delete(tab.id);
       setApplying((s) => ({ ...s, [tab.id]: false }));
     }
@@ -1167,7 +1172,9 @@ export default function App() {
                 {connection &&
                 transactionStates[connection.id] !== undefined &&
                 transactionStates[connection.id] !== "idle"
-                  ? ` · transaction ${transactionStates[connection!.id]}${transactionStates[connection!.id] === "failed" ? " (ROLLBACK required)" : " (COMMIT or ROLLBACK)"}`
+                  ? transactionStates[connection.id] === "unknown"
+                    ? " · transaction state unavailable (check connection)"
+                    : ` · transaction ${transactionStates[connection!.id]}${transactionStates[connection!.id] === "failed" ? " (ROLLBACK required)" : " (COMMIT or ROLLBACK)"}`
                   : ""}
               </span>
               <span>

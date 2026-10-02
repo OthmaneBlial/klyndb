@@ -53,8 +53,8 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | Database | Queries & schema | Staged grid edits | Verified against |
 | --- | --- | --- | --- |
 | PostgreSQL | ✓ | ✓ | PostgreSQL 16 |
-| MySQL | ✓ | SQL writes; grid edits next | MySQL 8.4.11 |
-| MariaDB | ✓ | SQL writes; grid edits next | MariaDB 13.0.2 |
+| MySQL | ✓ | ✓ · InnoDB | MySQL 8.4.11 |
+| MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.

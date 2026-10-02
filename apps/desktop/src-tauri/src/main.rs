@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use klyndb_connections::{Connection, Store};
 use klyndb_core::{Engine, QueryStatus};
-use klyndb_driver_api::{Capabilities, Change, MutationResult, Row, Table, TableInfo};
+use klyndb_driver_api::{
+    Capabilities, Change, MutationResult, Row, Table, TableInfo, TransactionState,
+};
 use std::sync::Arc;
 use tauri::{Manager, State};
 
@@ -105,6 +107,19 @@ async fn table_select_sql(
         .await
         .map_err(api)?
         .table_select_sql(&table, limit)
+        .map_err(api)
+}
+#[tauri::command]
+async fn transaction_state(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+) -> ApiResult<TransactionState> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .transaction_state()
+        .await
         .map_err(api)
 }
 #[tauri::command]
@@ -287,6 +302,7 @@ fn main() {
             inspect_table,
             table_select_sql,
             apply_changes,
+            transaction_state,
             analyze_query,
             start_query,
             query_status,
