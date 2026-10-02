@@ -1,0 +1,245 @@
+use async_trait::async_trait;
+use klyndb_driver_api::*;
+use rusqlite::fallible_iterator::FallibleIterator;
+use rusqlite::{Connection, OpenFlags, types::ValueRef};
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+pub struct Sqlite {
+    connection: Arc<Mutex<Option<Connection>>>,
+}
+fn err(e: impl std::fmt::Display) -> Error {
+    Error::new(e.to_string())
+}
+impl Sqlite {
+    pub async fn connect(path: String, read_only: bool, create: bool) -> Result<Self> {
+        let connection = tokio::task::spawn_blocking(move || {
+            let flags = if read_only {
+                OpenFlags::SQLITE_OPEN_READ_ONLY
+            } else if create {
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
+            } else {
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+            };
+            let conn = Connection::open_with_flags(path, flags).map_err(err)?;
+            conn.busy_timeout(std::time::Duration::from_secs(5))
+                .map_err(err)?;
+            conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(err)?;
+            if read_only {
+                conn.execute_batch("PRAGMA query_only=ON;").map_err(err)?;
+            }
+            Ok::<_, Error>(conn)
+        })
+        .await
+        .map_err(err)??;
+        Ok(Self {
+            connection: Arc::new(Mutex::new(Some(connection))),
+        })
+    }
+    async fn with<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let connection = self.connection.clone();
+        tokio::task::spawn_blocking(move || {
+            let guard = connection
+                .lock()
+                .map_err(|_| Error::new("SQLite connection lock failed"))?;
+            f(guard
+                .as_ref()
+                .ok_or_else(|| Error::new("Connection is closed"))?)
+        })
+        .await
+        .map_err(err)?
+    }
+}
+#[async_trait]
+impl Session for Sqlite {
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            transactions: true,
+            schemas: false,
+            explain: true,
+            edit_rows: true,
+            cancel: true,
+            tls: false,
+        }
+    }
+    async fn execute(
+        &self,
+        sql: String,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        limit: usize,
+    ) -> Result<()> {
+        self.with(move |conn| {
+            let token = cancel.clone();
+            conn.progress_handler(1000, Some(move || token.is_cancelled()))
+                .map_err(err)?;
+            let result = (|| {
+                let mut statements = rusqlite::Batch::new(conn, &sql);
+                while let Some(mut statement) = statements.next().map_err(err)? {
+                    if cancel.is_cancelled() {
+                        return Err(Error::new("Query cancelled"));
+                    }
+                    let columns = statement
+                        .column_names()
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>();
+                    let width = columns.len();
+                    output.blocking_send(Batch::Columns(columns)).map_err(err)?;
+                    let mut count = 0;
+                    let mut truncated = false;
+                    if width == 0 {
+                        statement.execute([]).map_err(err)?;
+                    } else {
+                        let mut rows = statement.query([]).map_err(err)?;
+                        let mut buffer = Vec::with_capacity(256);
+                        let mut buffer_bytes=0;
+                        while let Some(row) = rows.next().map_err(err)? {
+                            if cancel.is_cancelled() {
+                                return Err(Error::new("Query cancelled"));
+                            }
+                            if count >= limit {
+                                truncated = true;
+                                break;
+                            }
+                            let mut cells = Vec::with_capacity(width);
+                            for i in 0..width {
+                                cells.push(match row.get_ref(i).map_err(err)? {
+                                    ValueRef::Null => Cell::Null,
+                                    ValueRef::Integer(n) => Cell::Number(n.to_string()),
+                                    ValueRef::Real(n) => Cell::Number(n.to_string()),
+                                    ValueRef::Text(s) => {
+                                        Cell::Text(String::from_utf8_lossy(s).into())
+                                    }
+                                    ValueRef::Blob(b) => Cell::Binary(hex::encode(b)),
+                                });
+                            }
+                            let row_bytes=cells.iter().map(Cell::byte_len).sum::<usize>();
+                            if row_bytes>8*1024*1024 { return Err(Error::new("A result row exceeds 8 MiB. Select smaller values or use database-native export.")); }
+                            buffer_bytes+=row_bytes;
+                            buffer.push(cells);
+                            count += 1;
+                            if buffer.len() == 256 || buffer_bytes>=256*1024 {
+                                buffer_bytes=0;
+                                output
+                                    .blocking_send(Batch::Rows(std::mem::take(&mut buffer)))
+                                    .map_err(err)?;
+                            }
+                        }
+                        if !buffer.is_empty() {
+                            output.blocking_send(Batch::Rows(buffer)).map_err(err)?;
+                        }
+                    }
+                    output
+                        .blocking_send(Batch::Complete {
+                            affected: if width == 0 { conn.changes() } else { 0 },
+                            truncated,
+                        })
+                        .map_err(err)?;
+                }
+                Ok(())
+            })();
+            conn.progress_handler(0, None::<fn() -> bool>)
+                .map_err(err)?;
+            result
+        })
+        .await
+    }
+    async fn tables(&self) -> Result<Vec<Table>> {
+        self.with(|conn| {
+            let mut stmt = conn.prepare("SELECT name,type FROM sqlite_schema WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name").map_err(err)?;
+            stmt.query_map([], |row| Ok(Table { schema: "main".into(), name: row.get(0)?, kind: row.get(1)? })).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)
+        }).await
+    }
+    async fn inspect(&self, table: &Table) -> Result<TableInfo> {
+        let name = table.name.clone();
+        self.with(move |conn| {
+            let mut stmt = conn.prepare("SELECT name,type,\"notnull\",dflt_value,pk FROM pragma_table_info(?)").map_err(err)?;
+            let columns = stmt.query_map([&name], |row| Ok(Column { name: row.get(0)?, data_type: row.get(1)?, nullable: row.get::<_, i64>(2)? == 0, default: row.get(3)?, primary_key: row.get::<_, i64>(4)? > 0 })).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+            let ddl = conn.query_row("SELECT sql FROM sqlite_schema WHERE name=?", [&name], |r| r.get(0)).ok();
+            let mut stmt = conn.prepare("SELECT name,\"unique\",origin,partial FROM pragma_index_list(?)").map_err(err)?;
+            let indexes = stmt.query_map([&name], |r| Ok(serde_json::json!({"name": r.get::<_, String>(0)?, "unique":r.get::<_, bool>(1)?, "origin":r.get::<_, String>(2)?, "partial":r.get::<_, bool>(3)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+            let mut stmt = conn.prepare("SELECT \"table\",\"from\",\"to\",on_update,on_delete FROM pragma_foreign_key_list(?)").map_err(err)?;
+            let foreign_keys = stmt.query_map([&name], |r| Ok(serde_json::json!({"table":r.get::<_, String>(0)?, "from":r.get::<_, String>(1)?, "to":r.get::<_, Option<String>>(2)?, "on_update":r.get::<_, String>(3)?, "on_delete":r.get::<_, String>(4)?}))).map_err(err)?.collect::<std::result::Result<Vec<_>, _>>().map_err(err)?;
+            Ok(TableInfo { columns, ddl, indexes, foreign_keys })
+        }).await
+    }
+    async fn disconnect(&self) -> Result<()> {
+        let connection = self.connection.clone();
+        tokio::task::spawn_blocking(move || {
+            connection.lock().map_err(err)?.take();
+            Ok(())
+        })
+        .await
+        .map_err(err)?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn real_file_preserves_types_limits_and_cancels() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db.sqlite").to_string_lossy().to_string();
+        let db = Arc::new(Sqlite::connect(path.clone(), false, true).await.unwrap());
+        let (tx, mut rx) = mpsc::channel(2);
+        let driver = db.clone();
+        let task = tokio::spawn(async move {
+            driver.execute("CREATE TABLE t(id INTEGER PRIMARY KEY, v BLOB); INSERT INTO t VALUES(9223372036854775807,x'ff'); SELECT id,v,NULL FROM t; SELECT 1 WHERE 0".into(), tx, CancellationToken::new(), 10).await
+        });
+        let mut sets = 0;
+        while let Some(batch) = rx.recv().await {
+            match batch {
+                Batch::Columns(_) => sets += 1,
+                Batch::Rows(rows) => assert_eq!(
+                    rows[0],
+                    vec![
+                        Cell::Number("9223372036854775807".into()),
+                        Cell::Binary("ff".into()),
+                        Cell::Null
+                    ]
+                ),
+                _ => {}
+            }
+        }
+        task.await.unwrap().unwrap();
+        assert_eq!(sets, 4);
+        assert!(
+            db.inspect(&db.tables().await.unwrap()[0])
+                .await
+                .unwrap()
+                .columns[0]
+                .primary_key
+        );
+        let ro = Sqlite::connect(path, true, false).await.unwrap();
+        let (tx, mut rx) = mpsc::channel(16);
+        assert!(
+            ro.execute("DELETE FROM t".into(), tx, CancellationToken::new(), 10)
+                .await
+                .is_err()
+        );
+        rx.close();
+        let token = CancellationToken::new();
+        let (tx, mut rx) = mpsc::channel(2);
+        let d = db.clone();
+        let t = token.clone();
+        let task = tokio::spawn(async move {
+            d.execute("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n) SELECT sum(x) FROM n".into(), tx, t, 10).await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        token.cancel();
+        while rx.recv().await.is_some() {}
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+    }
+}

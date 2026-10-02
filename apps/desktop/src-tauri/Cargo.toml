@@ -1,0 +1,32 @@
+[package]
+name = "klyndb-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[dependencies]
+tauri = { version = "2", features = [] }
+klyndb-core = { path = "../../../crates/core" }
+klyndb-connections = { path = "../../../crates/connections" }
+klyndb-driver-api = { path = "../../../crates/driver-api" }
+klyndb-query = { path = "../../../crates/query" }
+klyndb-export = { path = "../../../crates/export" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rfd = "0.17"
+tempfile.workspace = true
+zeroize = "1"
+
+[[bin]]
+name = "klyndb"
+path = "src/main.rs"

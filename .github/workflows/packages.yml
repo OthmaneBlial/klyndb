@@ -1,0 +1,32 @@
+name: Native packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm run tauri build
+        working-directory: apps/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: klyndb-${{ runner.os }}-${{ runner.arch }}
+          path: target/release/bundle/
+          if-no-files-found: error

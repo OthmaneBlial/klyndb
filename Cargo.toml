@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres", "apps/desktop/src-tauri"]
+default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+rusqlite = { version = "0.40", default-features = false, features = ["libsqlite3-sys", "bundled", "hooks"] }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-util = "0.3"
+tempfile = "3"
+thiserror = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

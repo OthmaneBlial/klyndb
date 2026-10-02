@@ -1,0 +1,3 @@
+# Preserve upstream license texts and the original user specification verbatim.
+apps/desktop/src-tauri/resources/THIRD_PARTY_LICENSES.txt -whitespace
+docs/PRODUCT_SPEC.md whitespace=-blank-at-eol

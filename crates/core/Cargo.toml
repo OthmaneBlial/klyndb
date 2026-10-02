@@ -1,0 +1,21 @@
+[package]
+name = "klyndb-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../driver-api" }
+klyndb-connections = { path = "../connections" }
+klyndb-query = { path = "../query" }
+klyndb-sqlite = { path = "../drivers/sqlite" }
+klyndb-postgres = { path = "../drivers/postgres" }
+rusqlite.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+tempfile.workspace = true
+zeroize = "1"
+tracing = "0.1"

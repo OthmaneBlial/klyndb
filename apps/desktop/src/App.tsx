@@ -1,0 +1,1325 @@
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  lazy,
+  Suspense,
+} from "react";
+import {
+  Database,
+  Plus,
+  Search,
+  Play,
+  Square,
+  Settings,
+  PanelLeft,
+  ChevronRight,
+  ChevronDown,
+  Table2,
+  RefreshCw,
+  Unplug,
+  Pencil,
+  Copy,
+  Trash2,
+  Clock,
+  Bookmark,
+  X,
+  WandSparkles,
+  Download,
+  Shield,
+  Command,
+  ArrowUpRight,
+  FileCode2,
+  KeyRound,
+} from "lucide-react";
+
+import {
+  api,
+  type Connection,
+  type Table,
+  type TableInfo,
+  type QueryStatus,
+  type History,
+  type Capabilities,
+} from "./api";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ConnectionDialog } from "./components/ConnectionDialog";
+import type { EditorHandle } from "./components/SqlEditor";
+const SqlEditor = lazy(() =>
+  import("./components/SqlEditor").then((m) => ({ default: m.SqlEditor })),
+);
+import { ResultGrid } from "./components/ResultGrid";
+import { CommandPalette } from "./components/CommandPalette";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { Modal } from "./components/Modal";
+import {
+  defaults,
+  restoreWorkspace,
+  type Preferences,
+  type Tab,
+} from "./workspace";
+
+interface SavedQuery {
+  id: string;
+  name: string;
+  sql: string;
+  connection: string;
+  favorite: boolean;
+}
+type View = "results" | "messages" | "structure";
+export default function App() {
+  const [connections, setConnections] = useState<Connection[]>([]),
+    [connected, setConnected] = useState<Record<string, Capabilities>>({}),
+    [tables, setTables] = useState<Record<string, Table[]>>({}),
+    [columns, setColumns] = useState<Record<string, Record<string, string[]>>>(
+      {},
+    );
+  const [tabs, setTabs] = useState<Tab[]>([]),
+    [active, setActive] = useState(""),
+    [preferences, setPreferences] = useState<Preferences>(defaults),
+    [loaded, setLoaded] = useState(false),
+    [notice, setNotice] = useState(""),
+    [connecting, setConnecting] = useState<string[]>([]);
+  const [dialog, setDialog] = useState<Connection | true | null>(null),
+    [settings, setSettings] = useState(false),
+    [palette, setPalette] = useState(false),
+    [sidebarSearch, setSidebarSearch] = useState(""),
+    [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [statuses, setStatuses] = useState<Record<string, QueryStatus>>({}),
+    [resultSets, setResultSets] = useState<Record<string, number>>({}),
+    [view, setView] = useState<View>("results"),
+    [inspector, setInspector] = useState<{
+      table: Table;
+      info: TableInfo;
+    } | null>(null);
+  const [history, setHistory] = useState<History[] | null>(null),
+    [saved, setSaved] = useState<SavedQuery[]>([]),
+    [savedOpen, setSavedOpen] = useState(false),
+    [saveName, setSaveName] = useState<string | null>(null),
+    [confirm, setConfirm] = useState<{
+      title: string;
+      message: string;
+      sql?: string;
+      action: () => void;
+    } | null>(null),
+    [exportOpen, setExportOpen] = useState(false),
+    [exportFormat, setExportFormat] = useState("csv");
+  const editorRef = useRef<EditorHandle | null>(null);
+  const current = tabs.find((t) => t.id === active),
+    connection = connections.find((c) => c.id === current?.connection),
+    status = statuses[active],
+    busy = !!status && !status.done,
+    set = resultSets[active] ?? 0;
+  const report = useCallback((message: string) => setNotice(message), []);
+  const updateTab = useCallback(
+    (id: string, patch: Partial<Tab>) =>
+      setTabs((t) =>
+        t.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)),
+      ),
+    [],
+  );
+  const schema = useMemo(
+    () =>
+      Object.fromEntries(
+        (tables[current?.connection ?? ""] ?? []).map((t) => [
+          t.name,
+          columns[current?.connection ?? ""]?.[`${t.schema}.${t.name}`] ?? [],
+        ]),
+      ),
+    [tables, columns, current?.connection],
+  );
+  useEffect(() => {
+    Promise.all([
+      api("connections"),
+      api("load_document", { id: "workspace" }),
+      api("load_document", { id: "saved-queries" }),
+    ])
+      .then(([connections, workspace, queries]) => {
+        setConnections(connections);
+        const restored = restoreWorkspace(workspace);
+        setTabs(restored.tabs);
+        setActive(restored.active);
+        setPreferences(restored.preferences);
+        if (Array.isArray(queries))
+          setSaved(
+            queries.filter(
+              (q) =>
+                q &&
+                typeof q.name === "string" &&
+                typeof q.sql === "string" &&
+                typeof q.connection === "string" &&
+                typeof q.id === "string",
+            ),
+          );
+        setLoaded(true);
+      })
+      .catch((e) => report(`Could not load local state: ${e}`));
+  }, [report]);
+  useEffect(() => {
+    if (!loaded) return;
+    const timer = setTimeout(() => {
+      api("save_document", {
+        id: "workspace",
+        data: { version: 1, tabs, active, preferences },
+      }).catch((e) => report(`Workspace could not be saved: ${e}`));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [tabs, active, preferences, loaded, report]);
+  const workspaceRef = useRef({ version: 1, tabs, active, preferences });
+  workspaceRef.current = { version: 1, tabs, active, preferences };
+  useEffect(() => {
+    let dispose: (() => void) | undefined;
+    let live = true;
+    getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        event.preventDefault();
+        try {
+          await api("save_document", {
+            id: "workspace",
+            data: workspaceRef.current,
+          });
+          await getCurrentWindow().destroy();
+        } catch (e) {
+          report(`Could not save before closing: ${e}`);
+        }
+      })
+      .then((unlisten) => {
+        if (live) dispose = unlisten;
+        else unlisten();
+      })
+      .catch((e) => report(String(e)));
+    return () => {
+      live = false;
+      dispose?.();
+    };
+  }, [report]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = preferences.theme;
+    document.documentElement.style.setProperty(
+      "--editor-font-size",
+      `${preferences.fontSize}px`,
+    );
+  }, [preferences]);
+  const running = Object.entries(statuses)
+    .filter(([, s]) => !s.done)
+    .map(([tab, s]) => `${tab}:${s.id}`)
+    .join("|");
+  useEffect(() => {
+    let live = true;
+    const timer = setInterval(() => {
+      for (const item of running.split("|").filter(Boolean)) {
+        const [tab, id] = item.split(":");
+        api("query_status", { id })
+          .then((status) => {
+            if (live)
+              setStatuses((s) =>
+                s[tab]?.id === id ? { ...s, [tab]: status } : s,
+              );
+          })
+          .catch((e) => {
+            if (live) {
+              report(String(e));
+              setStatuses((s) =>
+                s[tab]
+                  ? { ...s, [tab]: { ...s[tab], done: true, error: String(e) } }
+                  : s,
+              );
+            }
+          });
+      }
+    }, 180);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [running, report]);
+  function newTab(
+    connectionId = connection?.id ?? connections[0]?.id ?? "",
+    sql = "SELECT 1;",
+    name?: string,
+  ) {
+    if (tabs.length >= 100) {
+      report("The workspace is limited to 100 tabs. Close an unused tab.");
+      return;
+    }
+    const id = crypto.randomUUID();
+    setTabs((t) => [
+      ...t,
+      {
+        id,
+        name: name ?? `Query ${t.length + 1}`,
+        connection: connectionId,
+        sql,
+      },
+    ]);
+    setActive(id);
+    setView("results");
+  }
+  async function closeTab(id: string) {
+    const result = statuses[id];
+    if (result) await api("release_result", { id: result.id });
+    setStatuses((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setTabs((t) => t.filter((tab) => tab.id !== id));
+    if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
+  }
+  async function refresh(id: string) {
+    setTables((t) => ({ ...t, [id]: [] }));
+    try {
+      const result = await api("tables", { id });
+      setTables((t) => ({ ...t, [id]: result }));
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  async function connect(c: Connection, password: string | null = null) {
+    if (connecting.includes(c.id)) return;
+    setConnecting((ids) => [...ids, c.id]);
+    try {
+      const capabilities = await api("connect", { id: c.id, password });
+      setConnected((s) => ({ ...s, [c.id]: capabilities }));
+      setExpanded((s) => ({ ...s, [c.id]: true }));
+      await refresh(c.id);
+      if (!tabs.some((t) => t.connection === c.id)) newTab(c.id);
+      else setActive(tabs.find((t) => t.connection === c.id)!.id);
+      setNotice("");
+    } catch (e) {
+      report(String(e));
+    } finally {
+      setConnecting((ids) => ids.filter((id) => id !== c.id));
+    }
+  }
+  async function disconnect(c: Connection) {
+    try {
+      await api("disconnect", { id: c.id });
+      setConnected((s) => {
+        const next = { ...s };
+        delete next[c.id];
+        return next;
+      });
+      setTables((t) => {
+        const next = { ...t };
+        delete next[c.id];
+        return next;
+      });
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  async function run(
+    sql = editorRef.current?.runText() ?? current?.sql ?? "",
+    confirmed = false,
+  ) {
+    if (!current || !connection || busy) return;
+    setNotice("");
+    try {
+      if (!connected[connection.id]) {
+        report("Connect to this database before running SQL.");
+        return;
+      }
+      const analysis = await api("analyze_query", {
+        sql,
+        engine: connection.engine,
+      });
+      if (!confirmed && analysis.warnings.length) {
+        setConfirm({
+          title: "Confirm destructive SQL",
+          message: `${connection.name} · ${connection.environment}\n${analysis.warnings.join("\n")}`,
+          sql,
+          action: () => {
+            void run(sql, true);
+          },
+        });
+        return;
+      }
+      if (status) await api("release_result", { id: status.id });
+      const id = await api("start_query", {
+        connection: connection.id,
+        sql,
+        limit: preferences.rowLimit,
+        timeoutSeconds: preferences.timeout,
+        confirmed,
+      });
+      setStatuses((s) => ({
+        ...s,
+        [current.id]: { id, sets: [], done: false, error: null, elapsed_ms: 0 },
+      }));
+      setResultSets((s) => ({ ...s, [current.id]: 0 }));
+      setView("results");
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  async function openTable(c: Connection, table: Table) {
+    try {
+      const info = await api("inspect_table", { id: c.id, table });
+      setColumns((s) => ({
+        ...s,
+        [c.id]: {
+          ...s[c.id],
+          [`${table.schema}.${table.name}`]: info.columns.map((c) => c.name),
+        },
+      }));
+      setInspector({ table, info });
+      const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
+      newTab(
+        c.id,
+        `SELECT * FROM ${quote(table.schema)}.${quote(table.name)} LIMIT ${preferences.rowLimit};`,
+        table.name,
+      );
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  async function formatSql() {
+    try {
+      const { format } = await import("sql-formatter");
+      editorRef.current?.replace(
+        format(editorRef.current.allText(), {
+          language: connection?.engine === "postgres" ? "postgresql" : "sqlite",
+        }),
+      );
+    } catch (e) {
+      report(`Could not format SQL: ${e}`);
+    }
+  }
+  async function duplicate(c: Connection) {
+    try {
+      const copy = await api("save_connection", {
+        connection: { ...c, id: "", name: `${c.name} copy` },
+        password: null,
+        remember: true,
+      });
+      setConnections((s) => [...s, copy]);
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  function deleteConnection(c: Connection) {
+    setConfirm({
+      title: "Delete saved connection",
+      message: `Remove ${c.name} and its stored credentials? The database itself is preserved.`,
+      action: () => {
+        api("delete_connection", { id: c.id })
+          .then(() => {
+            setConnections((s) => s.filter((item) => item.id !== c.id));
+            setConnected((s) => {
+              const next = { ...s };
+              delete next[c.id];
+              return next;
+            });
+          })
+          .catch((e) => report(String(e)));
+      },
+    });
+  }
+  async function saveQuery() {
+    if (!current || !saveName?.trim()) return;
+    const queries = [
+      ...saved,
+      {
+        id: crypto.randomUUID(),
+        name: saveName.trim(),
+        sql: current.sql,
+        connection: current.connection,
+        favorite: false,
+      },
+    ];
+    try {
+      await api("save_document", { id: "saved-queries", data: queries });
+      setSaved(queries);
+      setSaveName(null);
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  async function changeSaved(next: SavedQuery[]) {
+    try {
+      await api("save_document", { id: "saved-queries", data: next });
+      setSaved(next);
+    } catch (e) {
+      report(String(e));
+    }
+  }
+  const commands = [
+    { name: "New SQL tab", key: "⌘ T", action: () => newTab() },
+    { name: "New connection", key: "", action: () => setDialog(true) },
+    {
+      name: "Run current statement or selection",
+      key: "⌘ ↵",
+      action: () => void run(),
+    },
+    {
+      name: "Run entire editor",
+      key: "",
+      action: () => void run(editorRef.current?.allText()),
+    },
+    { name: "Format SQL", key: "⇧ ⌘ F", action: formatSql },
+    {
+      name: "Refresh schema",
+      key: "",
+      action: () => connection && void refresh(connection.id),
+    },
+    { name: "Saved queries", key: "", action: () => setSavedOpen(true) },
+    {
+      name: "Query history",
+      key: "",
+      action: () =>
+        void api("history")
+          .then(setHistory)
+          .catch((e) => report(String(e))),
+    },
+    {
+      name: "Toggle sidebar",
+      key: "",
+      action: () => setPreferences((p) => ({ ...p, sidebar: !p.sidebar })),
+    },
+    { name: "Settings", key: "", action: () => setSettings(true) },
+    ...connections.map((c) => ({
+      name: `Connect · ${c.name}`,
+      key: "",
+      action: () => void connect(c),
+    })),
+    ...(tables[current?.connection ?? ""] ?? []).map((t) => ({
+      name: `Open table · ${t.schema}.${t.name}`,
+      key: "",
+      action: () => connection && void openTable(connection, t),
+    })),
+  ];
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((p) => !p);
+      }
+      if (e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        newTab();
+      }
+      if (e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setSaveName(current?.name ?? "");
+      }
+      if (e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        formatSql();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
+  const groups = [...new Set(connections.map((c) => c.group || "Personal"))];
+  return (
+    <div className={`workbench ${preferences.sidebar ? "" : "sidebar-hidden"}`}>
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">k</span>
+          <strong>Klyndb</strong>
+          <span className="preview-label">PREVIEW</span>
+        </div>
+        <div className="topbar-center">
+          {connection ? (
+            <>
+              <span
+                className="connection-dot"
+                style={{ background: connection.color }}
+              />
+              <span>{connection.name}</span>
+              <span className={`environment ${connection.environment}`}>
+                {connection.environment}
+              </span>
+              {connection.read_only && <Shield size={13} />}
+            </>
+          ) : (
+            <span className="muted">Your databases. Your workspace.</span>
+          )}
+        </div>
+        <button
+          className="palette-trigger"
+          onClick={() => {
+            setPalette(true);
+          }}
+        >
+          <Search size={14} />
+          <span>Jump to anything</span>
+          <kbd>⌘ K</kbd>
+        </button>
+        <button
+          className="icon"
+          aria-label="Settings"
+          onClick={() => setSettings(true)}
+        >
+          <Settings size={17} />
+        </button>
+      </header>
+      {preferences.sidebar && (
+        <aside className="sidebar">
+          <div className="sidebar-heading">
+            <span>WORKSPACE</span>
+            <button
+              className="icon"
+              aria-label="New connection"
+              onClick={() => setDialog(true)}
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+          <div className="sidebar-search search">
+            <Search size={14} />
+            <input
+              aria-label="Search connections and tables"
+              placeholder="Find a connection or table…"
+              value={sidebarSearch}
+              onChange={(e) => setSidebarSearch(e.target.value)}
+            />
+          </div>
+          <div className="connection-tree">
+            {groups.map((group) => (
+              <section key={group}>
+                <h3>{group}</h3>
+                {connections
+                  .filter((c) => (c.group || "Personal") === group)
+                  .map((c) => {
+                    const allTables = tables[c.id] ?? [],
+                      matches = allTables.filter((t) =>
+                        `${t.schema}.${t.name}`
+                          .toLowerCase()
+                          .includes(sidebarSearch.toLowerCase()),
+                      );
+                    if (
+                      sidebarSearch &&
+                      !c.name
+                        .toLowerCase()
+                        .includes(sidebarSearch.toLowerCase()) &&
+                      !matches.length
+                    )
+                      return null;
+                    return (
+                      <div key={c.id} className="connection-node">
+                        <div
+                          className={`connection-item ${current?.connection === c.id ? "active" : ""}`}
+                        >
+                          <button
+                            className="connection-name"
+                            onClick={() =>
+                              connected[c.id]
+                                ? setExpanded((s) => ({
+                                    ...s,
+                                    [c.id]: !s[c.id],
+                                  }))
+                                : void connect(c)
+                            }
+                          >
+                            {expanded[c.id] ? (
+                              <ChevronDown size={13} />
+                            ) : (
+                              <ChevronRight size={13} />
+                            )}
+                            <Database size={16} style={{ color: c.color }} />
+                            <span>
+                              {c.favorite ? "★ " : ""}
+                              {c.name}
+                            </span>
+                            <span
+                              className={`status-dot ${connected[c.id] ? "online" : ""}`}
+                            />
+                          </button>
+                        </div>
+                        <div className="connection-actions">
+                          <span className={`environment ${c.environment}`}>
+                            {connecting.includes(c.id)
+                              ? "connecting…"
+                              : c.environment}
+                          </span>
+                          <button
+                            className="icon"
+                            aria-label={`Edit ${c.name}`}
+                            onClick={() => setDialog(c)}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            className="icon"
+                            aria-label={`Duplicate ${c.name}`}
+                            onClick={() => void duplicate(c)}
+                          >
+                            <Copy size={12} />
+                          </button>
+                          {connected[c.id] ? (
+                            <button
+                              className="icon"
+                              aria-label={`Disconnect ${c.name}`}
+                              onClick={() => void disconnect(c)}
+                            >
+                              <Unplug size={12} />
+                            </button>
+                          ) : (
+                            <button
+                              className="icon"
+                              aria-label={`Delete ${c.name}`}
+                              onClick={() => deleteConnection(c)}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {expanded[c.id] && connected[c.id] && (
+                          <div className="tables-list">
+                            <div className="tables-heading">
+                              <span>
+                                Tables & views <small>{allTables.length}</small>
+                              </span>
+                              <button
+                                className="icon"
+                                aria-label={`Refresh ${c.name} schema`}
+                                onClick={() => void refresh(c.id)}
+                              >
+                                <RefreshCw size={12} />
+                              </button>
+                            </div>
+                            {matches.map((table) => (
+                              <button
+                                className="table-item"
+                                key={`${table.schema}.${table.name}`}
+                                onClick={() => void openTable(c, table)}
+                              >
+                                <Table2 size={13} />
+                                <span>
+                                  {table.schema !== "main"
+                                    ? `${table.schema}.`
+                                    : ""}
+                                  {table.name}
+                                </span>
+                              </button>
+                            ))}
+                            {!allTables.length && (
+                              <p className="muted tree-empty">
+                                No tables. Create one in a SQL tab.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </section>
+            ))}
+          </div>
+          <div className="sidebar-footer">
+            <button
+              onClick={() =>
+                void api("history")
+                  .then(setHistory)
+                  .catch((e) => report(String(e)))
+              }
+            >
+              <Clock size={15} /> Query history
+            </button>
+            <button onClick={() => setSavedOpen(true)}>
+              <Bookmark size={15} /> Saved queries
+              <span>{saved.length || ""}</span>
+            </button>
+            <button onClick={() => setDialog(true)}>
+              <Plus size={15} /> Add connection
+            </button>
+            <div className="local-note">
+              <Shield size={12} /> Local-first · no account
+            </div>
+          </div>
+        </aside>
+      )}
+      <main className="main">
+        <div className="tabbar">
+          <button
+            className="icon toggle-sidebar"
+            aria-label="Toggle sidebar"
+            onClick={() =>
+              setPreferences((p) => ({ ...p, sidebar: !p.sidebar }))
+            }
+          >
+            <PanelLeft size={16} />
+          </button>
+          <div className="tabs">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`tab ${tab.id === active ? "active" : ""}`}
+              >
+                <button
+                  onClick={() => {
+                    setActive(tab.id);
+                    setView("results");
+                  }}
+                >
+                  <FileCode2 size={13} />
+                  <span>{tab.name}</span>
+                  <small>
+                    {connections.find((c) => c.id === tab.connection)?.name ??
+                      "No connection"}
+                  </small>
+                  {statuses[tab.id] && !statuses[tab.id].done && (
+                    <span className="running-dot" />
+                  )}
+                </button>
+                <button
+                  className="tab-close"
+                  aria-label={`Close ${tab.name}`}
+                  onClick={() =>
+                    void closeTab(tab.id).catch((e) => report(String(e)))
+                  }
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            className="icon"
+            aria-label="New SQL tab"
+            onClick={() => newTab()}
+          >
+            <Plus size={17} />
+          </button>
+        </div>
+        {notice && (
+          <div className="notice" role="alert">
+            <span>{notice}</span>
+            <button
+              className="icon"
+              aria-label="Dismiss message"
+              onClick={() => setNotice("")}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {current ? (
+          <>
+            <div className="query-toolbar">
+              <div>
+                <select
+                  aria-label="Tab connection"
+                  value={current.connection}
+                  disabled={busy}
+                  onChange={(e) =>
+                    updateTab(current.id, { connection: e.target.value })
+                  }
+                >
+                  <option value="">Choose connection</option>
+                  {connections.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                {connection && !connected[connection.id] && (
+                  <button onClick={() => void connect(connection)}>
+                    <Database size={14} /> Connect
+                  </button>
+                )}
+              </div>
+              <div>
+                <button
+                  title="Format SQL · Shift+Cmd/Ctrl+F"
+                  onClick={formatSql}
+                >
+                  <WandSparkles size={14} /> Format
+                </button>
+                <button
+                  title="Save query · Cmd/Ctrl+S"
+                  onClick={() => setSaveName(current.name)}
+                >
+                  <Bookmark size={14} />
+                </button>
+                {busy ? (
+                  <button
+                    className="danger"
+                    onClick={() =>
+                      void api("cancel_query", { id: status.id }).catch((e) =>
+                        report(String(e)),
+                      )
+                    }
+                  >
+                    <Square size={13} /> Cancel
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="primary"
+                      disabled={!connection || !connected[connection.id]}
+                      onClick={() => void run()}
+                    >
+                      <Play size={13} fill="currentColor" /> Run <kbd>⌘ ↵</kbd>
+                    </button>
+                    <button
+                      title="Run all statements"
+                      disabled={!connection || !connected[connection.id]}
+                      onClick={() => void run(editorRef.current?.allText())}
+                    >
+                      All
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            <section className="editor-area">
+              <Suspense
+                fallback={
+                  <div className="result-empty">Loading SQL editor…</div>
+                }
+              >
+                <SqlEditor
+                  key={current.id}
+                  value={current.sql}
+                  engine={connection?.engine ?? "sqlite"}
+                  schema={schema}
+                  onChange={(sql) => updateTab(current.id, { sql })}
+                  onRun={(sql) => void run(sql)}
+                  editorRef={editorRef}
+                />
+              </Suspense>
+            </section>
+            <section className="result-area">
+              <div className="result-toolbar">
+                <div className="result-views">
+                  <button
+                    className={view === "results" ? "selected" : ""}
+                    onClick={() => setView("results")}
+                  >
+                    <Table2 size={14} /> Results{" "}
+                    {status && (
+                      <small>
+                        {status.sets
+                          .reduce((n, s) => n + s.rows, 0)
+                          .toLocaleString()}
+                      </small>
+                    )}
+                  </button>
+                  <button
+                    className={view === "messages" ? "selected" : ""}
+                    onClick={() => setView("messages")}
+                  >
+                    Messages{status?.error && <span className="error-dot" />}
+                  </button>
+                  {inspector && (
+                    <button
+                      className={view === "structure" ? "selected" : ""}
+                      onClick={() => setView("structure")}
+                    >
+                      Structure
+                    </button>
+                  )}
+                </div>
+                <div>
+                  {status?.done && (
+                    <span className="query-timing">
+                      {status.elapsed_ms.toLocaleString()} ms
+                    </span>
+                  )}
+                  {status?.sets[set]?.columns.length > 0 && (
+                    <button
+                      disabled={!status.done}
+                      onClick={() => setExportOpen(true)}
+                    >
+                      <Download size={14} /> Export
+                    </button>
+                  )}
+                </div>
+              </div>
+              {status?.sets.length > 1 && view === "results" && (
+                <div className="result-set-tabs">
+                  {status.sets.map((s, i) => (
+                    <button
+                      key={i}
+                      className={set === i ? "selected" : ""}
+                      onClick={() =>
+                        setResultSets((p) => ({ ...p, [active]: i }))
+                      }
+                    >
+                      Result {i + 1}
+                      <small>
+                        {s.columns.length
+                          ? s.rows.toLocaleString()
+                          : `${s.affected} affected`}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {view === "structure" && inspector ? (
+                <div className="structure">
+                  <h3>
+                    {inspector.table.schema}.{inspector.table.name}
+                  </h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Nullable</th>
+                        <th>Default</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inspector.info.columns.map((c) => (
+                        <tr key={c.name}>
+                          <td>
+                            {c.primary_key && <KeyRound size={12} />} {c.name}
+                          </td>
+                          <td>{c.data_type}</td>
+                          <td>{c.nullable ? "Yes" : "No"}</td>
+                          <td>{c.default ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <h4>Indexes</h4>
+                  <pre>{JSON.stringify(inspector.info.indexes, null, 2)}</pre>
+                  <h4>Foreign keys</h4>
+                  <pre>
+                    {JSON.stringify(inspector.info.foreign_keys, null, 2)}
+                  </pre>
+                  {inspector.info.ddl && (
+                    <>
+                      <h4>DDL</h4>
+                      <pre>{inspector.info.ddl}</pre>
+                    </>
+                  )}
+                </div>
+              ) : view === "messages" ? (
+                <div className="messages">
+                  {status?.error ? (
+                    <p className="error">{status.error}</p>
+                  ) : status ? (
+                    <>
+                      <p>
+                        {status.done ? "Query completed." : "Query running…"}
+                      </p>
+                      {status.sets.map((s, i) => (
+                        <p key={i}>
+                          Statement {i + 1}: {s.rows.toLocaleString()} rows
+                          returned · {s.affected.toLocaleString()} rows affected
+                          {s.truncated ? " · row limit reached" : ""}
+                        </p>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="muted">
+                      No queries executed in this tab yet.
+                    </p>
+                  )}
+                </div>
+              ) : status?.sets[set]?.columns.length ? (
+                <ResultGrid
+                  key={`${status.id}-${set}`}
+                  id={status.id}
+                  set={set}
+                  metadata={status.sets[set]}
+                  onError={report}
+                />
+              ) : (
+                <div className="result-empty">
+                  {busy ? (
+                    <>
+                      <span className="spinner" />
+                      <h3>Running query</h3>
+                      <p>Results will appear as they arrive.</p>
+                    </>
+                  ) : status?.error ? (
+                    <>
+                      <h3>Query failed</h3>
+                      <p className="error">{status.error}</p>
+                    </>
+                  ) : status ? (
+                    <>
+                      <h3>Statement complete</h3>
+                      <p>{status.sets[set]?.affected ?? 0} rows affected</p>
+                    </>
+                  ) : (
+                    <>
+                      <Table2 size={28} />
+                      <h3>A clear view of your data</h3>
+                      <p>
+                        Run a statement or selection with <kbd>⌘ ↵</kbd>
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
+            <footer className="statusbar">
+              <span>
+                <span
+                  className={`status-dot ${connection && connected[connection.id] ? "online" : ""}`}
+                />
+                {connection && connected[connection.id]
+                  ? `${connection.engine} · connected`
+                  : "Disconnected"}
+                {connection?.read_only ? " · read-only" : ""}
+              </span>
+              <span>
+                Limit {preferences.rowLimit.toLocaleString()} · Timeout{" "}
+                {preferences.timeout}s
+              </span>
+              <span>
+                {busy ? "Executing…" : status?.done ? "Ready" : "SQL workbench"}
+              </span>
+            </footer>
+          </>
+        ) : (
+          <div className="welcome">
+            <div className="welcome-symbol">
+              <Database size={36} strokeWidth={1.2} />
+            </div>
+            <span className="eyebrow">A QUIETER DATABASE WORKSPACE</span>
+            <h1>
+              Make room for
+              <br />
+              <em>your data.</em>
+            </h1>
+            <p>
+              A native Rust core. A focused SQL workbench.
+              <br />
+              Everything stays on your machine.
+            </p>
+            <div className="welcome-actions">
+              <button className="primary" onClick={() => setDialog(true)}>
+                <Plus size={16} /> Add a connection <ArrowUpRight size={16} />
+              </button>
+              {connections.length > 0 && (
+                <button onClick={() => newTab()}>Open SQL tab</button>
+              )}
+            </div>
+            <div className="welcome-engines">
+              <span>SQLite</span>
+              <span>PostgreSQL</span>
+              <small>More drivers in development</small>
+            </div>
+            <div className="welcome-shortcut">
+              <Command size={13} /> K{" "}
+              <span>Search commands, connections and tables</span>
+            </div>
+          </div>
+        )}
+      </main>
+      {dialog && (
+        <ConnectionDialog
+          initial={dialog === true ? undefined : dialog}
+          onClose={() => setDialog(null)}
+          onSaved={(c, password, shouldConnect) => {
+            setConnections((s) => [...s.filter((item) => item.id !== c.id), c]);
+            setConnected((s) => {
+              const next = { ...s };
+              delete next[c.id];
+              return next;
+            });
+            if (shouldConnect) void connect(c, password);
+          }}
+        />
+      )}
+      {confirm && (
+        <Modal title={confirm.title} onClose={() => setConfirm(null)}>
+          <p className="confirmation-text">{confirm.message}</p>
+          {confirm.sql && <pre className="confirmation-sql">{confirm.sql}</pre>}
+          <footer>
+            <button onClick={() => setConfirm(null)}>Cancel</button>
+            <button
+              className="danger"
+              onClick={() => {
+                confirm.action();
+                setConfirm(null);
+              }}
+            >
+              Confirm
+            </button>
+          </footer>
+        </Modal>
+      )}
+      {settings && (
+        <SettingsDialog
+          preferences={preferences}
+          setPreferences={setPreferences}
+          onClose={() => setSettings(false)}
+        />
+      )}
+      {palette && (
+        <CommandPalette commands={commands} onClose={() => setPalette(false)} />
+      )}
+      {history && (
+        <Modal title="Query history" onClose={() => setHistory(null)} wide>
+          <div className="query-library">
+            {history.map((h) => (
+              <button
+                key={h.id}
+                onClick={() => {
+                  newTab(h.connection_id, h.sql);
+                  setHistory(null);
+                }}
+              >
+                <span>{h.sql}</span>
+                <small>
+                  {h.created_at} · {h.elapsed_ms} ms{h.error ? " · failed" : ""}
+                </small>
+              </button>
+            ))}
+            {!history.length && (
+              <p className="muted">
+                Executed SQL will appear here. History stays on this machine.
+              </p>
+            )}
+          </div>
+          <footer>
+            <button
+              className="danger"
+              onClick={() =>
+                setConfirm({
+                  title: "Clear query history",
+                  message: "Remove the locally stored SQL history?",
+                  action: () => {
+                    api("clear_history")
+                      .then(() => setHistory([]))
+                      .catch((e) => report(String(e)));
+                  },
+                })
+              }
+            >
+              Clear history
+            </button>
+          </footer>
+        </Modal>
+      )}
+      {savedOpen && (
+        <Modal title="Saved queries" onClose={() => setSavedOpen(false)} wide>
+          <div className="query-library">
+            {[...saved]
+              .sort((a, b) => Number(b.favorite) - Number(a.favorite))
+              .map((q) => (
+                <div className="saved-query" key={q.id}>
+                  <button
+                    onClick={() => {
+                      newTab(q.connection, q.sql, q.name);
+                      setSavedOpen(false);
+                    }}
+                  >
+                    <strong>{q.name}</strong>
+                    <span>{q.sql}</span>
+                  </button>
+                  <button
+                    className="icon"
+                    aria-label={`Favorite ${q.name}`}
+                    onClick={() =>
+                      void changeSaved(
+                        saved.map((s) =>
+                          s.id === q.id ? { ...s, favorite: !s.favorite } : s,
+                        ),
+                      )
+                    }
+                  >
+                    {q.favorite ? "★" : "☆"}
+                  </button>
+                  <button
+                    className="icon"
+                    aria-label={`Delete saved query ${q.name}`}
+                    onClick={() =>
+                      setConfirm({
+                        title: "Delete saved query",
+                        message: `Remove ${q.name}?`,
+                        action: () =>
+                          void changeSaved(saved.filter((s) => s.id !== q.id)),
+                      })
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            {!saved.length && (
+              <p className="muted">
+                Save a query from the editor with Cmd/Ctrl+S.
+              </p>
+            )}
+          </div>
+        </Modal>
+      )}
+      {saveName !== null && (
+        <Modal title="Save query" onClose={() => setSaveName(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveQuery();
+            }}
+          >
+            <label>
+              Query name
+              <input
+                autoFocus
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                required
+              />
+            </label>
+            <footer>
+              <button className="primary">Save query</button>
+            </footer>
+          </form>
+        </Modal>
+      )}
+      {exportOpen && status && (
+        <Modal title="Export results" onClose={() => setExportOpen(false)}>
+          <label>
+            Format
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+            >
+              {["csv", "json", "jsonl", "sql", "markdown"].map((f) => (
+                <option key={f} value={f}>
+                  {f.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted">
+            Exports {status.sets[set]?.rows.toLocaleString()} buffered rows from
+            result {set + 1}. Files are written by Rust and replaced only after
+            a complete export.
+          </p>
+          {exportFormat === "sql" && (
+            <p className="muted">
+              SQL INSERT uses the tab name as the target table. Rename/open a
+              table tab before exporting.
+            </p>
+          )}
+          <footer>
+            <button
+              className="primary"
+              onClick={() => {
+                api("export_result", {
+                  id: status.id,
+                  set,
+                  format: exportFormat,
+                  table: current?.name ?? "",
+                })
+                  .then((count) => {
+                    if (count !== null) {
+                      report(`Exported ${count.toLocaleString()} rows.`);
+                      setExportOpen(false);
+                    }
+                  })
+                  .catch((e) => report(String(e)));
+              }}
+            >
+              <Download size={14} /> Choose destination & export
+            </button>
+          </footer>
+        </Modal>
+      )}
+    </div>
+  );
+}

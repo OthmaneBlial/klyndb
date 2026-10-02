@@ -1,0 +1,10 @@
+name: Feature request
+description: Describe a concrete database workflow
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow and database engine
+      description: What are you trying to achieve, and where does the app fall short?
+    validations:
+      required: true

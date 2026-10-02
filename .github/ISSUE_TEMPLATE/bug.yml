@@ -1,0 +1,16 @@
+name: Bug report
+description: Report a reproducible issue without credentials or database dumps
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and expected behavior
+      description: Include OS, app version and engine. Redact secrets and private data.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized error
+    validations:
+      required: true

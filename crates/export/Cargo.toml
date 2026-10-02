@@ -1,0 +1,10 @@
+[package]
+name = "klyndb-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../driver-api" }
+serde_json.workspace = true
+csv = "1"

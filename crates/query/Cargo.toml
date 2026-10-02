@@ -1,0 +1,10 @@
+[package]
+name = "klyndb-query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sqlparser = { version = "0.63", features = ["visitor"] }
+serde.workspace = true
+klyndb-driver-api = { path = "../driver-api" }
