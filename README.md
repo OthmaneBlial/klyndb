@@ -77,7 +77,7 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-**Development preview:** Klyndb is already runnable from source. Additional drivers and native release packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
+**Development preview:** [Download Preview 1 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 
 ## ⚡ Rust does the heavy lifting
 
@@ -90,6 +90,10 @@ A reproducible SQLite backend baseline retained **1 million rows** at a median *
 <a id="get-started"></a>
 
 ## 🚀 Get started
+
+**macOS Apple Silicon:** [Download the DMG or app ZIP](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1). Preview 1 is ad-hoc signed, without Apple notarization; macOS may prevent opening it. The release includes checksums and exact-package validation evidence. Native acceptance covers SQLite on macOS 26.6; other platforms and broader desktop coverage remain pending. See the [release guide](docs/RELEASES.md).
+
+**Build from source:**
 
 You need **Rust stable**, **Node.js 22.12+** and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). Linux also needs Secret Service/DBus development libraries; remembered passwords require an unlocked OS keychain.
 

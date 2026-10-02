@@ -19,7 +19,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] PostgreSQL 16 real-server contract validated locally and in CI.
 - [x] Workspace save ordering/close flush, per-tab table inspector, automatic table query and bounded IPC pages.
 - [x] Reproducible release backend streaming baseline: five runs each at 100k / 1m rows, disk pages, throughput, first-row timing and native peak RSS.
-- [ ] Release package validation locally on each platform. The optimized macOS arm64 candidate at source `6bdc1bf` passes archive/signature/architecture/resource/checksum checks and native SQLite connection, SQL import, schema browsing, staged editing, export, cancellation/session reuse, disconnect and workspace-save checks. Optimized SQL import contracts pass on all four real engines. A new candidate must include the later reconnect change; other target platforms remain pending. See [release guide](docs/RELEASES.md).
+- [ ] Release package validation locally on each platform. The optimized macOS arm64 package at source `d105601` is published as `v0.1.0-preview.1`: archive/signature/architecture/resource/checksum checks and exact ZIP-extracted native SQLite connection, SQL import, schema browsing, reviewed editing, CSV export, confirmed reconnect/rollback, cancellation/session reuse, disconnect and workspace restoration pass. Public asset bytes and the source tag are verified. Optimized SQL import contracts pass on all four real engines. Other target platforms remain pending. See [release guide](docs/RELEASES.md).
 
 ## Next working slices
 
@@ -73,7 +73,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] GitHub Actions disabled; active native-package run cancelled. Remote package validation remains incomplete.
 - [x] Locked dependency license inventory/audit and real native macOS screenshot in the README. Notice collection now retains LICENCE, NOTICE/NOTICES, UNLICENSE and OFL variants and fails on undecodable notice text; the real 921-package inventory regenerates deterministically and the retention regression runs in local CI.
 - [x] GitHub positioning as a free, open-source alternative to DBeaver; redesigned SVG cover and star banner, emoji feature highlights, real native screenshot, verified feature matrix and preview limits.
-- [ ] Public release notes and downloadable, validated native packages.
+- [x] First public preview release notes and downloadable, validated macOS arm64 DMG/app ZIP (`v0.1.0-preview.1`, source `d105601`). Actual ZIP-extracted SQLite workflow acceptance and public checksum/metadata downloads match the accepted bytes. The README and live website link the release (Pages `ea9a26e`, HTTPS byte checks and Chrome navigation pass), with full configured local CI passing again. Ad-hoc signed, not notarized; Windows/Linux/Intel-Mac packages remain separate pending gates.
 - [ ] Signed updater configuration when a release distribution/key infrastructure exists.
 - [ ] Driver loading/package isolation after measuring multi-driver footprint; safe extension model after core stability.
 - [ ] Later XLSX/Parquet, backup/restore, additional platforms.
