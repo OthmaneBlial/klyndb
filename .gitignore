@@ -10,3 +10,5 @@ artifacts/
 
 apps/desktop/src-tauri/gen/
 *.tsbuildinfo
+
+__pycache__/

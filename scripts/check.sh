@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local CI. Requires Rust stable, Node 22.12+, cargo-audit and cargo-deny.
+# Full local CI. Requires Rust stable, Node 22.12+, Python 3, cargo-audit and cargo-deny.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -8,6 +8,7 @@ npm --prefix apps/desktop run lint
 npm --prefix apps/desktop run typecheck
 npm --prefix apps/desktop test
 node scripts/check_site.mjs
+python3 scripts/test_license_inventory.py
 npm --prefix apps/desktop run build
 npm --prefix apps/desktop audit
 cargo fmt --all -- --check

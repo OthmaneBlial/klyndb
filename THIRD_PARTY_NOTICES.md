@@ -36,3 +36,5 @@ Toolchain dependencies include TypeScript (Apache-2.0), Vite/Vitest/ESLint/Prett
 ## Locked inventory
 
 `python3 scripts/license_inventory.py` generates docs/DEPENDENCY_LICENSES.md and bundled THIRD_PARTY_LICENSES.txt from the exact Cargo/npm packages. This includes cross-target Rust dependencies and installed npm license texts; optional npm packages for other platforms are recorded by their lockfile declaration. `cargo deny check licenses` accepts the current Rust graph, including the Apache LLVM exception and MPL-2.0 obligations. The bundled notice file is included as a Tauri resource. Regenerate and review after dependency changes and on each target before release.
+
+The collector retains LICENSE/LICENCE, COPYING, COPYRIGHT, NOTICE/NOTICES, UNLICENSE and OFL text files, including the separately retained native SSH/cryptography/compression notices. Undecodable text stops collection instead of being silently dropped. `python3 scripts/test_license_inventory.py` checks filename variants and notice retention; it runs in local CI. Package contents still require target-specific verification before a public release.

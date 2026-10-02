@@ -70,7 +70,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Extend local real-database integration and desktop E2E as new drivers are added.
 - [ ] macOS ARM/Intel, Windows x64 and Linux x64 local package verification; signed/notarized artifacts where credentials permit.
 - [x] GitHub Actions disabled; active native-package run cancelled. Remote package validation remains incomplete.
-- [x] Locked dependency license inventory/audit and real native macOS screenshot in the README.
+- [x] Locked dependency license inventory/audit and real native macOS screenshot in the README. Notice collection now retains LICENCE, NOTICE/NOTICES, UNLICENSE and OFL variants and fails on undecodable notice text; the real 921-package inventory regenerates deterministically and the retention regression runs in local CI.
 - [x] GitHub positioning as a free, open-source alternative to DBeaver; redesigned SVG cover and star banner, emoji feature highlights, real native screenshot, verified feature matrix and preview limits.
 - [ ] Public release notes and downloadable, validated native packages.
 - [ ] Signed updater configuration when a release distribution/key infrastructure exists.
