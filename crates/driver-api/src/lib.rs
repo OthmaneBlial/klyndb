@@ -49,6 +49,7 @@ pub type Row = Vec<Cell>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capabilities {
+    pub table_browse: bool,
     pub transactions: bool,
     pub schemas: bool,
     pub explain: bool,
@@ -89,6 +90,39 @@ pub struct TableInfo {
     pub ddl: Option<String>,
     pub indexes: Vec<serde_json::Value>,
     pub foreign_keys: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterOp {
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Contains,
+    Like,
+    IsNull,
+    IsNotNull,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TableFilter {
+    pub column: String,
+    pub op: FilterOp,
+    pub value: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TableSort {
+    pub column: String,
+    pub descending: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TableQuery {
+    pub filters: Vec<TableFilter>,
+    pub sort: Vec<TableSort>,
+    pub limit: usize,
+    pub offset: u64,
 }
 
 /// Old values are compared as well as the primary key: a stale edit must affect no rows.
@@ -229,6 +263,113 @@ pub trait Session: Send + Sync {
     }
     fn quote_identifier(&self, name: &str) -> String {
         quote_identifier(name)
+    }
+    fn quote_filter_value(&self, value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+    fn table_query_sql(
+        &self,
+        table: &Table,
+        columns: &[Column],
+        query: &TableQuery,
+    ) -> Result<String> {
+        if !self.capabilities().table_browse {
+            return Err(Error::new("This driver does not support table browsing"));
+        }
+        if !(1..=500).contains(&query.limit) || query.offset > 1_000_000_000 {
+            return Err(Error::new(
+                "Use 1–500 rows per table page and an offset of at most one billion",
+            ));
+        }
+        if query.filters.len() > 20 || query.sort.len() > 8 {
+            return Err(Error::new("Use at most 20 filters and 8 sort columns"));
+        }
+        let column = |name: &str| {
+            if columns.iter().any(|c| c.name == name) {
+                Ok(self.quote_identifier(name))
+            } else {
+                Err(Error::new("Column no longer exists. Reopen the table."))
+            }
+        };
+        let mut predicates = vec![];
+        for filter in &query.filters {
+            let name = column(&filter.column)?;
+            if filter.value.len() > 16 * 1024 || filter.value.contains('\0') {
+                return Err(Error::new(
+                    "Filter values must be at most 16 KiB and cannot contain NUL",
+                ));
+            }
+            let operator = match filter.op {
+                FilterOp::Equal => "=",
+                FilterOp::NotEqual => "<>",
+                FilterOp::Less => "<",
+                FilterOp::LessEqual => "<=",
+                FilterOp::Greater => ">",
+                FilterOp::GreaterEqual => ">=",
+                FilterOp::Contains | FilterOp::Like => "LIKE",
+                FilterOp::IsNull => {
+                    predicates.push(format!("{name} IS NULL"));
+                    continue;
+                }
+                FilterOp::IsNotNull => {
+                    predicates.push(format!("{name} IS NOT NULL"));
+                    continue;
+                }
+            };
+            let value = if matches!(filter.op, FilterOp::Contains) {
+                format!(
+                    "%{}%",
+                    filter
+                        .value
+                        .replace('!', "!!")
+                        .replace('%', "!%")
+                        .replace('_', "!_")
+                )
+            } else {
+                filter.value.clone()
+            };
+            let escape = if matches!(filter.op, FilterOp::Contains) {
+                " ESCAPE '!'"
+            } else {
+                ""
+            };
+            predicates.push(format!(
+                "{name} {operator} {}{escape}",
+                self.quote_filter_value(&value)
+            ));
+        }
+        let mut order = vec![];
+        let mut ordered = std::collections::HashSet::new();
+        for sort in &query.sort {
+            let name = column(&sort.column)?;
+            if !ordered.insert(sort.column.as_str()) {
+                return Err(Error::new("Sort each column only once"));
+            }
+            order.push(format!(
+                "{name} {}",
+                if sort.descending { "DESC" } else { "ASC" }
+            ));
+        }
+        // Primary keys break sort ties and give unfiltered pages a repeatable order.
+        for key in columns.iter().filter(|c| c.primary_key) {
+            if ordered.insert(key.name.as_str()) {
+                order.push(format!("{} ASC", self.quote_identifier(&key.name)));
+            }
+        }
+        let mut sql = format!(
+            "SELECT * FROM {}.{}",
+            self.quote_identifier(&table.schema),
+            self.quote_identifier(&table.name)
+        );
+        if !predicates.is_empty() {
+            sql.push_str(&format!(" WHERE {}", predicates.join(" AND ")));
+        }
+        if !order.is_empty() {
+            sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
+        }
+        // ponytail: OFFSET pages; use keyset paging if deep-page scans become a measured bottleneck.
+        sql.push_str(&format!(" LIMIT {} OFFSET {};", query.limit, query.offset));
+        Ok(sql)
     }
     fn table_select_sql(&self, table: &Table, limit: usize) -> Result<String> {
         if !(1..=10_000_000).contains(&limit) {

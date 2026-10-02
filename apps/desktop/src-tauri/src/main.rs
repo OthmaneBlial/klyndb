@@ -3,7 +3,7 @@ use klyndb_connections::{Connection, Store};
 use klyndb_core::import::{CsvOptions, ImportRequest, ImportSource, ImportStatus, Preview};
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
-    Capabilities, Change, MutationResult, Row, Table, TableInfo, TransactionState,
+    Capabilities, Change, MutationResult, Row, Table, TableInfo, TableQuery, TransactionState,
 };
 use std::sync::Arc;
 use tauri::{Manager, State};
@@ -119,6 +119,18 @@ async fn table_select_sql(
         .await
         .map_err(api)?
         .table_select_sql(&table, limit)
+        .map_err(api)
+}
+#[tauri::command]
+async fn table_query_sql(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    table: Table,
+    query: TableQuery,
+) -> ApiResult<String> {
+    engine
+        .table_query_sql(&id, &table, &query)
+        .await
         .map_err(api)
 }
 #[tauri::command]
@@ -356,6 +368,7 @@ fn main() {
             tables,
             inspect_table,
             table_select_sql,
+            table_query_sql,
             apply_changes,
             transaction_state,
             analyze_query,

@@ -349,6 +349,18 @@ impl Engine {
             .map(|c| c.driver.clone())
             .ok_or_else(|| Error::new("Connect to this database first"))
     }
+    pub async fn table_query_sql(
+        &self,
+        id: &str,
+        table: &Table,
+        query: &TableQuery,
+    ) -> Result<String> {
+        let driver = self.driver(id).await?;
+        let info = tokio::time::timeout(std::time::Duration::from_secs(10), driver.inspect(table))
+            .await
+            .map_err(|_| Error::new("Table inspection timed out"))??;
+        driver.table_query_sql(table, &info.columns, query)
+    }
     pub async fn start(
         &self,
         connection: String,

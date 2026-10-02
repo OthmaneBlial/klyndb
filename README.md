@@ -55,7 +55,7 @@
 | **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite; connection testing, saved connections, groups, favorites and environment labels. |
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes, foreign keys and table DDL. |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
-| **📊 Work with results** | Incremental Rust streaming, disk-backed results, a virtualized grid, resizing/reordering, page sort/filter and cell inspection. |
+| **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
 | **✍️ Edit data** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |
 | **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
 | **🛡️ Stay in control** | Cancellation, timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |

@@ -28,7 +28,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Automated desktop E2E for the editing workflow and equivalent native Windows/Linux behavior.
 - [x] Native CSV import foundation: private immutable snapshot, bounded strict UTF-8 parsing, clipped preview, typed column mapping and whole-stream transaction/savepoint rollback.
 - [x] CSV desktop file picker, opaque source/job IDs, mapping/preview, production confirmation, deadlines, progress/cancel and result refresh. Core contracts pass on all four engines; packaged macOS SQLite file selection, mapping/preview, append and grid refresh verified.
-- [ ] Streaming JSON/SQL imports and server-side table filters/sort/pagination.
+- [ ] Streaming JSON/SQL imports.
+- [x] Server-side table filters/sort/pagination for SQLite/PostgreSQL/MySQL/MariaDB: real-engine contracts and full local CI pass; packaged macOS initial 500-row table view verified. Further native filter/page interaction checks remain pending after the UI controller lost window access.
 - [ ] Equivalent Windows/Linux import workflows and automated desktop import E2E.
 - [x] Publish the original Klyndb showcase/docs at OthmaneBlial.github.io/klyndb/: portable static pages, real screenshots, local fonts, mobile layout and snippet copy; live HTTPS verified. Snippet-copy check is included in local CI.
 - [x] MySQL/MariaDB native connection/query/metadata slice, exact numeric/binary/NULL cells, multiple results, row cap, cancellation, read-only validation, native identifier quoting and actual transaction state. Real MySQL 8.4.11 / MariaDB 13.0.2 contracts and native macOS MySQL workflow passed.

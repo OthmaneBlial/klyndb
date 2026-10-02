@@ -1587,3 +1587,88 @@ small {
   cursor: pointer;
   font-size: 12px;
 }
+
+.table-controls {
+  border-bottom: 1px solid var(--border);
+  padding: 9px 14px;
+  background: var(--raised);
+}
+.table-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.table-scope {
+  font-size: 10px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-right: 5px;
+}
+.table-controls label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.table-controls select,
+.table-controls input {
+  min-width: 0;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+.table-controls-bar select {
+  max-width: 170px;
+}
+.table-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.table-page-nav span {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.table-filters {
+  margin-top: 8px;
+}
+.table-filters summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.table-filters summary small {
+  margin-left: 5px;
+  color: var(--accent);
+}
+.table-filters fieldset {
+  max-height: 180px;
+  overflow: auto;
+  border: 0;
+  padding: 10px 0 0;
+  margin: 0;
+}
+.table-filters fieldset > button {
+  margin: 2px 6px 4px 0;
+}
+.table-filters fieldset > small,
+.table-controls > small {
+  display: block;
+  font-size: 10px;
+  margin-top: 5px;
+}
+.table-filter-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 135px minmax(120px, 2fr) 28px;
+  gap: 8px;
+  margin-bottom: 7px;
+  max-width: 800px;
+  align-items: center;
+}

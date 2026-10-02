@@ -20,6 +20,7 @@ export function ResultGrid({
   onError,
   onEdit,
   onDelete,
+  rowOffset,
 }: {
   id: string;
   set: number;
@@ -27,6 +28,7 @@ export function ResultGrid({
   onError: (s: string) => void;
   onEdit?: (row: Row) => void;
   onDelete?: (row: Row) => void;
+  rowOffset?: number;
 }) {
   const [page, setPage] = useState(0),
     [rows, setRows] = useState<Row[]>([]),
@@ -139,7 +141,7 @@ export function ResultGrid({
         onScroll={(e) => setScroll(e.currentTarget.scrollTop)}
         role="table"
         aria-label="Query results"
-        aria-rowcount={metadata.rows + 1}
+        aria-rowcount={rowOffset === undefined ? metadata.rows + 1 : -1}
       >
         <div
           className="grid-header"
@@ -209,7 +211,7 @@ export function ResultGrid({
             <div
               className="grid-row"
               role="row"
-              aria-rowindex={page * PAGE + index + 2}
+              aria-rowindex={(rowOffset ?? 0) + page * PAGE + index + 2}
               key={index}
               style={{
                 top: (start + position) * ROW,
@@ -225,14 +227,14 @@ export function ResultGrid({
                   )
                 }
               >
-                {page * PAGE + index + 1}
+                {(rowOffset ?? 0) + page * PAGE + index + 1}
               </button>
               {(onEdit || onDelete) && (
                 <div className="row-actions" role="cell">
                   {onEdit && (
                     <button
                       className="icon"
-                      aria-label={`Edit row ${page * PAGE + index + 1}`}
+                      aria-label={`Edit row ${(rowOffset ?? 0) + page * PAGE + index + 1}`}
                       onClick={() => onEdit(row)}
                     >
                       <Pencil size={13} />
@@ -241,7 +243,7 @@ export function ResultGrid({
                   {onDelete && (
                     <button
                       className="icon"
-                      aria-label={`Stage deletion of row ${page * PAGE + index + 1}`}
+                      aria-label={`Stage deletion of row ${(rowOffset ?? 0) + page * PAGE + index + 1}`}
                       onClick={() => onDelete(row)}
                     >
                       <Trash2 size={13} />
@@ -278,54 +280,59 @@ export function ResultGrid({
       </div>
       <div className="pagination">
         <span>
+          {rowOffset !== undefined && metadata.rows > 0
+            ? `Rows ${(rowOffset + 1).toLocaleString()}–${(rowOffset + metadata.rows).toLocaleString()} · `
+            : ""}
           {metadata.rows.toLocaleString()} rows
           {metadata.truncated && " · row limit reached"}
         </span>
-        <div>
-          <button
-            aria-label="Previous result page"
-            disabled={page === 0}
-            onClick={() => {
-              setPage((p) => p - 1);
-              viewport.current?.scrollTo(0, 0);
-            }}
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <label>
-            Page{" "}
-            <input
-              aria-label="Result page number"
-              type="number"
-              min={1}
-              max={Math.max(1, Math.ceil(metadata.rows / PAGE))}
-              value={page + 1}
-              onChange={(e) => {
-                setPage(
-                  Math.max(
-                    0,
-                    Math.min(
-                      Math.ceil(metadata.rows / PAGE) - 1,
-                      Number(e.target.value) - 1,
-                    ),
-                  ),
-                );
+        {rowOffset === undefined && (
+          <div>
+            <button
+              aria-label="Previous result page"
+              disabled={page === 0}
+              onClick={() => {
+                setPage((p) => p - 1);
                 viewport.current?.scrollTo(0, 0);
               }}
-            />{" "}
-            of {Math.max(1, Math.ceil(metadata.rows / PAGE)).toLocaleString()}
-          </label>
-          <button
-            aria-label="Next result page"
-            disabled={(page + 1) * PAGE >= metadata.rows}
-            onClick={() => {
-              setPage((p) => p + 1);
-              viewport.current?.scrollTo(0, 0);
-            }}
-          >
-            <ChevronRight size={15} />
-          </button>
-        </div>
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <label>
+              Page{" "}
+              <input
+                aria-label="Result page number"
+                type="number"
+                min={1}
+                max={Math.max(1, Math.ceil(metadata.rows / PAGE))}
+                value={page + 1}
+                onChange={(e) => {
+                  setPage(
+                    Math.max(
+                      0,
+                      Math.min(
+                        Math.ceil(metadata.rows / PAGE) - 1,
+                        Number(e.target.value) - 1,
+                      ),
+                    ),
+                  );
+                  viewport.current?.scrollTo(0, 0);
+                }}
+              />{" "}
+              of {Math.max(1, Math.ceil(metadata.rows / PAGE)).toLocaleString()}
+            </label>
+            <button
+              aria-label="Next result page"
+              disabled={(page + 1) * PAGE >= metadata.rows}
+              onClick={() => {
+                setPage((p) => p + 1);
+                viewport.current?.scrollTo(0, 0);
+              }}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
       </div>
       {viewer && (
         <Modal

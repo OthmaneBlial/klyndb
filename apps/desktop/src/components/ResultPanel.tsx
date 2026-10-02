@@ -1,5 +1,5 @@
 import { Download, KeyRound, Table2 } from "lucide-react";
-import type { QueryStatus, Table, TableInfo, Row } from "../api";
+import type { QueryStatus, Table, TableInfo, TableQuery, Row } from "../api";
 import { ResultGrid } from "./ResultGrid";
 import { PlanPanel } from "./PlanPanel";
 export type ResultView = "results" | "messages" | "structure" | "explain";
@@ -7,6 +7,7 @@ export interface Inspector {
   table: Table;
   info: TableInfo;
   query: string;
+  browse: TableQuery;
 }
 export function ResultPanel({
   status,
@@ -21,6 +22,8 @@ export function ResultPanel({
   onEdit,
   onDelete,
   editing,
+  browsing,
+  rowOffset,
 }: {
   status?: QueryStatus;
   set: number;
@@ -34,6 +37,8 @@ export function ResultPanel({
   onEdit?: (row: Row) => void;
   onDelete?: (row: Row) => void;
   editing?: React.ReactNode;
+  browsing?: React.ReactNode;
+  rowOffset?: number;
 }) {
   return (
     <section className="result-area">
@@ -86,6 +91,7 @@ export function ResultPanel({
           )}
         </div>
       </div>
+      {view === "results" && browsing}
       {editing}
       {status && status.sets.length > 1 && view === "results" && (
         <div className="result-set-tabs">
@@ -170,6 +176,7 @@ export function ResultPanel({
           id={status.id}
           set={set}
           metadata={status.sets[set]}
+          rowOffset={rowOffset}
           onError={onError}
           onEdit={onEdit}
           onDelete={onDelete}

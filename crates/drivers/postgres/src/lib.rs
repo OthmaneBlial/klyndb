@@ -261,6 +261,7 @@ impl Postgres {
 impl Session for Postgres {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            table_browse: true,
             transactions: true,
             schemas: true,
             explain: true,
@@ -284,6 +285,9 @@ impl Session for Postgres {
             ),
             PlanFormat::PostgresJson,
         ))
+    }
+    fn quote_filter_value(&self, value: &str) -> String {
+        format!("E'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
     }
     async fn execute(
         &self,

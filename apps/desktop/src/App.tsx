@@ -44,6 +44,7 @@ import {
   type Capabilities,
   type Change,
   type Row,
+  type TableQuery,
 } from "./api";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
@@ -59,6 +60,7 @@ import {
 import { CommandPalette } from "./components/CommandPalette";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { RowDialog } from "./components/RowDialog";
+import { TableControls } from "./components/TableControls";
 import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
 import {
@@ -133,11 +135,14 @@ export default function App() {
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
   const editorRef = useRef<EditorHandle | null>(null);
+  const browsingRef = useRef(new Set<string>());
+  const [browsing, setBrowsing] = useState<Record<string, boolean>>({});
   const current = tabs.find((t) => t.id === active),
     connection = connections.find((c) => c.id === current?.connection),
     status = statuses[active],
     inspector = inspectors[active],
-    busy = (!!status && !status.done) || !!applying[active],
+    busy =
+      (!!status && !status.done) || !!applying[active] || !!browsing[active],
     set = resultSets[active] ?? 0;
   const editable = !!(
     connection &&
@@ -153,6 +158,12 @@ export default function App() {
       (name, i) => name === inspector.info.columns[i]?.name,
     ) &&
     status.sets[0]?.columns.length === inspector.info.columns.length
+  );
+  const tableResult = !!(
+    inspector &&
+    status &&
+    tableJobs[active] === status.id &&
+    set === 0
   );
   const keyed = !!inspector?.info.columns.some((c) => c.primary_key);
   const report = useCallback((message: string) => setNotice(message), []);
@@ -332,8 +343,8 @@ export default function App() {
     return tab;
   }
   async function closeTab(id: string, discard = false) {
-    if (applyingRef.current[id]) {
-      report("Wait for this editing batch to finish.");
+    if (applyingRef.current[id] || browsingRef.current.has(id)) {
+      report("Wait for the current table operation to finish.");
       return;
     }
     if (!discard && stagedRef.current[id]?.length) {
@@ -365,6 +376,7 @@ export default function App() {
     if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
   }
   async function switchTabConnection(id: string, connection: string) {
+    if (browsingRef.current.has(id)) return;
     if (stagedRef.current[id]?.length) {
       report("Apply or discard staged changes before switching connection.");
       return;
@@ -432,6 +444,7 @@ export default function App() {
     confirmed = false,
     plan?: "estimate" | "analyze",
   ) {
+    if (browsingRef.current.has(active)) return;
     if (stagedRef.current[active]?.length) {
       report("Apply or discard staged changes before running another query.");
       return;
@@ -487,7 +500,10 @@ export default function App() {
         : await api("start_query", {
             connection: c.id,
             sql,
-            limit: preferences.rowLimit,
+            limit:
+              inspected?.query === sql
+                ? inspected.browse.limit
+                : preferences.rowLimit,
             timeoutSeconds: preferences.timeout,
             confirmed,
           });
@@ -505,10 +521,47 @@ export default function App() {
       });
       setResultSets((s) => ({ ...s, [tab.id]: 0 }));
       setView(plan ? "explain" : "results");
+      return true;
     } catch (e) {
       report(String(e));
     } finally {
       starting.current.delete(tab.id);
+    }
+  }
+  async function browseTable(
+    tab: Tab,
+    inspected: Inspector,
+    query: TableQuery,
+  ) {
+    if (
+      browsingRef.current.has(tab.id) ||
+      starting.current.has(tab.id) ||
+      applyingRef.current[tab.id] ||
+      statuses[tab.id]?.done === false
+    )
+      return;
+    if (stagedRef.current[tab.id]?.length) {
+      report("Apply or discard staged changes before changing the table page.");
+      return;
+    }
+    browsingRef.current.add(tab.id);
+    setBrowsing((s) => ({ ...s, [tab.id]: true }));
+    try {
+      const sql = await api("table_query_sql", {
+        id: tab.connection,
+        table: inspected.table,
+        query,
+      });
+      const next = { ...inspected, query: sql, browse: query };
+      if (await executeTab(tab, sql, false, next)) {
+        setInspectors((s) => ({ ...s, [tab.id]: next }));
+        updateTab(tab.id, { sql });
+      }
+    } catch (e) {
+      report(String(e));
+    } finally {
+      browsingRef.current.delete(tab.id);
+      setBrowsing((s) => ({ ...s, [tab.id]: false }));
     }
   }
   async function openTable(c: Connection, table: Table) {
@@ -521,14 +574,20 @@ export default function App() {
           [`${table.schema}.${table.name}`]: info.columns.map((c) => c.name),
         },
       }));
-      const query = await api("table_select_sql", {
+      const browse: TableQuery = {
+        filters: [],
+        sort: [],
+        limit: 500,
+        offset: 0,
+      };
+      const query = await api("table_query_sql", {
         id: c.id,
         table,
-        limit: preferences.rowLimit,
+        query: browse,
       });
       const tab = newTab(c.id, query, table.name);
       if (tab) {
-        const inspected = { table, info, query: tab.sql };
+        const inspected = { table, info, query: tab.sql, browse };
         setInspectors((s) => ({ ...s, [tab.id]: inspected }));
         await executeTab(tab, tab.sql, false, inspected);
       }
@@ -1160,6 +1219,25 @@ export default function App() {
                 editable && keyed && !busy
                   ? (old) => stage(active, { kind: "delete", old })
                   : undefined
+              }
+              rowOffset={tableResult ? inspector?.browse.offset : undefined}
+              browsing={
+                inspector &&
+                connection &&
+                connected[connection.id]?.table_browse && (
+                  <TableControls
+                    key={`${current.id}-${inspector.query}`}
+                    columns={inspector.info.columns}
+                    query={inspector.browse}
+                    active={tableResult}
+                    busy={busy}
+                    staged={!!staged[active]?.length}
+                    done={!!status?.done}
+                    failed={!!status?.error}
+                    rows={status?.sets[0]?.rows ?? 0}
+                    onBrowse={(query) => browseTable(current, inspector, query)}
+                  />
+                )
               }
               editing={
                 editable && (

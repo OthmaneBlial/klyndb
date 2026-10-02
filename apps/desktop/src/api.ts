@@ -12,6 +12,7 @@ export interface Connection {
   create_file: boolean;
 }
 export interface Capabilities {
+  table_browse: boolean;
   transactions: boolean;
   schemas: boolean;
   explain: boolean;
@@ -40,6 +41,28 @@ export interface TableInfo {
   ddl: string | null;
   indexes: Record<string, unknown>[];
   foreign_keys: Record<string, unknown>[];
+}
+export type FilterOp =
+  | "equal"
+  | "not_equal"
+  | "less"
+  | "less_equal"
+  | "greater"
+  | "greater_equal"
+  | "contains"
+  | "like"
+  | "is_null"
+  | "is_not_null";
+export interface TableFilter {
+  column: string;
+  op: FilterOp;
+  value: string;
+}
+export interface TableQuery {
+  filters: TableFilter[];
+  sort: { column: string; descending: boolean }[];
+  limit: number;
+  offset: number;
 }
 export type Cell =
   | { kind: "null" }
@@ -154,6 +177,10 @@ interface Commands {
   inspect_table: { args: { id: string; table: Table }; result: TableInfo };
   table_select_sql: {
     args: { id: string; table: Table; limit: number };
+    result: string;
+  };
+  table_query_sql: {
+    args: { id: string; table: Table; query: TableQuery };
     result: string;
   };
   transaction_state: {

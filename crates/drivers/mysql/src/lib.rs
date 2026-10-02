@@ -277,6 +277,7 @@ async fn stream(
 impl Session for Mysql {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            table_browse: true,
             transactions: true,
             schemas: true,
             explain: true,
@@ -393,6 +394,12 @@ impl Session for Mysql {
             indexes,
             foreign_keys,
         })
+    }
+    fn quote_filter_value(&self, value: &str) -> String {
+        format!(
+            "CONVERT(X'{}' USING utf8mb4)",
+            hex::encode(value.as_bytes())
+        )
     }
     fn quote_identifier(&self, name: &str) -> String {
         quote(name)

@@ -63,6 +63,7 @@ impl Sqlite {
 impl Session for Sqlite {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            table_browse: true,
             transactions: true,
             schemas: false,
             explain: true,
