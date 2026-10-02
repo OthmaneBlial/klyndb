@@ -1308,6 +1308,9 @@ small {
   grid-template-columns: 1fr 1fr;
   gap: 0 22px;
 }
+.import-format {
+  grid-column: 1 / -1;
+}
 .import-file {
   display: flex;
   align-items: center;

@@ -2,7 +2,7 @@ use klyndb_connections::{Connection, Store};
 use klyndb_core::Engine;
 use klyndb_core::import::{ImportRequest, ImportStatus};
 use klyndb_driver_api::*;
-use klyndb_import::{CsvOptions, Mapping, Snapshot, ValueKind};
+use klyndb_import::{ImportOptions, Mapping, Snapshot, ValueKind};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -74,7 +74,7 @@ async fn csv_stream(
     let producer_token = token.clone();
     let producer = tokio::task::spawn_blocking(move || {
         snapshot.produce(
-            &CsvOptions::default(),
+            &ImportOptions::default(),
             &[
                 Mapping {
                     column: Some("id".into()),
@@ -179,7 +179,7 @@ async fn core_import_jobs_confirmation_deadline_and_cleanup() {
             driver.quote_identifier(&table.name)
         );
         sql(driver.as_ref(), format!("CREATE TABLE {qualified}(id BIGINT PRIMARY KEY,label TEXT,doubled BIGINT GENERATED ALWAYS AS (id * 2) STORED){}", if name == "mysql" { " ENGINE=InnoDB" } else { "" })).await.unwrap();
-        let options = CsvOptions {
+        let options = ImportOptions {
             delimiter: ";".into(),
             null_value: Some("\\N".into()),
             ..Default::default()
@@ -926,6 +926,246 @@ async fn atomic_stream_import_contract() {
                 .await
                 .unwrap();
         }
+        engine.disconnect(&config.id).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn json_import_roundtrip_and_late_error_rollback() {
+    use klyndb_import::ImportFormat;
+    let directory = tempfile::tempdir().unwrap();
+    let mut configs = vec![(
+        "sqlite",
+        directory
+            .path()
+            .join("json.db")
+            .to_string_lossy()
+            .into_owned(),
+    )];
+    for (name, variable) in [
+        ("postgres", "KLYNDB_TEST_POSTGRES_URL"),
+        ("mysql", "KLYNDB_TEST_MYSQL_URL"),
+        ("mariadb", "KLYNDB_TEST_MARIADB_URL"),
+    ] {
+        if let Ok(url) = std::env::var(variable) {
+            configs.push((name, url));
+        }
+    }
+    for (name, address) in configs {
+        let engine = Engine::new(
+            Store::open(&directory.path().join(format!("{name}-json-state.db"))).unwrap(),
+        );
+        let mut config = Connection {
+            id: String::new(),
+            name: "JSON import contract".into(),
+            engine: if name == "mariadb" { "mysql" } else { name }.into(),
+            address,
+            environment: "production".into(),
+            group: String::new(),
+            color: "#93d4b5".into(),
+            favorite: false,
+            read_only: false,
+            create_file: name == "sqlite",
+        };
+        config.validate().unwrap();
+        engine.store.save(&config).unwrap();
+        engine.connect(&config.id, None, None, None).await.unwrap();
+        let driver = engine.driver(&config.id).await.unwrap();
+        let table = Table {
+            schema: match name {
+                "sqlite" => "main",
+                "postgres" => "public",
+                _ => "klyndb_test",
+            }
+            .into(),
+            name: format!("json_import_{}", uuid::Uuid::new_v4().simple()),
+            kind: "table".into(),
+        };
+        let qualified = format!(
+            "{}.{}",
+            driver.quote_identifier(&table.schema),
+            driver.quote_identifier(&table.name)
+        );
+        sql(driver.as_ref(), format!("CREATE TABLE {qualified}(id BIGINT PRIMARY KEY,label TEXT,precise TEXT,document JSON){}", if matches!(name, "mysql" | "mariadb") { " ENGINE=InnoDB" } else { "" })).await.unwrap();
+        let file = directory.path().join(format!("{name}.json"));
+        let good = format!("[{}]", (1..=1201).map(|id| format!(r#"{{"id":{id},"label":{},"precise":1.234567890123456789,"document":{{"n":123456789012345678901234567890,"list":[true,null,"😀"]}}}}"#, if id == 1 { "null".to_string() } else { serde_json::to_string(&format!("  row {id}, \"quoted\"\nnext  ")).unwrap() })).collect::<Vec<_>>().join(","));
+        std::fs::write(&file, &good).unwrap();
+        let options = ImportOptions {
+            format: ImportFormat::Json,
+            trim: true,
+            empty_as_null: true,
+            null_value: Some("null".into()),
+            ..Default::default()
+        };
+        let mapping = [
+            ValueKind::Number,
+            ValueKind::Text,
+            ValueKind::Text,
+            ValueKind::Json,
+        ]
+        .into_iter()
+        .zip(["id", "label", "precise", "document"])
+        .map(|(kind, column)| Mapping {
+            column: Some(column.into()),
+            kind,
+        })
+        .collect::<Vec<_>>();
+        let request = |source: String, options: ImportOptions, confirmed: bool| ImportRequest {
+            source,
+            connection: config.id.clone(),
+            table: table.clone(),
+            options,
+            mapping: mapping.clone(),
+            timeout_seconds: 10,
+            confirmed,
+        };
+        let source = engine
+            .imports
+            .prepare(file.clone(), options.clone())
+            .await
+            .unwrap();
+        assert_eq!(source.preview.rows[0][1], None);
+        assert_eq!(
+            source.preview.rows[0][2],
+            Some("1.234567890123456789".into())
+        );
+        assert!(
+            engine
+                .start_import(request(source.id.clone(), options.clone(), false))
+                .await
+                .unwrap_err()
+                .message
+                .contains("Confirmation")
+        );
+        // Selection captured a private immutable file; later edits cannot change it.
+        std::fs::write(&file, b"changed").unwrap();
+        let id = engine
+            .start_import(request(source.id.clone(), options.clone(), true))
+            .await
+            .unwrap();
+        let status = finished(&engine, &id).await;
+        assert!(status.error.is_none(), "{name}: {:?}", status.error);
+        assert_eq!(status.result.unwrap().affected, 1201);
+        assert_eq!(count(driver.as_ref(), &qualified).await, 1201);
+        let rows = sql(
+            driver.as_ref(),
+            format!(
+                "SELECT label,precise,document FROM {qualified} WHERE id IN (1,1201) ORDER BY id"
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows[0][0], Cell::Null);
+        assert_eq!(rows[1][0].text(), "  row 1201, \"quoted\"\nnext  ");
+        assert_eq!(rows[1][1].text(), "1.234567890123456789");
+        if name == "mysql" {
+            // MySQL's native JSON storage converts this out-of-range integer to
+            // a double; the input parser and TEXT mapping must still stay exact.
+            assert!(rows[1][2].text().contains("1.2345678901234568e+29"));
+        } else {
+            assert!(
+                rows[1][2].text().contains("123456789012345678901234567890"),
+                "{name}: {}",
+                rows[1][2].text()
+            );
+        }
+        engine.imports.release(&source.id).unwrap();
+        // More than one batch was written before these late parser errors occur.
+        let new_rows = (2001..=3201)
+            .map(|id| format!(r#"{{"id":{id},"label":"new","precise":2,"document":null}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        for ending in [
+            "] trailing",
+            ",]",
+            ", {\"id\":4000,\"label\":\"x\",\"precise\":2,\"document\":null,\"id\":4001}]",
+            ", {\"id\":4000,\"label\":\"x\",\"precise\":2,\"other\":null}]",
+            "",
+        ] {
+            std::fs::write(&file, format!("[{new_rows}{ending}")).unwrap();
+            let source = engine
+                .imports
+                .prepare(file.clone(), options.clone())
+                .await
+                .unwrap();
+            let id = engine
+                .start_import(request(source.id.clone(), options.clone(), true))
+                .await
+                .unwrap();
+            let status = finished(&engine, &id).await;
+            assert!(
+                status
+                    .error
+                    .as_ref()
+                    .is_some_and(|error| error.contains("JSON")),
+                "{name}: {:?}",
+                status.error
+            );
+            assert!(status.read_rows >= 1000);
+            assert_eq!(count(driver.as_ref(), &qualified).await, 1201, "{name}");
+            assert_eq!(
+                driver.transaction_state().await.unwrap(),
+                TransactionState::Idle
+            );
+            engine.imports.release(&source.id).unwrap();
+        }
+        // Roundtrip actual native JSON export cells, inside the caller's transaction.
+        let mut out = std::fs::File::create(&file).unwrap();
+        klyndb_export::export(
+            &mut out,
+            &[
+                "id".into(),
+                "label".into(),
+                "precise".into(),
+                "document".into(),
+            ],
+            (5001..=5010).map(|id| {
+                Ok(vec![
+                    Cell::Number(id.to_string()),
+                    Cell::Null,
+                    Cell::Number("18446744073709551615".into()),
+                    Cell::Json(serde_json::json!("plain JSON string")),
+                ])
+            }),
+            "json",
+            "",
+        )
+        .unwrap();
+        drop(out);
+        let native_options = ImportOptions {
+            format: ImportFormat::KlyndbJson,
+            ..Default::default()
+        };
+        let source = engine
+            .imports
+            .prepare(file.clone(), native_options.clone())
+            .await
+            .unwrap();
+        sql(driver.as_ref(), "BEGIN".into()).await.unwrap();
+        let id = engine
+            .start_import(request(source.id.clone(), native_options, true))
+            .await
+            .unwrap();
+        let status = finished(&engine, &id).await;
+        assert!(status.error.is_none(), "{name}: {:?}", status.error);
+        let result = status.result.unwrap();
+        assert_eq!(result.affected, 10);
+        assert!(result.pending_transaction);
+        let rows = sql(
+            driver.as_ref(),
+            format!("SELECT label,precise,document FROM {qualified} WHERE id=5001"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows[0][0], Cell::Null);
+        assert_eq!(rows[0][1].text(), "18446744073709551615");
+        assert_eq!(rows[0][2].text(), "\"plain JSON string\"");
+        sql(driver.as_ref(), "ROLLBACK".into()).await.unwrap();
+        assert_eq!(count(driver.as_ref(), &qualified).await, 1201);
+        engine.imports.release(&source.id).unwrap();
+        sql(driver.as_ref(), format!("DROP TABLE {qualified}"))
+            .await
+            .unwrap();
         engine.disconnect(&config.id).await.unwrap();
     }
 }

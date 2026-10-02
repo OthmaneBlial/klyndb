@@ -3,7 +3,8 @@ import { ArrowRight, FileUp, FolderOpen, Shield, Square } from "lucide-react";
 import {
   api,
   type Connection,
-  type CsvOptions,
+  type ImportFormat,
+  type ImportOptions,
   type ImportMapping,
   type ImportSource,
   type ImportStatus,
@@ -11,7 +12,7 @@ import {
   type Table,
   type TableInfo,
 } from "../api";
-import { importValueKind, suggestMapping } from "../import";
+import { importValueKind, previewValue, suggestMapping } from "../import";
 import { Modal } from "./Modal";
 
 export function ImportDialog({
@@ -29,7 +30,8 @@ export function ImportDialog({
   onComplete: (status: ImportStatus) => void;
   onClose: () => void;
 }) {
-  const [options, setOptions] = useState<CsvOptions>({
+  const [options, setOptions] = useState<ImportOptions>({
+    format: "csv",
     delimiter: ",",
     trim: false,
     null_value: null,
@@ -103,7 +105,7 @@ export function ImportDialog({
       setError(String(e));
     }
   }
-  function changeOptions(next: CsvOptions) {
+  function changeOptions(next: ImportOptions) {
     setOptions(next);
     setReady(false);
     setConfirmed(false);
@@ -207,11 +209,9 @@ export function ImportDialog({
     );
     setConfirmed(false);
   };
-  const rawValue = (value: string) => {
-    const text = options.trim ? value.trim() : value;
-    const nil =
-      text === options.null_value || (options.empty_as_null && text === "");
-    return nil ? (
+  const rawValue = (value: string | null) => {
+    const text = previewValue(value, options);
+    return text === null ? (
       <span className="null-cell">NULL</span>
     ) : text === "" ? (
       <em className="muted">empty text</em>
@@ -220,7 +220,7 @@ export function ImportDialog({
     );
   };
   return (
-    <Modal title="Import CSV" onClose={() => void close()} wide>
+    <Modal title="Import data" onClose={() => void close()} wide>
       <div className="import-target">
         <FileUp size={22} strokeWidth={1.5} />
         <div>
@@ -238,56 +238,86 @@ export function ImportDialog({
         )}
       </div>
       <fieldset className="import-settings" disabled={busy || !!status}>
-        <label>
-          Separator
+        <label className="import-format">
+          Format
           <select
-            value={options.delimiter}
+            value={options.format}
             onChange={(e) =>
-              changeOptions({ ...options, delimiter: e.target.value })
+              changeOptions({
+                ...options,
+                format: e.target.value as ImportFormat,
+              })
             }
           >
-            <option value=",">Comma</option>
-            <option value=";">Semicolon</option>
-            <option value={"\t"}>Tab</option>
-            <option value="|">Pipe</option>
+            <option value="csv">CSV</option>
+            <option value="json">JSON · object array</option>
+            <option value="klyndb_json">JSON · Klyndb export</option>
           </select>
         </label>
-        <label>
-          NULL token
-          <input
-            maxLength={256}
-            placeholder="None"
-            value={options.null_value ?? ""}
-            onChange={(e) =>
-              changeOptions({ ...options, null_value: e.target.value || null })
-            }
-          />
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={options.trim}
-            onChange={(e) =>
-              changeOptions({ ...options, trim: e.target.checked })
-            }
-          />{" "}
-          Trim whitespace
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={options.empty_as_null}
-            onChange={(e) =>
-              changeOptions({ ...options, empty_as_null: e.target.checked })
-            }
-          />{" "}
-          Empty fields as NULL
-        </label>
+        {options.format === "csv" && (
+          <>
+            <label>
+              Separator
+              <select
+                value={options.delimiter}
+                onChange={(e) =>
+                  changeOptions({ ...options, delimiter: e.target.value })
+                }
+              >
+                <option value=",">Comma</option>
+                <option value=";">Semicolon</option>
+                <option value={"\t"}>Tab</option>
+                <option value="|">Pipe</option>
+              </select>
+            </label>
+            <label>
+              NULL token
+              <input
+                maxLength={256}
+                placeholder="None"
+                value={options.null_value ?? ""}
+                onChange={(e) =>
+                  changeOptions({
+                    ...options,
+                    null_value: e.target.value || null,
+                  })
+                }
+              />
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={options.trim}
+                onChange={(e) =>
+                  changeOptions({ ...options, trim: e.target.checked })
+                }
+              />{" "}
+              Trim whitespace
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={options.empty_as_null}
+                onChange={(e) =>
+                  changeOptions({ ...options, empty_as_null: e.target.checked })
+                }
+              />{" "}
+              Empty fields as NULL
+            </label>
+          </>
+        )}
       </fieldset>
+      {options.format !== "csv" && (
+        <p className="muted import-help">
+          {options.format === "json"
+            ? "An array of objects with matching field names. JSON null stays NULL. Numbers stay exact in Rust; database types still apply."
+            : "An array of Klyndb export records with columns and typed values. Review destination value types before importing."}
+        </p>
+      )}
       <div className="import-file">
         <button onClick={() => void choose()} disabled={busy || !!job}>
           <FolderOpen size={15} />{" "}
-          {source ? "Choose another file" : "Choose CSV file"}
+          {source ? "Choose another file" : "Choose file"}
         </button>
         {source ? (
           <span>
@@ -301,7 +331,8 @@ export function ImportDialog({
           </span>
         ) : (
           <small className="muted">
-            UTF-8 CSV with headers · up to 512 MiB
+            UTF-8 {options.format === "csv" ? "CSV with headers" : "JSON array"}{" "}
+            · up to 512 MiB
           </small>
         )}
         {source && !ready && !status && (
@@ -323,7 +354,7 @@ export function ImportDialog({
             </small>
           </div>
           <div className="import-mapping">
-            <nav aria-label="CSV fields">
+            <nav aria-label="Source fields">
               {source.preview.headers.map((header, i) => (
                 <button
                   key={i}
@@ -395,7 +426,7 @@ export function ImportDialog({
                 {source.preview.rows.map((row, i) => (
                   <div key={i}>
                     <span>{i + 1}</span>
-                    <code>{rawValue(row[selected] ?? "")}</code>
+                    <code>{rawValue(row[selected] ?? null)}</code>
                   </div>
                 ))}
               </div>

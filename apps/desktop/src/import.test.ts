@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { suggestMapping } from "./import";
-import type { Column } from "./api";
+import { previewValue, suggestMapping } from "./import";
+import type { Column, ImportOptions } from "./api";
 test("mapping suggestions avoid generated, duplicate and ambiguous destinations", () => {
   const column = (
     name: string,
@@ -32,4 +32,23 @@ test("mapping suggestions avoid generated, duplicate and ambiguous destinations"
     { column: "payload", kind: "binary" },
     { column: null, kind: "text" },
   ]);
+});
+
+test("JSON previews preserve NULL, literal null, whitespace and exact numbers", () => {
+  const options: ImportOptions = {
+    format: "json",
+    delimiter: ",",
+    trim: true,
+    empty_as_null: true,
+    null_value: "null",
+  };
+  expect(previewValue(null, options)).toBeNull();
+  expect(previewValue("null", options)).toBe("null");
+  expect(previewValue("", options)).toBe("");
+  expect(previewValue("  value  ", options)).toBe("  value  ");
+  expect(previewValue("18446744073709551615", options)).toBe(
+    "18446744073709551615",
+  );
+  expect(previewValue("null", { ...options, format: "csv" })).toBeNull();
+  expect(previewValue("   ", { ...options, format: "csv" })).toBeNull();
 });

@@ -1,3 +1,6 @@
+mod json;
+pub use json::JsonReader;
+
 use csv_core::{ReadRecordResult, ReaderBuilder};
 use klyndb_driver_api::{Cell, Change, Column, Error, InsertBatch, Result, validate_insert_batch};
 use serde::{Deserialize, Serialize};
@@ -32,13 +35,13 @@ impl Snapshot {
             File::open(source).map_err(|_| Error::new("Could not open the selected file"))?;
         let metadata = file.metadata().map_err(error)?;
         if !metadata.is_file() || metadata.len() > FILE_LIMIT {
-            return Err(Error::new("Choose a regular CSV file of at most 512 MiB"));
+            return Err(Error::new("Choose a regular data file of at most 512 MiB"));
         }
         let directory = tempfile::Builder::new()
             .prefix("klyndb-import-")
             .tempdir()
             .map_err(error)?;
-        let path = directory.path().join("source.csv");
+        let path = directory.path().join("source");
         let mut out = File::create(&path).map_err(error)?;
         let bytes = std::io::copy(&mut file.take(FILE_LIMIT + 1), &mut out).map_err(error)?;
         if bytes > FILE_LIMIT {
@@ -56,10 +59,18 @@ impl Snapshot {
             bytes,
         })
     }
-    pub fn reader(&self, options: &CsvOptions) -> Result<CsvReader<File>> {
-        CsvReader::new(File::open(&self.path).map_err(error)?, options.delimiter()?)
+    pub fn reader(&self, options: &ImportOptions) -> Result<ImportReader> {
+        options.validate()?;
+        let file = File::open(&self.path).map_err(error)?;
+        match options.format {
+            ImportFormat::Csv => Ok(ImportReader::Csv(Box::new(CsvReader::new(
+                file,
+                options.delimiter()?,
+            )?))),
+            format => Ok(ImportReader::Json(JsonReader::new(file, format)?)),
+        }
     }
-    pub fn preview(&self, options: &CsvOptions) -> Result<Preview> {
+    pub fn preview(&self, options: &ImportOptions) -> Result<Preview> {
         let mut reader = self.reader(options)?;
         let headers = reader.headers()?;
         let mut rows = vec![];
@@ -71,7 +82,12 @@ impl Snapshot {
             reader.check_width(&row, headers.len())?;
             rows.push(
                 row.into_iter()
-                    .map(|value| {
+                    .map(|cell| {
+                        let value = if cell == Cell::Null {
+                            return None;
+                        } else {
+                            cell_text(cell)
+                        };
                         let end = value
                             .char_indices()
                             .map(|(i, _)| i)
@@ -79,9 +95,9 @@ impl Snapshot {
                             .unwrap_or(value.len());
                         if end < value.len() {
                             clipped = true;
-                            format!("{}…", &value[..end])
+                            Some(format!("{}…", &value[..end]))
                         } else {
-                            value
+                            Some(value)
                         }
                     })
                     .collect(),
@@ -101,7 +117,7 @@ impl Snapshot {
     /// Run on a blocking worker. Only an explicit Complete message permits commit.
     pub fn produce(
         &self,
-        options: &CsvOptions,
+        options: &ImportOptions,
         mapping: &[Mapping],
         output: mpsc::Sender<Result<InsertBatch>>,
         cancel: CancellationToken,
@@ -109,7 +125,7 @@ impl Snapshot {
     ) -> Result<u64> {
         let result = (|| {
             let mut reader = self.reader(options)?;
-            reader.cancel = cancel.clone();
+            reader.set_cancel(cancel.clone());
             let headers = reader.headers()?;
             if headers.len() != mapping.len() {
                 return Err(Error::new(
@@ -120,8 +136,13 @@ impl Snapshot {
             let (mut bytes, mut count) = (0, 0);
             while let Some(row) = reader.next_record()? {
                 reader.check_width(&row, headers.len())?;
-                let change = insert(row, mapping, options).map_err(|e| {
-                    Error::new(format!("CSV record {}: {}", reader.record, e.message))
+                let change = insert_cells(row, mapping, options).map_err(|e| {
+                    Error::new(format!(
+                        "{} record {}: {}",
+                        options.format.label(),
+                        reader.record(),
+                        e.message
+                    ))
                 })?;
                 let size = change.values().map_or(0, |values| {
                     values
@@ -142,9 +163,7 @@ impl Snapshot {
                 read_rows.store(count, Ordering::Relaxed);
             }
             if count == 0 {
-                return Err(Error::new(
-                    "The CSV file contains headers but no data records",
-                ));
+                return Err(Error::new("The file contains no data records"));
             }
             if !changes.is_empty() {
                 output
@@ -166,15 +185,30 @@ impl Snapshot {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportFormat {
+    #[default]
+    Csv,
+    Json,
+    KlyndbJson,
+}
+impl ImportFormat {
+    fn label(self) -> &'static str {
+        if self == Self::Csv { "CSV" } else { "JSON" }
+    }
+}
 #[derive(Clone, Deserialize, Serialize, Default)]
-pub struct CsvOptions {
+#[serde(default)]
+pub struct ImportOptions {
+    pub format: ImportFormat,
     /// Comma, semicolon, tab or pipe; standard double-quoted CSV fields.
     pub delimiter: String,
     pub trim: bool,
     pub null_value: Option<String>,
     pub empty_as_null: bool,
 }
-impl CsvOptions {
+impl ImportOptions {
     pub fn validate(&self) -> Result<()> {
         self.delimiter()?;
         if self.null_value.as_ref().is_some_and(|s| s.len() > 256) {
@@ -197,8 +231,56 @@ impl CsvOptions {
 #[derive(Serialize)]
 pub struct Preview {
     pub headers: Vec<String>,
-    pub rows: Vec<Vec<String>>,
+    pub rows: Vec<Vec<Option<String>>>,
     pub clipped: bool,
+}
+
+pub enum ImportReader {
+    Csv(Box<CsvReader<File>>),
+    Json(JsonReader<File>),
+}
+impl ImportReader {
+    pub fn headers(&mut self) -> Result<Vec<String>> {
+        match self {
+            Self::Csv(r) => r.headers(),
+            Self::Json(r) => r.headers(),
+        }
+    }
+    pub fn next_record(&mut self) -> Result<Option<Vec<Cell>>> {
+        match self {
+            Self::Csv(r) => Ok(r
+                .next_record()?
+                .map(|row| row.into_iter().map(Cell::Text).collect())),
+            Self::Json(r) => r.next_record(),
+        }
+    }
+    fn record(&self) -> u64 {
+        match self {
+            Self::Csv(r) => r.record,
+            Self::Json(r) => r.record,
+        }
+    }
+    fn set_cancel(&mut self, cancel: CancellationToken) {
+        match self {
+            Self::Csv(r) => r.cancel = cancel,
+            Self::Json(r) => r.cancel = cancel,
+        }
+    }
+    fn check_width(&self, row: &[Cell], width: usize) -> Result<()> {
+        if row.len() != width {
+            return Err(Error::new(format!(
+                "{} record {} has {} fields; expected {width}",
+                if matches!(self, Self::Csv(_)) {
+                    "CSV"
+                } else {
+                    "JSON"
+                },
+                self.record(),
+                row.len()
+            )));
+        }
+        Ok(())
+    }
 }
 
 // csv-core decodes into bounded caller-owned buffers. This small validator rejects
@@ -377,7 +459,7 @@ pub fn validate_mapping(mapping: &[Mapping], width: usize, columns: &[Column]) -
     }
     Ok(())
 }
-pub fn insert(row: Vec<String>, mapping: &[Mapping], options: &CsvOptions) -> Result<Change> {
+pub fn insert(row: Vec<String>, mapping: &[Mapping], options: &ImportOptions) -> Result<Change> {
     if row.len() != mapping.len() {
         return Err(Error::new("CSV column count changed"));
     }
@@ -396,41 +478,82 @@ pub fn insert(row: Vec<String>, mapping: &[Mapping], options: &CsvOptions) -> Re
         {
             Cell::Null
         } else {
-            match field.kind {
-                ValueKind::Text => Cell::Text(value),
-                ValueKind::Number => {
-                    let digits = value.strip_prefix(['-', '+']).unwrap_or(&value);
-                    if !(!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
-                        || value.parse::<f64>().is_ok_and(f64::is_finite))
-                    {
-                        return Err(Error::new(format!("Invalid number for column {column}")));
-                    }
-                    Cell::Number(value)
-                }
-                ValueKind::Boolean => match value.to_ascii_lowercase().as_str() {
-                    "true" | "1" => Cell::Boolean(true),
-                    "false" | "0" => Cell::Boolean(false),
-                    _ => {
-                        return Err(Error::new(format!(
-                            "Use true/false or 1/0 for column {column}"
-                        )));
-                    }
-                },
-                ValueKind::Binary => {
-                    if value.len() % 2 != 0 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-                        return Err(Error::new(format!(
-                            "Use hexadecimal bytes for column {column}"
-                        )));
-                    }
-                    Cell::Binary(value)
-                }
-                ValueKind::Json => Cell::Json(
-                    serde_json::from_str(&value)
-                        .map_err(|_| Error::new(format!("Invalid JSON for column {column}")))?,
-                ),
-            }
+            convert_value(value, &field.kind, column)?
         };
         values.insert(column.clone(), cell);
+    }
+    Ok(Change::Insert { values })
+}
+
+fn convert_value(value: String, kind: &ValueKind, column: &str) -> Result<Cell> {
+    Ok(match kind {
+        ValueKind::Text => Cell::Text(value),
+        ValueKind::Number => {
+            let digits = value.strip_prefix(['-', '+']).unwrap_or(&value);
+            if !(!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+                || value.parse::<f64>().is_ok_and(f64::is_finite))
+            {
+                return Err(Error::new(format!("Invalid number for column {column}")));
+            }
+            Cell::Number(value)
+        }
+        ValueKind::Boolean => match value.to_ascii_lowercase().as_str() {
+            "true" | "1" => Cell::Boolean(true),
+            "false" | "0" => Cell::Boolean(false),
+            _ => {
+                return Err(Error::new(format!(
+                    "Use true/false or 1/0 for column {column}"
+                )));
+            }
+        },
+        ValueKind::Binary => {
+            if !value.len().is_multiple_of(2) || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(Error::new(format!(
+                    "Use hexadecimal bytes for column {column}"
+                )));
+            }
+            Cell::Binary(value)
+        }
+        ValueKind::Json => Cell::Json(
+            serde_json::from_str(&value)
+                .map_err(|_| Error::new(format!("Invalid JSON for column {column}")))?,
+        ),
+    })
+}
+
+fn cell_text(cell: Cell) -> String {
+    match cell {
+        Cell::Text(value) | Cell::Number(value) | Cell::Binary(value) => value,
+        cell => cell.text(),
+    }
+}
+
+fn insert_cells(row: Vec<Cell>, mapping: &[Mapping], options: &ImportOptions) -> Result<Change> {
+    if options.format == ImportFormat::Csv {
+        return insert(row.into_iter().map(cell_text).collect(), mapping, options);
+    }
+    if row.len() != mapping.len() {
+        return Err(Error::new("JSON column count changed"));
+    }
+    let mut values = BTreeMap::new();
+    for (cell, field) in row.into_iter().zip(mapping) {
+        let Some(column) = &field.column else {
+            continue;
+        };
+        let converted = if cell == Cell::Null {
+            Cell::Null
+        } else if matches!(field.kind, ValueKind::Json) {
+            Cell::Json(match cell {
+                Cell::Json(value) => value,
+                Cell::Text(value) | Cell::Binary(value) => serde_json::Value::String(value),
+                Cell::Boolean(value) => serde_json::Value::Bool(value),
+                Cell::Number(value) => serde_json::from_str(&value).map_err(error)?,
+                Cell::Null => serde_json::Value::Null,
+            })
+        } else {
+            convert_value(cell_text(cell), &field.kind, column)?
+        };
+        values.insert(column.clone(), converted);
     }
     Ok(Change::Insert { values })
 }
@@ -479,7 +602,7 @@ mod tests {
                 kind: ValueKind::Text,
             },
         ];
-        let options = CsvOptions {
+        let options = ImportOptions {
             null_value: Some("\\N".into()),
             ..Default::default()
         };
@@ -503,7 +626,7 @@ mod tests {
                 column: Some("document".into()),
                 kind: ValueKind::Json,
             }],
-            &CsvOptions::default(),
+            &ImportOptions::default(),
         )
         .unwrap();
         let restored = change.values().unwrap()["document"].text();
@@ -556,11 +679,11 @@ mod tests {
             .is_err()
         );
         let directory = tempfile::tempdir().unwrap();
-        let file = directory.path().join("source.csv");
+        let file = directory.path().join("source");
         std::fs::write(&file, text).unwrap();
         let snapshot = Snapshot::copy(&file).unwrap();
         std::fs::write(&file, b"changed").unwrap();
-        let preview = snapshot.preview(&CsvOptions::default()).unwrap();
+        let preview = snapshot.preview(&ImportOptions::default()).unwrap();
         assert_eq!(preview.headers, ["id", "name", "note"]);
         assert_eq!(preview.rows.len(), 2);
     }

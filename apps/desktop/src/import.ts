@@ -1,4 +1,9 @@
-import type { Column, ImportMapping, ImportValueKind } from "./api";
+import type {
+  Column,
+  ImportMapping,
+  ImportOptions,
+  ImportValueKind,
+} from "./api";
 
 export function importValueKind(type: string): ImportValueKind {
   if (/^bool(?:ean)?\b/i.test(type)) return "boolean";
@@ -35,4 +40,15 @@ export function suggestMapping(
       kind: column ? importValueKind(column.data_type) : "text",
     };
   });
+}
+
+export function previewValue(
+  value: string | null,
+  options: ImportOptions,
+): string | null {
+  if (value === null || options.format !== "csv") return value;
+  const text = options.trim ? value.trim() : value;
+  return text === options.null_value || (options.empty_as_null && text === "")
+    ? null
+    : text;
 }

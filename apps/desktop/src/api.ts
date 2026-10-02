@@ -106,7 +106,9 @@ export interface MutationResult {
   affected: number;
   pending_transaction: boolean;
 }
-export interface CsvOptions {
+export type ImportFormat = "csv" | "json" | "klyndb_json";
+export interface ImportOptions {
+  format: ImportFormat;
   delimiter: string;
   trim: boolean;
   null_value: string | null;
@@ -114,7 +116,7 @@ export interface CsvOptions {
 }
 export interface ImportPreview {
   headers: string[];
-  rows: string[][];
+  rows: (string | null)[][];
   clipped: boolean;
 }
 export interface ImportSource {
@@ -279,11 +281,11 @@ interface Commands {
   choose_ssh_identity_file: { args: undefined; result: string | null };
   choose_database_file: { args: { create: boolean }; result: string | null };
   choose_import_file: {
-    args: { options: CsvOptions };
+    args: { options: ImportOptions };
     result: ImportSource | null;
   };
   preview_import: {
-    args: { id: string; options: CsvOptions };
+    args: { id: string; options: ImportOptions };
     result: ImportPreview;
   };
   start_import: {
@@ -292,7 +294,7 @@ interface Commands {
         source: string;
         connection: string;
         table: Table;
-        options: CsvOptions;
+        options: ImportOptions;
         mapping: ImportMapping[];
         timeout_seconds: number;
         confirmed: boolean;

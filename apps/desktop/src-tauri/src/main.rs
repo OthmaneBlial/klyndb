@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use klyndb_connections::{Connection, Store};
-use klyndb_core::import::{CsvOptions, ImportRequest, ImportSource, ImportStatus, Preview};
+use klyndb_core::import::{
+    ImportFormat, ImportOptions, ImportRequest, ImportSource, ImportStatus, Preview,
+};
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
     Capabilities, Change, MutationResult, Row, Table, TableInfo, TableQuery, TransactionState,
@@ -385,14 +387,16 @@ async fn choose_database_file(create: bool) -> ApiResult<Option<String>> {
 #[tauri::command]
 async fn choose_import_file(
     engine: State<'_, Arc<Engine>>,
-    options: CsvOptions,
+    options: ImportOptions,
 ) -> ApiResult<Option<ImportSource>> {
     options.validate().map_err(api)?;
-    let Some(file) = rfd::AsyncFileDialog::new()
-        .add_filter("CSV data", &["csv", "tsv", "txt"])
-        .pick_file()
-        .await
-    else {
+    let dialog = rfd::AsyncFileDialog::new();
+    let dialog = if options.format == ImportFormat::Csv {
+        dialog.add_filter("CSV data", &["csv", "tsv", "txt"])
+    } else {
+        dialog.add_filter("JSON data", &["json"])
+    };
+    let Some(file) = dialog.pick_file().await else {
         return Ok(None);
     };
     engine
@@ -406,7 +410,7 @@ async fn choose_import_file(
 async fn preview_import(
     engine: State<'_, Arc<Engine>>,
     id: String,
-    options: CsvOptions,
+    options: ImportOptions,
 ) -> ApiResult<Preview> {
     engine.imports.preview(&id, options).await.map_err(api)
 }

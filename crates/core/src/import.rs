@@ -1,7 +1,7 @@
 use super::{Engine, error};
 use klyndb_driver_api::*;
-pub use klyndb_import::{CsvOptions, Mapping, Preview};
 use klyndb_import::{FILE_LIMIT, Snapshot, validate_mapping};
+pub use klyndb_import::{ImportFormat, ImportOptions, Mapping, Preview};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -27,7 +27,7 @@ pub struct ImportRequest {
     pub source: String,
     pub connection: String,
     pub table: Table,
-    pub options: CsvOptions,
+    pub options: ImportOptions,
     pub mapping: Vec<Mapping>,
     pub timeout_seconds: u64,
     pub confirmed: bool,
@@ -89,7 +89,7 @@ impl Imports {
     pub async fn prepare(
         self: &Arc<Self>,
         path: PathBuf,
-        options: CsvOptions,
+        options: ImportOptions,
     ) -> Result<ImportSource> {
         let gate = self.gate.clone().lock_owned().await;
         let imports = self.clone();
@@ -123,7 +123,7 @@ impl Imports {
         .await
         .map_err(error)?
     }
-    pub async fn preview(self: &Arc<Self>, id: &str, options: CsvOptions) -> Result<Preview> {
+    pub async fn preview(self: &Arc<Self>, id: &str, options: ImportOptions) -> Result<Preview> {
         let gate = self.gate.clone().lock_owned().await;
         let snapshot = self.snapshot(id)?;
         tokio::task::spawn_blocking(move || {

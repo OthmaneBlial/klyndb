@@ -1314,7 +1314,7 @@ export default function App() {
                           })
                         }
                       >
-                        <FileUp size={14} /> Import CSV
+                        <FileUp size={14} /> Import data
                       </button>
                     )}
                     <span className="muted">
