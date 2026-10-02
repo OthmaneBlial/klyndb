@@ -15,3 +15,5 @@ Reviewed the public README and user workflow documentation of [Beekeeper Studio]
 | NoSQL | Specialized engine behavior | Separate document/key experiences planned | Pending |
 
 References are behavior only. No branded icons, logos, screenshots or source were copied. Analyze each major area just before implementing it, and update this matrix from actual behavior.
+
+ClickHouse connection workflow review: [official Beekeeper user documentation](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) on 2026-10-03. This covers selecting the engine, endpoint/database/credentials and TLS expectations; no implementation or commercial sources were read or reused. Klyndb independently uses a native TCP Rust client and shared connection/query/grid/export controls. Its schema view exposes the selected database, native column types and table DDL; unique relational keys, transactions and reviewed grid edits are not inferred from MergeTree sorting keys. Real native-protocol backend and verified-TLS contracts pass; native desktop acceptance remains pending.

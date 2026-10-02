@@ -24,7 +24,7 @@ Report vulnerabilities privately through GitHub's security reporting for Othmane
 
 ## Current transitive advisories
 
-The 2026-10-02 cargo audit returned zero vulnerability entries and two warnings: RUSTSEC-2024-0370 (`proc-macro-error`, unmaintained) and RUSTSEC-2024-0429 (`glib` 0.18 iterator unsoundness). Both enter through Tauri's Linux GTK dependency graph. Klyndb does not call the affected glib iterator API; this does not prove the entire upstream stack unaffected. No advisories are suppressed. Track upstream GTK/Tauri upgrades and reassess before Linux releases.
+The 2026-10-03 cargo audit returned zero vulnerability entries and three warnings: RUSTSEC-2024-0370 (`proc-macro-error`, unmaintained) and RUSTSEC-2024-0429 (`glib` 0.18 iterator unsoundness). Those two enter through Tauri's Linux GTK dependency graph. The ClickHouse native client also brings `paste` 1.0.15, with the unmaintained warning RUSTSEC-2024-0436; track a maintained upstream replacement. Klyndb does not call the affected glib iterator API; this does not prove the entire upstream stack unaffected. No advisories are suppressed. Track upstream GTK/Tauri upgrades and reassess before Linux releases.
 
 Staged MySQL/MariaDB editing checks the actual InnoDB table engine and binds all values. Conversion warnings abort the batch. Nontransactional trigger effects cannot be rolled back by the server; unconfirmed rollback/interruption closes the connection and asks the user to verify data before retrying. COMMIT is never deliberately interrupted after submission.
 

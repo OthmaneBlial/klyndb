@@ -1,0 +1,26 @@
+[package]
+name = "klyndb-clickhouse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../../driver-api" }
+klyndb-query = { path = "../../query" }
+klyndb-import = { path = "../../import" }
+klickhouse = { version = "=0.15.3", default-features = false, features = ["compression"] }
+async-trait.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+uuid.workspace = true
+serde_json.workspace = true
+url = "2"
+percent-encoding = "2"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+chrono = "0.4"
+chrono-tz = "0.10"
+num-bigint = "0.4"
+hex = "0.4"
+zeroize = "1"

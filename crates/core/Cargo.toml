@@ -13,6 +13,7 @@ klyndb-sqlite = { path = "../drivers/sqlite" }
 klyndb-postgres = { path = "../drivers/postgres" }
 klyndb-mysql = { path = "../drivers/mysql" }
 klyndb-duckdb = { path = "../drivers/duckdb" }
+klyndb-clickhouse = { path = "../drivers/clickhouse" }
 rusqlite.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

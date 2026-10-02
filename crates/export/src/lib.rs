@@ -1,4 +1,4 @@
-use klyndb_driver_api::{Cell, Error, Result, Row, quote_identifier};
+use klyndb_driver_api::{Cell, Error, Result, Row, quote_clickhouse_identifier, quote_identifier};
 use std::io::Write;
 
 pub fn export(
@@ -56,7 +56,9 @@ pub fn export_for_engine(
         }
         "sql" => {
             let quote = |name: &str| {
-                if engine == "mysql" {
+                if engine == "clickhouse" {
+                    quote_clickhouse_identifier(name)
+                } else if engine == "mysql" {
                     format!("`{}`", name.replace('`', "``"))
                 } else {
                     quote_identifier(name)
@@ -81,9 +83,10 @@ pub fn export_for_engine(
                             }
                         }
                         Cell::Binary(b) if engine == "postgres" => format!("decode('{b}', 'hex')"),
+                        Cell::Binary(b) if engine == "clickhouse" => format!("unhex('{b}')"),
                         Cell::Binary(b) if engine == "duckdb" => format!("from_hex('{b}')"),
                         Cell::Binary(b) => format!("X'{b}'"),
-                        _ if engine == "mysql" => {
+                        _ if engine == "mysql" || engine == "clickhouse" => {
                             // Hex UTF-8 avoids mode-dependent backslash and quote interpretation.
                             let hex: String = c
                                 .text()
@@ -96,7 +99,11 @@ pub fn export_for_engine(
                                     ]
                                 })
                                 .collect();
-                            format!("CONVERT(X'{hex}' USING utf8mb4)")
+                            if engine == "clickhouse" {
+                                format!("unhex('{hex}')")
+                            } else {
+                                format!("CONVERT(X'{hex}' USING utf8mb4)")
+                            }
                         }
                         _ if engine == "postgres" => {
                             format!("E'{}'", c.text().replace('\\', "\\\\").replace('\'', "''"))

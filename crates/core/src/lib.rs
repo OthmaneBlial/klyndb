@@ -18,7 +18,7 @@ use zeroize::Zeroizing;
 pub struct ResultSet {
     pub columns: Vec<String>,
     pub rows: usize,
-    pub affected: u64,
+    pub affected: Option<u64>,
     pub truncated: bool,
 }
 #[derive(Clone, Serialize, Debug)]
@@ -175,7 +175,7 @@ impl Job {
         }
         klyndb_query::plan::decode(format, &first.columns, &rows, warnings)
     }
-    fn consume(&self, mut input: mpsc::Receiver<Batch>) -> Result<()> {
+    fn consume(&self, mut input: mpsc::Receiver<Batch>, affected_rows: bool) -> Result<()> {
         let mut total_bytes = 0usize;
         while let Some(batch) = input.blocking_recv() {
             if self.cancel.is_cancelled() {
@@ -186,7 +186,7 @@ impl Job {
                     self.status.lock().map_err(error)?.sets.push(ResultSet {
                         columns,
                         rows: 0,
-                        affected: 0,
+                        affected: None,
                         truncated: false,
                     });
                 }
@@ -225,7 +225,7 @@ impl Job {
                     truncated,
                 } => {
                     if let Some(set) = self.status.lock().map_err(error)?.sets.last_mut() {
-                        set.affected = affected;
+                        set.affected = affected_rows.then_some(affected);
                         set.truncated = truncated;
                     }
                 }
@@ -267,10 +267,17 @@ async fn open_session(
                 .trim_start_matches('[')
                 .trim_end_matches(']')
                 .to_owned();
-            let port = url.port().unwrap_or(if config.engine == "postgres" {
-                5432
-            } else {
-                3306
+            let port = url.port().unwrap_or(match config.engine.as_str() {
+                "postgres" => 5432,
+                "clickhouse"
+                    if url
+                        .query_pairs()
+                        .any(|(k, v)| k == "tls" && v == "disabled") =>
+                {
+                    9000
+                }
+                "clickhouse" => 9440,
+                _ => 3306,
             });
             let options: Vec<_> = url
                 .query_pairs()
@@ -313,6 +320,16 @@ async fn open_session(
             ) as Arc<dyn Session>),
             "mysql" => Ok(Arc::new(
                 klyndb_mysql::Mysql::connect_via(
+                    &address,
+                    password,
+                    config.read_only,
+                    identity_password,
+                    endpoint,
+                )
+                .await?,
+            ) as Arc<dyn Session>),
+            "clickhouse" => Ok(Arc::new(
+                klyndb_clickhouse::ClickHouse::connect_via(
                     &address,
                     password,
                     config.read_only,
@@ -629,7 +646,8 @@ impl Engine {
             });
             let (output, input) = mpsc::channel(4);
             let spool = job.clone();
-            let consumer = tokio::task::spawn_blocking(move || spool.consume(input));
+            let affected_rows = driver.capabilities().affected_rows;
+            let consumer = tokio::task::spawn_blocking(move || spool.consume(input, affected_rows));
             let query = driver.execute(sql.clone(), output, token, limit).await;
             let consumed = consumer.await.map_err(error).and_then(|r| r);
             timer.abort();

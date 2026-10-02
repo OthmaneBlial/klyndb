@@ -80,11 +80,11 @@ it("round-trips TLS certificate paths without dropping connection options", () =
   expect(() => updateTls("postgres", "not a URL", "require", ca)).toThrow();
 });
 it("round-trips a network deadline while preserving TLS identity and other options", () => {
-  for (const engine of ["postgres", "mysql"]) {
+  for (const engine of ["postgres", "mysql", "clickhouse"]) {
     const address = updateTls(
       engine,
       `${engine}://alice@localhost/db`,
-      engine === "mysql" ? "required" : "require",
+      engine !== "postgres" ? "required" : "require",
       "/tmp/ca.pem",
       "/tmp/client.p12",
     );

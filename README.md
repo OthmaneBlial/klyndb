@@ -52,7 +52,7 @@
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB in source builds](docs/DUCKDB.md); connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
+| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md) and [ClickHouse](docs/CLICKHOUSE.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes, foreign keys, constraints, user triggers and available table DDL. |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
@@ -66,7 +66,7 @@
 
 Server passwords stay in the **OS keychain**. TLS verification is enabled by default, with optional [CA files and client certificates](docs/TLS.md) for private servers, plus [SSH tunnels with verified host keys](docs/SSH.md). Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 
-## 🗄️ Five databases. One workspace.
+## 🗄️ Six databases. One workspace.
 
 | Database | Queries & schema | Staged grid edits | Verified against |
 | --- | --- | --- | --- |
@@ -75,10 +75,11 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
 | DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 · native macOS workflow |
+| ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-DuckDB is available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB guide](docs/DUCKDB.md) for setup and current limits.
+DuckDB and ClickHouse are available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB](docs/DUCKDB.md) and [ClickHouse](docs/CLICKHOUSE.md) guides for setup and current limits.
 
 **Development preview:** [Download Preview 1 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 
@@ -126,7 +127,7 @@ Build a native package with `npm run tauri build`. Platform targets are macOS, W
 
 Install the audit tools with `cargo install cargo-audit cargo-deny --locked`. The script runs locked frontend installation, lint, typecheck, tests, production build, Rust formatting/Clippy/tests, a native debug build and dependency/license audits.
 
-Set `KLYNDB_TEST_POSTGRES_URL` or `KLYNDB_TEST_MYSQL_URL` to run the real-server and delayed-handshake contracts against **disposable local databases**. The MySQL contract runs on either MySQL or MariaDB; verify both separately. `KLYNDB_TEST_MARIADB_URL` additionally runs MariaDB delayed-handshake coverage. Never use production databases for integration tests.
+Set `KLYNDB_TEST_POSTGRES_URL` or `KLYNDB_TEST_MYSQL_URL` to run the real-server and delayed-handshake contracts against **disposable local databases**. The MySQL contract runs on either MySQL or MariaDB; verify both separately. `KLYNDB_TEST_MARIADB_URL` additionally runs MariaDB delayed-handshake coverage. For native ClickHouse TCP/TLS contracts, use the disposable fixture variables in [the ClickHouse guide](docs/CLICKHOUSE.md). Never use production databases for integration tests.
 
 **GitHub Actions is disabled by owner instruction. All current CI checks run locally.**
 

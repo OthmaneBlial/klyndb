@@ -9,6 +9,11 @@ export interface Inspector {
   query: string;
   browse: TableQuery;
 }
+function affectedRows(count: number | null | undefined) {
+  return count == null
+    ? "Affected-row count unavailable"
+    : `${count.toLocaleString()} rows affected`;
+}
 export function ResultPanel({
   status,
   set,
@@ -105,7 +110,7 @@ export function ResultPanel({
               <small>
                 {s.columns.length
                   ? s.rows.toLocaleString()
-                  : `${s.affected} affected`}
+                  : affectedRows(s.affected)}
               </small>
             </button>
           ))}
@@ -206,7 +211,7 @@ export function ResultPanel({
               {status.sets.map((s, i) => (
                 <p key={i}>
                   Statement {i + 1}: {s.rows.toLocaleString()} rows returned ·{" "}
-                  {s.affected.toLocaleString()} rows affected
+                  {affectedRows(s.affected)}
                   {s.truncated ? " · row limit reached" : ""}
                 </p>
               ))}
@@ -242,7 +247,7 @@ export function ResultPanel({
           ) : status ? (
             <>
               <h3>Statement complete</h3>
-              <p>{status.sets[set]?.affected ?? 0} rows affected</p>
+              <p>{affectedRows(status.sets[set]?.affected)}</p>
             </>
           ) : (
             <>

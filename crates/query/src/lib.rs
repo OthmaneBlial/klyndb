@@ -3,7 +3,8 @@ use serde::Serialize;
 use sqlparser::{
     ast::{Query, SetExpr, Statement, Visit, Visitor},
     dialect::{
-        Dialect, DuckDbDialect, GenericDialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect,
+        ClickHouseDialect, Dialect, DuckDbDialect, GenericDialect, MySqlDialect, PostgreSqlDialect,
+        SQLiteDialect,
     },
     parser::Parser,
     tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace},
@@ -94,6 +95,7 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
         "postgres" => &PostgreSqlDialect {},
         "mysql" => &ValidatedMySqlDialect::new(),
         "duckdb" => &ValidatedDuckDbDialect::new(),
+        "clickhouse" => &ClickHouseDialect {},
         _ => &GenericDialect {},
     };
     let mut tokens = Tokenizer::new(dialect, sql)

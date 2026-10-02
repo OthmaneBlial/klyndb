@@ -104,7 +104,7 @@ export function ConnectionDialog({
     try {
       const path = await api("choose_ca_file");
       if (path)
-        changeTls(form.engine === "mysql" ? "required" : "require", path);
+        changeTls(form.engine !== "postgres" ? "required" : "require", path);
     } catch (e) {
       setError(String(e));
     }
@@ -114,7 +114,7 @@ export function ConnectionDialog({
       const path = await api("choose_client_identity_file");
       if (path) {
         changeTls(
-          form.engine === "mysql" ? "required" : "require",
+          form.engine !== "postgres" ? "required" : "require",
           tls.ca,
           path,
         );
@@ -195,7 +195,7 @@ export function ConnectionDialog({
           aria-label="Connection details"
         >
           <div className="engine-picker">
-            {["sqlite", "duckdb", "postgres", "mysql"].map((engine) => (
+            {["sqlite", "duckdb", "postgres", "mysql", "clickhouse"].map((engine) => (
               <button
                 type="button"
                 key={engine}
@@ -221,7 +221,9 @@ export function ConnectionDialog({
                       ? "DuckDB"
                       : engine === "mysql"
                         ? "MySQL / MariaDB"
-                        : "PostgreSQL"}
+                        : engine === "clickhouse"
+                          ? "ClickHouse"
+                          : "PostgreSQL"}
                 </strong>
                 <span>
                   {["sqlite", "duckdb"].includes(engine)
@@ -286,14 +288,16 @@ export function ConnectionDialog({
                   placeholder={
                     form.engine === "mysql"
                       ? "mysql://user@localhost:3306/database"
-                      : "postgresql://user@localhost:5432/database"
+                      : form.engine === "clickhouse"
+                        ? "clickhouse://default@localhost:9000/default?tls=disabled"
+                        : "postgresql://user@localhost:5432/database"
                   }
                   required
                   autoComplete="off"
                 />
                 <small>
                   TLS verification is enabled by default. Add{" "}
-                  {form.engine === "mysql" ? "tls=disabled" : "sslmode=disable"}{" "}
+                  {form.engine !== "postgres" ? "tls=disabled" : "sslmode=disable"}{" "}
                   only for a trusted local server.
                 </small>
               </label>
@@ -499,7 +503,7 @@ export function ConnectionDialog({
                     onChange={(e) => changeTls(e.target.value, tls.ca)}
                   >
                     <option
-                      value={form.engine === "mysql" ? "required" : "require"}
+                      value={form.engine !== "postgres" ? "required" : "require"}
                     >
                       Verified TLS (default)
                     </option>
@@ -512,7 +516,7 @@ export function ConnectionDialog({
                       </option>
                     )}
                     <option
-                      value={form.engine === "mysql" ? "disabled" : "disable"}
+                      value={form.engine !== "postgres" ? "disabled" : "disable"}
                       disabled={!!(tls.ca || tls.identity)}
                     >
                       Plaintext · trusted local server only
@@ -528,7 +532,7 @@ export function ConnectionDialog({
                       placeholder="System trust store"
                       onChange={(e) =>
                         changeTls(
-                          form.engine === "mysql" ? "required" : "require",
+                          form.engine !== "postgres" ? "required" : "require",
                           e.target.value,
                         )
                       }
@@ -564,7 +568,7 @@ export function ConnectionDialog({
                       placeholder="PKCS#12 (.p12 / .pfx)"
                       onChange={(e) => {
                         changeTls(
-                          form.engine === "mysql" ? "required" : "require",
+                          form.engine !== "postgres" ? "required" : "require",
                           tls.ca,
                           e.target.value,
                         );

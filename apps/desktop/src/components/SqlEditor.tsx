@@ -21,7 +21,7 @@ import {
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { sql, SQLite, PostgreSQL, MySQL } from "@codemirror/lang-sql";
-import { currentStatement, replaceDocument } from "../sql";
+import { ClickHouseSQL, currentStatement, replaceDocument } from "../sql";
 export interface EditorHandle {
   runText: () => string;
   allText: () => string;
@@ -66,7 +66,9 @@ export function SqlEditor({
               ? SQLite
               : engine === "mysql"
                 ? MySQL
-                : PostgreSQL,
+                : engine === "clickhouse"
+                  ? ClickHouseSQL
+                  : PostgreSQL,
           schema,
         }),
         keymap.of([

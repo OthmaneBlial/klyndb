@@ -354,6 +354,7 @@ impl Postgres {
 impl Session for Postgres {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            affected_rows: true,
             table_browse: true,
             diagrams: true,
             transactions: true,

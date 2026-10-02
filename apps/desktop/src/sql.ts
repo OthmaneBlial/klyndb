@@ -1,3 +1,5 @@
+import { SQLDialect, StandardSQL } from "@codemirror/lang-sql";
+export const ClickHouseSQL = SQLDialect.define({ ...StandardSQL.spec, backslashEscapes: true, identifierQuotes: "`\"" });
 import { EditorState, type TransactionSpec } from "@codemirror/state";
 import { ensureSyntaxTree } from "@codemirror/language";
 export function currentStatement(state: EditorState): string {

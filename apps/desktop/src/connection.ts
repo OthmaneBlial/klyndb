@@ -3,14 +3,14 @@ export function tlsSettings(engine: string, address: string) {
     const url = new URL(address);
     return {
       mode:
-        url.searchParams.get(engine === "mysql" ? "tls" : "sslmode") ??
-        (engine === "mysql" ? "required" : "require"),
+        url.searchParams.get(engine !== "postgres" ? "tls" : "sslmode") ??
+        (engine !== "postgres" ? "required" : "require"),
       ca: url.searchParams.get("sslrootcert") ?? "",
       identity: url.searchParams.get("sslidentity") ?? "",
     };
   } catch {
     return {
-      mode: engine === "mysql" ? "required" : "require",
+      mode: engine !== "postgres" ? "required" : "require",
       ca: "",
       identity: "",
     };
@@ -20,7 +20,7 @@ function serverUrl(address: string) {
   const url = new URL(address);
   if (
     !url.hostname ||
-    !["mysql:", "postgres:", "postgresql:"].includes(url.protocol)
+    !["mysql:", "postgres:", "postgresql:", "clickhouse:"].includes(url.protocol)
   )
     throw new Error("Enter a valid server connection URL first.");
   return url;
@@ -96,7 +96,7 @@ export function updateTls(
   identity?: string,
 ) {
   const url = serverUrl(address);
-  url.searchParams.set(engine === "mysql" ? "tls" : "sslmode", mode);
+  url.searchParams.set(engine !== "postgres" ? "tls" : "sslmode", mode);
   if (ca) url.searchParams.set("sslrootcert", ca);
   else url.searchParams.delete("sslrootcert");
   if (identity !== undefined) {

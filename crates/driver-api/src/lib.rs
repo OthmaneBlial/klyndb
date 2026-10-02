@@ -77,6 +77,7 @@ pub type Row = Vec<Cell>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capabilities {
+    pub affected_rows: bool,
     pub table_browse: bool,
     pub diagrams: bool,
     pub transactions: bool,
@@ -358,6 +359,19 @@ pub trait Session: Send + Sync {
     fn quote_filter_value(&self, value: &str) -> String {
         format!("'{}'", value.replace('\'', "''"))
     }
+    fn contains_filter_sql(&self, column: &str, value: &str) -> String {
+        let value = format!(
+            "%{}%",
+            value
+                .replace('!', "!!")
+                .replace('%', "!%")
+                .replace('_', "!_")
+        );
+        format!(
+            "{column} LIKE {} ESCAPE '!'",
+            self.quote_filter_value(&value)
+        )
+    }
     fn table_query_sql(
         &self,
         table: &Table,
@@ -407,27 +421,14 @@ pub trait Session: Send + Sync {
                     continue;
                 }
             };
-            let value = if matches!(filter.op, FilterOp::Contains) {
-                format!(
-                    "%{}%",
-                    filter
-                        .value
-                        .replace('!', "!!")
-                        .replace('%', "!%")
-                        .replace('_', "!_")
-                )
+            if matches!(filter.op, FilterOp::Contains) {
+                predicates.push(self.contains_filter_sql(&name, &filter.value));
             } else {
-                filter.value.clone()
-            };
-            let escape = if matches!(filter.op, FilterOp::Contains) {
-                " ESCAPE '!'"
-            } else {
-                ""
-            };
-            predicates.push(format!(
-                "{name} {operator} {}{escape}",
-                self.quote_filter_value(&value)
-            ));
+                predicates.push(format!(
+                    "{name} {operator} {}",
+                    self.quote_filter_value(&filter.value)
+                ));
+            }
         }
         let mut order = vec![];
         let mut ordered = std::collections::HashSet::new();
@@ -513,4 +514,9 @@ pub trait Session: Send + Sync {
 
 pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// ClickHouse quoted identifiers also interpret backslash escapes.
+pub fn quote_clickhouse_identifier(name: &str) -> String {
+    format!("`{}`", name.replace('\\', "\\\\").replace('`', "``"))
 }

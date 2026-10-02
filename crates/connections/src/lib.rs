@@ -43,7 +43,7 @@ impl Connection {
         )
     }
     pub fn has_client_identity(&self) -> bool {
-        if !["postgres", "mysql"].contains(&self.engine.as_str()) {
+        if !["postgres", "mysql", "clickhouse"].contains(&self.engine.as_str()) {
             return false;
         }
         url::Url::parse(&self.address)
@@ -67,23 +67,27 @@ impl Connection {
                 }
                 Ok(None)
             }
-            "postgres" | "mysql" => {
+            "postgres" | "mysql" | "clickhouse" => {
                 let mut url = url::Url::parse(&self.address)
                     .map_err(|_| Error::new("Enter a valid database connection URL"))?;
-                let mysql = self.engine == "mysql";
-                let schemes: &[&str] = if mysql {
-                    &["mysql"]
+                let native_tls_mode = self.engine != "postgres";
+                let schemes: &[&str] = if native_tls_mode {
+                    &[self.engine.as_str()]
                 } else {
                     &["postgres", "postgresql"]
                 };
                 if !schemes.contains(&url.scheme()) || url.host_str().is_none() {
-                    return Err(Error::new(if mysql {
-                        "Expected mysql://user@host/database"
+                    return Err(Error::new(if native_tls_mode {
+                        if self.engine == "clickhouse" {
+                            "Expected clickhouse://user@host:9000/database"
+                        } else {
+                            "Expected mysql://user@host/database"
+                        }
                     } else {
                         "Expected postgresql://user@host/database"
                     }));
                 }
-                let options: &[&str] = if mysql {
+                let options: &[&str] = if native_tls_mode {
                     &["tls", "sslrootcert", "sslidentity", "connect_timeout"]
                 } else {
                     &[
@@ -108,9 +112,14 @@ impl Connection {
                     {
                         return Err(Error::new("Choose an absolute certificate file path"));
                     }
-                    if mysql && key == "tls" && !["required", "disabled"].contains(&value.as_ref())
+                    if native_tls_mode
+                        && key == "tls"
+                        && !["required", "disabled"].contains(&value.as_ref())
                     {
-                        return Err(Error::new("MySQL tls must be required or disabled"));
+                        return Err(Error::new(format!(
+                            "{} tls must be required or disabled",
+                            self.engine
+                        )));
                     }
                     if !options.contains(&key.as_ref()) && !ssh::OPTIONS.contains(&key.as_ref()) {
                         return Err(Error::new(format!(
@@ -123,16 +132,27 @@ impl Connection {
                 let password = url.password().map(|p| Zeroizing::new(percent_decode(p)));
                 url.set_password(None)
                     .map_err(|_| Error::new("Invalid URL credentials"))?;
-                let tls_key = if mysql { "tls" } else { "sslmode" };
+                let tls_key = if native_tls_mode { "tls" } else { "sslmode" };
                 if !url.query_pairs().any(|(k, _)| k == tls_key) {
-                    url.query_pairs_mut()
-                        .append_pair(tls_key, if mysql { "required" } else { "require" });
+                    url.query_pairs_mut().append_pair(
+                        tls_key,
+                        if native_tls_mode {
+                            "required"
+                        } else {
+                            "require"
+                        },
+                    );
                 }
                 if url
                     .query_pairs()
                     .any(|(k, _)| ["sslrootcert", "sslidentity"].contains(&k.as_ref()))
                     && url.query_pairs().any(|(k, v)| {
-                        k == tls_key && v != if mysql { "required" } else { "require" }
+                        k == tls_key
+                            && v != if native_tls_mode {
+                                "required"
+                            } else {
+                                "require"
+                            }
                     })
                 {
                     return Err(Error::new(
@@ -322,7 +342,7 @@ mod tests {
             invalid.address = address.into();
             assert!(invalid.validate().is_err());
         }
-        for engine in ["postgres", "mysql"] {
+        for engine in ["postgres", "mysql", "clickhouse"] {
             let mut timed = c.clone();
             timed.engine = engine.into();
             timed.address = format!("{engine}://alice@localhost/db");

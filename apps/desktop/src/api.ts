@@ -12,6 +12,7 @@ export interface Connection {
   create_file: boolean;
 }
 export interface Capabilities {
+  affected_rows: boolean;
   table_browse: boolean;
   diagrams: boolean;
   transactions: boolean;
@@ -151,7 +152,7 @@ export interface SqlSource {
 export interface ResultSet {
   columns: string[];
   rows: number;
-  affected: number;
+  affected: number | null;
   truncated: boolean;
 }
 export interface QueryStatus {

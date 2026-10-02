@@ -377,6 +377,7 @@ fn stream(
 impl Session for DuckDb {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            affected_rows: true,
             table_browse: true,
             diagrams: false,
             transactions: true,

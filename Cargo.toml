@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "apps/desktop/src-tauri"]
-default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb"]
+exclude = ["third_party/klickhouse-0.15.3"]
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "apps/desktop/src-tauri"]
+default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,3 +26,7 @@ thiserror = "2"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Retains the pinned native client with a result-column data-loss guard.
+[patch.crates-io]
+klickhouse = { path = "third_party/klickhouse-0.15.3" }

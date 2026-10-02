@@ -23,6 +23,7 @@ def collect(ecosystem, name, version, license_expression, directory):
         "libssh2-sys": ["libssh2/COPYING", "libssh2/LICENSES"],
         "openssl-src": ["openssl/LICENSE.txt"],
         "libz-sys": ["src/zlib/LICENSE", "src/zlib-ng/LICENSE.md"],
+        "lz4-sys": ["liblz4/LICENSE", "liblz4/lib/LICENSE"],
     }
     for relative in bundled.get(name, []):
         path = directory / relative
@@ -48,7 +49,7 @@ def main():
     desktop = root / "apps/desktop"
     lock = json.loads((desktop / "package-lock.json").read_text())
     for package in metadata["packages"]:
-        if package["source"]:
+        if package["source"] or Path(package["manifest_path"]).resolve().is_relative_to(root / "third_party"):
             collect("Cargo", package["name"], package["version"], package["license"], Path(package["manifest_path"]).parent)
     for location, package in lock["packages"].items():
         if not location:

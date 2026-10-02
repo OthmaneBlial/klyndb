@@ -90,11 +90,15 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | cfg_aliases | 0.2.2 | MIT |
 | Cargo | chacha20 | 0.10.2 | MIT OR Apache-2.0 |
 | Cargo | chrono | 0.4.45 | MIT OR Apache-2.0 |
+| Cargo | chrono-tz | 0.10.4 | MIT OR Apache-2.0 |
 | Cargo | cipher | 0.4.4 | MIT OR Apache-2.0 |
 | Cargo | cipher | 0.5.2 | MIT OR Apache-2.0 |
+| Cargo | cityhash-rs | 1.0.1 | MIT OR Apache-2.0 |
 | Cargo | cmov | 0.5.4 | Apache-2.0 OR MIT |
 | Cargo | combine | 4.6.8 | MIT |
 | Cargo | comfy-table | 7.1.4 | MIT |
+| Cargo | compiler-tools | 0.2.0 | MIT OR Apache-2.0 |
+| Cargo | compiler-tools-derive | 0.2.0 | MIT OR Apache-2.0 |
 | Cargo | concurrent-queue | 2.5.0 | Apache-2.0 OR MIT |
 | Cargo | const-oid | 0.10.2 | Apache-2.0 OR MIT |
 | Cargo | const-random | 0.1.18 | MIT OR Apache-2.0 |
@@ -291,6 +295,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | keyboard-types | 0.8.3 | MIT OR Apache-2.0 |
 | Cargo | keyed_priority_queue | 0.4.2 | MIT |
 | Cargo | keyring | 3.6.3 | MIT OR Apache-2.0 |
+| Cargo | klickhouse | 0.15.3 | MIT OR Apache-2.0 |
 | Cargo | lazy_static | 1.5.1 | MIT OR Apache-2.0 |
 | Cargo | lexical-core | 1.0.6 | MIT/Apache-2.0 |
 | Cargo | lexical-parse-float | 1.0.6 | MIT/Apache-2.0 |
@@ -316,6 +321,8 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | lock_api | 0.4.14 | MIT OR Apache-2.0 |
 | Cargo | log | 0.4.34 | MIT OR Apache-2.0 |
 | Cargo | lru | 0.18.5 | MIT |
+| Cargo | lz4 | 1.28.1 | MIT |
+| Cargo | lz4-sys | 1.11.1+lz4-1.10.0 | MIT |
 | Cargo | markup5ever | 0.39.0 | MIT OR Apache-2.0 |
 | Cargo | matchers | 0.2.0 | MIT |
 | Cargo | md-5 | 0.11.0 | MIT OR Apache-2.0 |
@@ -387,15 +394,18 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | Cargo | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
 | Cargo | password-hash | 0.6.1 | MIT OR Apache-2.0 |
+| Cargo | paste | 1.0.15 | MIT OR Apache-2.0 |
 | Cargo | pbkdf2 | 0.13.0 | MIT OR Apache-2.0 |
 | Cargo | pem | 3.0.6 | MIT |
 | Cargo | pem-rfc7468 | 1.0.0 | Apache-2.0 OR MIT |
 | Cargo | percent-encoding | 2.3.2 | MIT OR Apache-2.0 |
 | Cargo | phc | 0.6.1 | Apache-2.0 OR MIT |
+| Cargo | phf | 0.12.1 | MIT |
 | Cargo | phf | 0.13.1 | MIT |
 | Cargo | phf_codegen | 0.13.1 | MIT |
 | Cargo | phf_generator | 0.13.1 | MIT |
 | Cargo | phf_macros | 0.13.1 | MIT |
+| Cargo | phf_shared | 0.12.1 | MIT |
 | Cargo | phf_shared | 0.13.1 | MIT |
 | Cargo | pin-project-lite | 0.2.17 | Apache-2.0 OR MIT |
 | Cargo | piper | 0.2.5 | MIT OR Apache-2.0 |
@@ -569,6 +579,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | tokio-macros | 2.7.2 | MIT |
 | Cargo | tokio-native-tls | 0.3.1 | MIT |
 | Cargo | tokio-postgres | 0.7.18 | MIT OR Apache-2.0 |
+| Cargo | tokio-stream | 0.1.19 | MIT |
 | Cargo | tokio-util | 0.7.19 | MIT |
 | Cargo | toml | 0.8.2 | MIT OR Apache-2.0 |
 | Cargo | toml | 1.1.6+spec-1.1.0 | MIT OR Apache-2.0 |

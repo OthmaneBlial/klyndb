@@ -31,7 +31,7 @@ pub struct SqlReader<R: Read> {
 }
 impl<R: Read> SqlReader<R> {
     pub fn new(mut input: R, engine: &str) -> Result<Self> {
-        if !["sqlite", "postgres", "mysql", "duckdb"].contains(&engine) {
+        if !["sqlite", "postgres", "mysql", "duckdb", "clickhouse"].contains(&engine) {
             return Err(Error::new(
                 "SQL file imports are unavailable for this engine",
             ));
@@ -177,7 +177,8 @@ impl<R: Read> SqlReader<R> {
                         b'#' if self.engine == "mysql" => state = Lexical::LineComment,
                         b'\'' | b'"' => {
                             has_sql = true;
-                            let escape = self.engine == "mysql" && matches!(byte, b'\'' | b'"')
+                            let escape = matches!(self.engine.as_str(), "mysql" | "clickhouse")
+                                && matches!(byte, b'\'' | b'"')
                                 || matches!(self.engine.as_str(), "postgres" | "duckdb")
                                     && byte == b'\''
                                     && sql.len() >= 2
@@ -192,11 +193,15 @@ impl<R: Read> SqlReader<R> {
                                 escape,
                             };
                         }
-                        b'`' if matches!(self.engine.as_str(), "sqlite" | "mysql") => {
+                        b'`' if matches!(
+                            self.engine.as_str(),
+                            "sqlite" | "mysql" | "clickhouse"
+                        ) =>
+                        {
                             has_sql = true;
                             state = Lexical::Quote {
                                 close: b'`',
-                                escape: false,
+                                escape: self.engine == "clickhouse",
                             };
                         }
                         b'[' if self.engine == "sqlite" => {

@@ -776,7 +776,9 @@ export default function App() {
       editorRef.current?.replace(
         format(editorRef.current.allText(), {
           language:
-            connection?.engine === "duckdb"
+            connection?.engine === "clickhouse"
+              ? "clickhouse"
+              : connection?.engine === "duckdb"
               ? "duckdb"
               : connection?.engine === "postgres"
                 ? "postgresql"

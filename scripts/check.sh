@@ -48,6 +48,17 @@ if [[ -n "${KLYNDB_TEST_MYSQL_URL:-}" ]]; then
 else
   echo 'MySQL/MariaDB integration skipped: set KLYNDB_TEST_MYSQL_URL to a disposable test server.'
 fi
+if [[ -n "${KLYNDB_TEST_CLICKHOUSE_URL:-}" ]]; then
+  workspace_test crates/drivers/clickhouse/tests/integration.rs real_clickhouse_workflow --ignored
+else
+  echo 'ClickHouse integration skipped: set KLYNDB_TEST_CLICKHOUSE_URL to a disposable native TCP server.'
+fi
+if [[ -n "${KLYNDB_TEST_TLS_CLICKHOUSE_URL:-}" ]]; then
+  : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for ClickHouse TLS contracts}"
+  workspace_test crates/drivers/clickhouse/tests/integration.rs real_clickhouse_verified_tls_and_native_readonly_profile --ignored
+else
+  echo 'ClickHouse TLS integration skipped: set KLYNDB_TEST_TLS_CLICKHOUSE_URL and KLYNDB_TEST_TLS_CERT_DIR.'
+fi
 for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
   variable="KLYNDB_TEST_${entry%%:*}_URL"
   if [[ -n "${!variable:-}" ]]; then
