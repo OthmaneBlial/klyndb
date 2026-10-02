@@ -158,3 +158,8 @@ The recovered native table-browsing check exposed stale editor text after databa
 
 
 The final bundle also reconnected the disposable MySQL database, opened ui_validation_items and displayed PRIMARY / PRIMARY KEY in the Constraints table, its actual table DDL and the empty-visible trigger state. This native check read metadata and rows without modifying the fixture. PostgreSQL/MariaDB native Structure interactions and Windows/Linux checks remain pending.
+
+
+## Live website verification — 2026-10-02
+
+The existing GitHub Pages deployment for commit `4d03dec326a1beac16ba0e8f6ebfaf1c2a78c934` completed successfully (run `37025123491`). The live [landing page](https://othmaneblial.github.io/klyndb/) and [documentation](https://othmaneblial.github.io/klyndb/docs.html), stylesheet, script, favicon, native screenshot and both local fonts returned HTTP 200 and matched repository bytes. A real Chrome check confirmed the landing design, free/open-source DBeaver-alternative positioning, GitHub star links and the latest constraint/trigger documentation. README and repository homepage already point to the site. JavaScript syntax and the actual snippet-copy handler check passed locally. Application-repository Actions permissions remained `enabled: false`; no CI workflow was added or enabled. The Pages repository's existing publishing branch and configuration were preserved.
