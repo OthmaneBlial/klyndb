@@ -70,11 +70,21 @@ impl Job {
                 "SELECT data FROM rows WHERE result_set=? AND ordinal>=? ORDER BY ordinal LIMIT ?",
             )
             .map_err(error)?;
+        let mut bytes = 0usize;
         stmt.query_map(params![set as i64, offset as i64, limit as i64], |r| {
             r.get::<_, String>(0)
         })
         .map_err(error)?
-        .map(|s| serde_json::from_str(&s.map_err(error)?).map_err(error))
+        .map(|s| {
+            let json = s.map_err(error)?;
+            bytes += json.len();
+            if bytes > 8 * 1024 * 1024 {
+                return Err(Error::new(
+                    "Result page exceeds 8 MiB. Select smaller values or request fewer rows.",
+                ));
+            }
+            serde_json::from_str(&json).map_err(error)
+        })
         .collect()
     }
     fn consume(&self, mut input: mpsc::Receiver<Batch>) -> Result<()> {
@@ -102,6 +112,7 @@ impl Job {
                         .ok_or_else(|| Error::new("Driver omitted result columns"))?;
                     let set = &mut status.sets[set_id];
                     let tx = db.transaction().map_err(error)?;
+                    let mut committed_rows = set.rows;
                     for row in rows {
                         let json = serde_json::to_string(&row).map_err(error)?;
                         total_bytes += json.len();
@@ -113,12 +124,13 @@ impl Job {
                         }
                         tx.execute(
                             "INSERT INTO rows VALUES(?,?,?)",
-                            params![set_id as i64, set.rows as i64, json],
+                            params![set_id as i64, committed_rows as i64, json],
                         )
                         .map_err(error)?;
-                        set.rows += 1;
+                        committed_rows += 1;
                     }
                     tx.commit().map_err(error)?;
+                    set.rows = committed_rows;
                 }
                 Batch::Complete {
                     affected,
@@ -262,8 +274,11 @@ impl Engine {
             let began = Instant::now();
             let token = job.cancel.clone();
             let timer_token = token.clone();
+            let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let timer_flag = timed_out.clone();
             let timer = tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(timeout_seconds)).await;
+                timer_flag.store(true, std::sync::atomic::Ordering::Relaxed);
                 timer_token.cancel();
             });
             let (output, input) = mpsc::channel(4);
@@ -274,7 +289,17 @@ impl Engine {
             timer.abort();
             let outcome = consumed.and(query);
             let elapsed = began.elapsed().as_millis() as u64;
-            let message = outcome.err().map(|e| e.message);
+            let message = outcome.err().map(|e| {
+                if timed_out.load(std::sync::atomic::Ordering::Relaxed) {
+                    format!("Query timed out after {timeout_seconds} seconds")
+                } else if job.cancel.is_cancelled()
+                    && ["Query cancelled", "interrupted"].contains(&e.message.as_str())
+                {
+                    "Query cancelled".into()
+                } else {
+                    e.message
+                }
+            });
             if let Ok(mut status) = job.status.lock() {
                 status.done = true;
                 status.error = message.clone();
@@ -353,6 +378,32 @@ mod tests {
             vec![vec![Cell::Number("10000".into())]]
         );
         assert!(job.page(1, 0, 1001).is_err());
+        let wide = engine.start(connection.id.clone(), "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<40) SELECT zeroblob(128000) FROM n".into(), 40, 5, false).await.unwrap();
+        let wide_job = engine.job(&wide).unwrap();
+        while !wide_job.status().unwrap().done {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(wide_job.status().unwrap().error.is_none());
+        assert_eq!(wide_job.page(0, 0, 10).unwrap().len(), 10);
+        assert!(
+            wide_job
+                .page(0, 0, 40)
+                .unwrap_err()
+                .message
+                .contains("8 MiB")
+        );
+        engine.release(&wide).unwrap();
+        let cancelled=engine.start(connection.id.clone(), "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n) SELECT sum(x) FROM n".into(),100,5,false).await.unwrap();
+        engine.cancel(&cancelled).unwrap();
+        let cancelled_job = engine.job(&cancelled).unwrap();
+        while !cancelled_job.status().unwrap().done {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            cancelled_job.status().unwrap().error.as_deref(),
+            Some("Query cancelled")
+        );
+        engine.release(&cancelled).unwrap();
         engine.disconnect(&connection.id).await.unwrap();
         engine.release(&id).unwrap();
     }

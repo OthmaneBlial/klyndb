@@ -32,14 +32,12 @@ import {
   Command,
   ArrowUpRight,
   FileCode2,
-  KeyRound,
 } from "lucide-react";
 
 import {
   api,
   type Connection,
   type Table,
-  type TableInfo,
   type QueryStatus,
   type History,
   type Capabilities,
@@ -50,7 +48,11 @@ import type { EditorHandle } from "./components/SqlEditor";
 const SqlEditor = lazy(() =>
   import("./components/SqlEditor").then((m) => ({ default: m.SqlEditor })),
 );
-import { ResultGrid } from "./components/ResultGrid";
+import {
+  ResultPanel,
+  type ResultView,
+  type Inspector,
+} from "./components/ResultPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Modal } from "./components/Modal";
@@ -68,7 +70,6 @@ interface SavedQuery {
   connection: string;
   favorite: boolean;
 }
-type View = "results" | "messages" | "structure";
 export default function App() {
   const [connections, setConnections] = useState<Connection[]>([]),
     [connected, setConnected] = useState<Record<string, Capabilities>>({}),
@@ -89,11 +90,8 @@ export default function App() {
     [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [statuses, setStatuses] = useState<Record<string, QueryStatus>>({}),
     [resultSets, setResultSets] = useState<Record<string, number>>({}),
-    [view, setView] = useState<View>("results"),
-    [inspector, setInspector] = useState<{
-      table: Table;
-      info: TableInfo;
-    } | null>(null);
+    [view, setView] = useState<ResultView>("results"),
+    [inspectors, setInspectors] = useState<Record<string, Inspector>>({});
   const [history, setHistory] = useState<History[] | null>(null),
     [saved, setSaved] = useState<SavedQuery[]>([]),
     [savedOpen, setSavedOpen] = useState(false),
@@ -110,6 +108,7 @@ export default function App() {
   const current = tabs.find((t) => t.id === active),
     connection = connections.find((c) => c.id === current?.connection),
     status = statuses[active],
+    inspector = inspectors[active],
     busy = !!status && !status.done,
     set = resultSets[active] ?? 0;
   const report = useCallback((message: string) => setNotice(message), []);
@@ -157,18 +156,28 @@ export default function App() {
       })
       .catch((e) => report(`Could not load local state: ${e}`));
   }, [report]);
+  const workspaceRef = useRef({ version: 1, tabs, active, preferences });
+  workspaceRef.current = { version: 1, tabs, active, preferences };
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
+  const saveQueue = useRef(Promise.resolve());
+  const persistWorkspace = useCallback(() => {
+    saveQueue.current = saveQueue.current
+      .catch(() => {})
+      .then(() =>
+        api("save_document", { id: "workspace", data: workspaceRef.current }),
+      );
+    return saveQueue.current;
+  }, []);
   useEffect(() => {
     if (!loaded) return;
     const timer = setTimeout(() => {
-      api("save_document", {
-        id: "workspace",
-        data: { version: 1, tabs, active, preferences },
-      }).catch((e) => report(`Workspace could not be saved: ${e}`));
+      persistWorkspace().catch((e) =>
+        report(`Workspace could not be saved: ${e}`),
+      );
     }, 400);
     return () => clearTimeout(timer);
-  }, [tabs, active, preferences, loaded, report]);
-  const workspaceRef = useRef({ version: 1, tabs, active, preferences });
-  workspaceRef.current = { version: 1, tabs, active, preferences };
+  }, [tabs, active, preferences, loaded, persistWorkspace, report]);
   useEffect(() => {
     let dispose: (() => void) | undefined;
     let live = true;
@@ -176,10 +185,7 @@ export default function App() {
       .onCloseRequested(async (event) => {
         event.preventDefault();
         try {
-          await api("save_document", {
-            id: "workspace",
-            data: workspaceRef.current,
-          });
+          if (loadedRef.current) await persistWorkspace();
           await getCurrentWindow().destroy();
         } catch (e) {
           report(`Could not save before closing: ${e}`);
@@ -194,7 +200,7 @@ export default function App() {
       live = false;
       dispose?.();
     };
-  }, [report]);
+  }, [persistWorkspace, report]);
   useEffect(() => {
     document.documentElement.dataset.theme = preferences.theme;
     document.documentElement.style.setProperty(
@@ -245,17 +251,16 @@ export default function App() {
       return;
     }
     const id = crypto.randomUUID();
-    setTabs((t) => [
-      ...t,
-      {
-        id,
-        name: name ?? `Query ${t.length + 1}`,
-        connection: connectionId,
-        sql,
-      },
-    ]);
+    const tab: Tab = {
+      id,
+      name: name ?? `Query ${tabs.length + 1}`,
+      connection: connectionId,
+      sql,
+    };
+    setTabs((t) => [...t, tab]);
     setActive(id);
     setView("results");
+    return tab;
   }
   async function closeTab(id: string) {
     const result = statuses[id];
@@ -265,8 +270,28 @@ export default function App() {
       delete next[id];
       return next;
     });
+    setInspectors((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
     setTabs((t) => t.filter((tab) => tab.id !== id));
     if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
+  }
+  async function switchTabConnection(id: string, connection: string) {
+    if (statuses[id]) await api("release_result", { id: statuses[id].id });
+    setStatuses((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setInspectors((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    updateTab(id, { connection });
+    setView("results");
   }
   async function refresh(id: string) {
     setTables((t) => ({ ...t, [id]: [] }));
@@ -311,48 +336,55 @@ export default function App() {
       report(String(e));
     }
   }
+  const starting = useRef(new Set<string>());
   async function run(
     sql = editorRef.current?.runText() ?? current?.sql ?? "",
     confirmed = false,
   ) {
-    if (!current || !connection || busy) return;
+    if (current) await executeTab(current, sql, confirmed);
+  }
+  async function executeTab(tab: Tab, sql: string, confirmed = false) {
+    const c = connections.find((c) => c.id === tab.connection),
+      previous = statuses[tab.id];
+    if (!c || starting.current.has(tab.id) || (previous && !previous.done))
+      return;
+    starting.current.add(tab.id);
     setNotice("");
     try {
-      if (!connected[connection.id]) {
+      if (!connected[c.id]) {
         report("Connect to this database before running SQL.");
         return;
       }
-      const analysis = await api("analyze_query", {
-        sql,
-        engine: connection.engine,
-      });
+      const analysis = await api("analyze_query", { sql, engine: c.engine });
       if (!confirmed && analysis.warnings.length) {
         setConfirm({
           title: "Confirm destructive SQL",
-          message: `${connection.name} · ${connection.environment}\n${analysis.warnings.join("\n")}`,
+          message: `${c.name} · ${c.environment}\n${analysis.warnings.join("\n")}`,
           sql,
           action: () => {
-            void run(sql, true);
+            void executeTab(tab, sql, true);
           },
         });
         return;
       }
-      if (status) await api("release_result", { id: status.id });
       const id = await api("start_query", {
-        connection: connection.id,
+        connection: c.id,
         sql,
         limit: preferences.rowLimit,
         timeoutSeconds: preferences.timeout,
         confirmed,
       });
+      if (previous) await api("release_result", { id: previous.id });
       setStatuses((s) => ({
         ...s,
-        [current.id]: { id, sets: [], done: false, error: null, elapsed_ms: 0 },
+        [tab.id]: { id, sets: [], done: false, error: null, elapsed_ms: 0 },
       }));
-      setResultSets((s) => ({ ...s, [current.id]: 0 }));
+      setResultSets((s) => ({ ...s, [tab.id]: 0 }));
       setView("results");
     } catch (e) {
       report(String(e));
+    } finally {
+      starting.current.delete(tab.id);
     }
   }
   async function openTable(c: Connection, table: Table) {
@@ -365,13 +397,16 @@ export default function App() {
           [`${table.schema}.${table.name}`]: info.columns.map((c) => c.name),
         },
       }));
-      setInspector({ table, info });
       const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
-      newTab(
+      const tab = newTab(
         c.id,
         `SELECT * FROM ${quote(table.schema)}.${quote(table.name)} LIMIT ${preferences.rowLimit};`,
         table.name,
       );
+      if (tab) {
+        setInspectors((s) => ({ ...s, [tab.id]: { table, info } }));
+        await executeTab(tab, tab.sql);
+      }
     } catch (e) {
       report(String(e));
     }
@@ -808,7 +843,9 @@ export default function App() {
                   value={current.connection}
                   disabled={busy}
                   onChange={(e) =>
-                    updateTab(current.id, { connection: e.target.value })
+                    void switchTabConnection(current.id, e.target.value).catch(
+                      (e) => report(String(e)),
+                    )
                   }
                 >
                   <option value="">Choose connection</option>
@@ -885,174 +922,17 @@ export default function App() {
                 />
               </Suspense>
             </section>
-            <section className="result-area">
-              <div className="result-toolbar">
-                <div className="result-views">
-                  <button
-                    className={view === "results" ? "selected" : ""}
-                    onClick={() => setView("results")}
-                  >
-                    <Table2 size={14} /> Results{" "}
-                    {status && (
-                      <small>
-                        {status.sets
-                          .reduce((n, s) => n + s.rows, 0)
-                          .toLocaleString()}
-                      </small>
-                    )}
-                  </button>
-                  <button
-                    className={view === "messages" ? "selected" : ""}
-                    onClick={() => setView("messages")}
-                  >
-                    Messages{status?.error && <span className="error-dot" />}
-                  </button>
-                  {inspector && (
-                    <button
-                      className={view === "structure" ? "selected" : ""}
-                      onClick={() => setView("structure")}
-                    >
-                      Structure
-                    </button>
-                  )}
-                </div>
-                <div>
-                  {status?.done && (
-                    <span className="query-timing">
-                      {status.elapsed_ms.toLocaleString()} ms
-                    </span>
-                  )}
-                  {status?.sets[set]?.columns.length > 0 && (
-                    <button
-                      disabled={!status.done}
-                      onClick={() => setExportOpen(true)}
-                    >
-                      <Download size={14} /> Export
-                    </button>
-                  )}
-                </div>
-              </div>
-              {status?.sets.length > 1 && view === "results" && (
-                <div className="result-set-tabs">
-                  {status.sets.map((s, i) => (
-                    <button
-                      key={i}
-                      className={set === i ? "selected" : ""}
-                      onClick={() =>
-                        setResultSets((p) => ({ ...p, [active]: i }))
-                      }
-                    >
-                      Result {i + 1}
-                      <small>
-                        {s.columns.length
-                          ? s.rows.toLocaleString()
-                          : `${s.affected} affected`}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {view === "structure" && inspector ? (
-                <div className="structure">
-                  <h3>
-                    {inspector.table.schema}.{inspector.table.name}
-                  </h3>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Column</th>
-                        <th>Type</th>
-                        <th>Nullable</th>
-                        <th>Default</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inspector.info.columns.map((c) => (
-                        <tr key={c.name}>
-                          <td>
-                            {c.primary_key && <KeyRound size={12} />} {c.name}
-                          </td>
-                          <td>{c.data_type}</td>
-                          <td>{c.nullable ? "Yes" : "No"}</td>
-                          <td>{c.default ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <h4>Indexes</h4>
-                  <pre>{JSON.stringify(inspector.info.indexes, null, 2)}</pre>
-                  <h4>Foreign keys</h4>
-                  <pre>
-                    {JSON.stringify(inspector.info.foreign_keys, null, 2)}
-                  </pre>
-                  {inspector.info.ddl && (
-                    <>
-                      <h4>DDL</h4>
-                      <pre>{inspector.info.ddl}</pre>
-                    </>
-                  )}
-                </div>
-              ) : view === "messages" ? (
-                <div className="messages">
-                  {status?.error ? (
-                    <p className="error">{status.error}</p>
-                  ) : status ? (
-                    <>
-                      <p>
-                        {status.done ? "Query completed." : "Query running…"}
-                      </p>
-                      {status.sets.map((s, i) => (
-                        <p key={i}>
-                          Statement {i + 1}: {s.rows.toLocaleString()} rows
-                          returned · {s.affected.toLocaleString()} rows affected
-                          {s.truncated ? " · row limit reached" : ""}
-                        </p>
-                      ))}
-                    </>
-                  ) : (
-                    <p className="muted">
-                      No queries executed in this tab yet.
-                    </p>
-                  )}
-                </div>
-              ) : status?.sets[set]?.columns.length ? (
-                <ResultGrid
-                  key={`${status.id}-${set}`}
-                  id={status.id}
-                  set={set}
-                  metadata={status.sets[set]}
-                  onError={report}
-                />
-              ) : (
-                <div className="result-empty">
-                  {busy ? (
-                    <>
-                      <span className="spinner" />
-                      <h3>Running query</h3>
-                      <p>Results will appear as they arrive.</p>
-                    </>
-                  ) : status?.error ? (
-                    <>
-                      <h3>Query failed</h3>
-                      <p className="error">{status.error}</p>
-                    </>
-                  ) : status ? (
-                    <>
-                      <h3>Statement complete</h3>
-                      <p>{status.sets[set]?.affected ?? 0} rows affected</p>
-                    </>
-                  ) : (
-                    <>
-                      <Table2 size={28} />
-                      <h3>A clear view of your data</h3>
-                      <p>
-                        Run a statement or selection with <kbd>⌘ ↵</kbd>
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-            </section>
+            <ResultPanel
+              status={status}
+              set={set}
+              onSelectSet={(i) => setResultSets((p) => ({ ...p, [active]: i }))}
+              view={view}
+              onView={setView}
+              inspector={inspector}
+              busy={busy}
+              onError={report}
+              onExport={() => setExportOpen(true)}
+            />
             <footer className="statusbar">
               <span>
                 <span

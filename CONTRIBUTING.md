@@ -9,3 +9,5 @@ Database integration tests must use a disposable local instance. Never include c
 Do not inspect, copy, translate or derive code from Beekeeper's commercially licensed directories. Independently implement behavior. If GPL community source is reused, preserve its license obligations and record the contribution before merging; the MIT license of original Klyndb code does not override third-party licenses.
 
 See ARCHITECTURE.md for the driver contract. Add a real-server test and update docs/COMPATIBILITY.md for new database engines. Do not expose a driver as supported because it only connects.
+
+Update `ROADMAP.md` in every meaningful implementation commit with completed behavior, validation and the next unfinished milestone. Keep its evidence consistent with `docs/VALIDATION.md`.

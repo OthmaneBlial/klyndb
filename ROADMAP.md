@@ -2,7 +2,7 @@
 
 This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implementation entries are not public release claims. Keep coding through the backlog after each tested, committed slice.
 
-## First vertical slice — in validation
+## First vertical slice — implemented and locally validated
 
 - [x] Rust workspace and Tauri 2 / React desktop.
 - [x] SQLite/PostgreSQL sessions, table/view discovery and table inspection.
@@ -11,8 +11,11 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Bounded cursor transport, disk spool, virtualized page, column layout/copy/cell inspector.
 - [x] Rust CSV/JSON/JSONL/SQL/Markdown export.
 - [x] Workspace persistence, query history, saved queries, theme/settings, command palette.
-- [ ] Desktop workflow tested on the real app; cross-platform CI validated.
-- [ ] Real PostgreSQL contract, backend benchmarks and release package validated.
+- [x] Real packaged macOS workflow: saved connection, 10,000-row query, paging, cancellation and verified CSV export.
+- [x] Cross-platform CI: macOS, Windows and Linux builds/tests; PostgreSQL and audit jobs (run 36995057710).
+- [x] PostgreSQL 16 real-server contract validated locally and in CI.
+- [x] Workspace save ordering/close flush, per-tab table inspector, automatic table query and bounded IPC pages.
+- [ ] Backend benchmark history and release package validation.
 
 ## Next working slices
 
@@ -38,5 +41,9 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Signed updater configuration when a release distribution/key infrastructure exists.
 - [ ] Driver loading/package isolation after measuring multi-driver footprint; safe extension model after core stability.
 - [ ] Later XLSX/Parquet, backup/restore, additional platforms.
+
+## Update policy and current evidence
+
+Last updated: 2026-10-02. Current evidence is recorded in [docs/VALIDATION.md](docs/VALIDATION.md). Update this file in the same commit as every meaningful working change, recording completed behavior, validation and the next unfinished milestone.
 
 Every meaningful working state is committed and pushed directly to main. Do not tag an incomplete or unverified application as a usable release.

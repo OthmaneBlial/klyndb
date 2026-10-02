@@ -3,7 +3,7 @@
 | Engine | Connect/query | Schema | Cancel | Edit | TLS | Local verification |
 | --- | --- | --- | --- | --- | --- | --- |
 | SQLite | Implemented | Tables/views, columns, indexes, FKs, DDL | VM progress handler | Pending | Not applicable | Real-file unit and engine workflow tests |
-| PostgreSQL | Implemented, text protocol cells | Tables/views, columns, indexes, FK definitions | Server cancel | Pending | OS trust, verify by default | Real-server contract pending |
+| PostgreSQL | Implemented, text protocol cells | Tables/views, columns, indexes, FK definitions | Server cancel | Pending | OS trust, verify by default | PostgreSQL 16 real-server contract (local and CI) |
 | MySQL/MariaDB | Pending | Pending | Pending | Pending | Pending | None |
 | SQL Server | Pending | Pending | Pending | Pending | Pending | None |
 | DuckDB/ClickHouse | Pending | Pending | Pending | Pending | Pending | None |

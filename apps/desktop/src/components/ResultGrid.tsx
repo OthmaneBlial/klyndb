@@ -35,6 +35,7 @@ export function ResultGrid({
   const viewport = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true;
+    setRows([]);
     api("result_page", { id, set, offset: page * PAGE, limit: PAGE })
       .then((r) => {
         if (live) setRows(r);

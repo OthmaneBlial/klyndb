@@ -15,6 +15,11 @@ export function Modal({
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
+    dialog
+      .querySelector<HTMLElement>(
+        'input:not([type="checkbox"]):not([type="color"]),textarea,select',
+      )
+      ?.focus();
     return () => dialog.close();
   }, []);
   return (
