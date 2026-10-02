@@ -425,6 +425,7 @@ export default function App() {
     c: Connection,
     password: string | null = null,
     identityPassword: string | null = null,
+    sshPassword: string | null = null,
   ) {
     if (connecting.includes(c.id)) return;
     setConnecting((ids) => [...ids, c.id]);
@@ -433,6 +434,7 @@ export default function App() {
         id: c.id,
         password,
         identityPassword,
+        sshPassword,
       });
       setConnected((s) => ({ ...s, [c.id]: capabilities }));
       setExpanded((s) => ({ ...s, [c.id]: true }));
@@ -1414,14 +1416,21 @@ export default function App() {
         <ConnectionDialog
           initial={dialog === true ? undefined : dialog}
           onClose={() => setDialog(null)}
-          onSaved={(c, password, shouldConnect, identityPassword) => {
+          onSaved={(
+            c,
+            password,
+            shouldConnect,
+            identityPassword,
+            sshPassword,
+          ) => {
             setConnections((s) => [...s.filter((item) => item.id !== c.id), c]);
             setConnected((s) => {
               const next = { ...s };
               delete next[c.id];
               return next;
             });
-            if (shouldConnect) void connect(c, password, identityPassword);
+            if (shouldConnect)
+              void connect(c, password, identityPassword, sshPassword);
           }}
         />
       )}

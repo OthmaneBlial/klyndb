@@ -54,7 +54,7 @@ async fn real_relationships_layout_and_safe_svg() {
         };
         c.validate().unwrap();
         engine.store.save(&c).unwrap();
-        engine.connect(&c.id, None, None).await.unwrap();
+        engine.connect(&c.id, None, None, None).await.unwrap();
         let driver = engine.driver(&c.id).await.unwrap();
         let q = |n: &str| driver.quote_identifier(n);
         let base = format!("diagram_{}", uuid::Uuid::new_v4().simple());

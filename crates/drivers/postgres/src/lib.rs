@@ -127,6 +127,15 @@ impl Postgres {
         read_only: bool,
         identity_password: Option<&str>,
     ) -> Result<Self> {
+        Self::connect_via(url, password, read_only, identity_password, None).await
+    }
+    pub async fn connect_via(
+        url: &str,
+        password: Option<&str>,
+        read_only: bool,
+        identity_password: Option<&str>,
+        endpoint: Option<std::net::SocketAddr>,
+    ) -> Result<Self> {
         let mut address =
             url::Url::parse(url).map_err(|_| Error::new("Invalid PostgreSQL connection URL"))?;
         let timeout = connect_timeout(
@@ -160,6 +169,15 @@ impl Postgres {
         if !remaining.is_empty() {
             address.query_pairs_mut().extend_pairs(remaining);
         }
+        if let Some(endpoint) = endpoint {
+            if !endpoint.ip().is_loopback() {
+                return Err(Error::new("Invalid tunnel endpoint"));
+            }
+            // Config::port appends a port. Replace the URL port before parsing so one host has one port.
+            address
+                .set_port(Some(endpoint.port()))
+                .map_err(|_| Error::new("Invalid tunnel endpoint"))?;
+        }
         let mut config: tokio_postgres::Config = address
             .as_str()
             .parse()
@@ -168,6 +186,9 @@ impl Postgres {
             config.password(password);
         }
         config.connect_timeout(timeout);
+        if let Some(endpoint) = endpoint {
+            config.hostaddr(endpoint.ip());
+        }
         config.keepalives(true);
         let mut builder = native_tls::TlsConnector::builder();
         if let Some(path) = roots.first() {

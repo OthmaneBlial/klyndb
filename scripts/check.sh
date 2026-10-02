@@ -41,10 +41,22 @@ for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
   if [[ -n "${!variable:-}" ]]; then
     : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for mTLS contracts}"
     cargo test --locked -p klyndb-core --test tls "${entry#*:}_mutual_tls" -- --ignored
+    if [[ -n "${KLYNDB_TEST_SSH_DIR:-}" ]]; then
+      : "${KLYNDB_TEST_SSH_USER:?Set the disposable SSH fixture user}"
+      : "${KLYNDB_TEST_SSH_FINGERPRINT:?Set the independently verified SSH host fingerprint}"
+      cargo test --locked -p klyndb-core --test ssh "${entry#*:}_ssh" -- --ignored
+    else
+      echo "SSH integration skipped: set KLYNDB_TEST_SSH_DIR, KLYNDB_TEST_SSH_USER and KLYNDB_TEST_SSH_FINGERPRINT."
+    fi
   else
     echo "Mutual TLS integration skipped: set $variable and KLYNDB_TEST_TLS_CERT_DIR."
   fi
 done
+if [[ "${KLYNDB_TEST_KEYCHAIN:-}" == 1 ]]; then
+  cargo test --locked -p klyndb-core --lib ssh_keychain_credentials -- --ignored
+else
+  echo 'SSH keychain scope contract skipped: set KLYNDB_TEST_KEYCHAIN=1 on a disposable development session.'
+fi
 cargo build --locked -p klyndb-desktop
 cargo audit
 cargo deny check licenses

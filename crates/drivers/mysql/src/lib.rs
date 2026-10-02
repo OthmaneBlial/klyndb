@@ -38,6 +38,15 @@ impl Mysql {
         read_only: bool,
         identity_password: Option<&str>,
     ) -> Result<Self> {
+        Self::connect_via(address, password, read_only, identity_password, None).await
+    }
+    pub async fn connect_via(
+        address: &str,
+        password: Option<&str>,
+        read_only: bool,
+        identity_password: Option<&str>,
+        endpoint: Option<std::net::SocketAddr>,
+    ) -> Result<Self> {
         let mut url = url::Url::parse(address).map_err(|_| Error::new("Invalid MySQL URL"))?;
         if url.scheme() != "mysql" {
             return Err(Error::new("Expected mysql://user@host/database"));
@@ -106,6 +115,15 @@ impl Mysql {
             );
         if let Some(password) = password {
             builder = builder.pass(Some(password));
+        }
+        if let Some(endpoint) = endpoint {
+            if !endpoint.ip().is_loopback() {
+                return Err(Error::new("Invalid tunnel endpoint"));
+            }
+            // Resolve TCP to the owned tunnel while retaining the original host for TLS verification.
+            builder = builder
+                .resolved_ips(Some(vec![endpoint.ip()]))
+                .tcp_port(endpoint.port());
         }
         let opts: Opts = builder.into();
         let (connection, maria, version) = tokio::time::timeout(timeout, async {

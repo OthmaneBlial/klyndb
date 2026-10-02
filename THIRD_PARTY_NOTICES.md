@@ -8,6 +8,10 @@ Original Klyndb implementation and icon are MIT licensed. Beekeeper Studio is a 
 | --- | --- | --- |
 | Tauri / tauri-build / tauri API | MIT OR Apache-2.0 | System-WebView desktop/IPC/build |
 | Tokio / tokio-util | MIT | Async scheduling and cancellation |
+| async-ssh2-lite / ssh2 | MIT OR Apache-2.0 | Native SSH authentication and TCP forwarding |
+| libssh2 / libssh2-sys | BSD-3-Clause / MIT OR Apache-2.0 | Bundled SSH protocol library; native notices retained |
+| OpenSSL / openssl-src | Apache-2.0 / MIT OR Apache-2.0 | Bundled SSH cryptography, including RSA |
+| zlib | Zlib | Native SSH compression dependency |
 | rusqlite | MIT | Native SQLite and local state/result storage |
 | SQLite | Public domain | Bundled database engine |
 | tokio-postgres / postgres-native-tls / native-tls | MIT OR Apache-2.0 | PostgreSQL protocol; verified server TLS and client identities |
@@ -24,6 +28,8 @@ Original Klyndb implementation and icon are MIT licensed. Beekeeper Studio is a 
 | sql-formatter | MIT | Editor formatting |
 | Lucide | ISC | Interface icons |
 | IBM Plex Sans / Mono | SIL Open Font License 1.1 | Locally bundled typography |
+
+The independent SSH test server uses russh (Apache-2.0) with ring and without its RustCrypto RSA feature. Klyndb does not reuse russh server implementation source. SSH forwarding corrects the native provider's read-buffer-discarding flush semantics in an original stream adapter; API behavior was checked against the installed ssh2/async-ssh2-lite sources and [libssh2 documentation](https://libssh2.org/libssh2_channel_flush_ex.html).
 
 Toolchain dependencies include TypeScript (Apache-2.0), Vite/Vitest/ESLint/Prettier (MIT), and their transitive packages. Locked versions live in Cargo.lock and apps/desktop/package-lock.json. Generate and review the full transitive license inventory before binary releases; this direct dependency table alone is not a completed release audit. License texts remain with the distributed packages and must be included in packaged release notices.
 

@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 klyndb-driver-api = { path = "../driver-api" }
 klyndb-connections = { path = "../connections" }
+klyndb-ssh = { path = "../ssh" }
 klyndb-query = { path = "../query" }
 klyndb-sqlite = { path = "../drivers/sqlite" }
 klyndb-postgres = { path = "../drivers/postgres" }
@@ -22,6 +23,4 @@ zeroize = "1"
 tracing = "0.1"
 klyndb-export = { path = "../export" }
 klyndb-import = { path = "../import" }
-
-[dev-dependencies]
 url = "2"

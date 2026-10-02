@@ -238,6 +238,7 @@ fn error(e: impl std::fmt::Display) -> Error {
 struct OpenConnection {
     driver: Arc<dyn Session>,
     config: Connection,
+    tunnel: Option<klyndb_ssh::Tunnel>,
 }
 pub struct Engine {
     pub store: Arc<Store>,
@@ -249,10 +250,38 @@ async fn open_session(
     config: &Connection,
     password: Option<&str>,
     identity_password: Option<&str>,
-) -> Result<Arc<dyn Session>> {
+    ssh_password: Option<&str>,
+) -> Result<(Arc<dyn Session>, Option<klyndb_ssh::Tunnel>)> {
     let timeout = config.connect_timeout()?;
     tokio::time::timeout(timeout, async {
-        match config.engine.as_str() {
+        let mut address = config.address.clone();
+        let tunnel = if let Some(ssh) = config.ssh()? {
+            let mut url =
+                url::Url::parse(&address).map_err(|_| Error::new("Invalid database URL"))?;
+            let target = url
+                .host_str()
+                .ok_or_else(|| Error::new("Enter a database hostname"))?
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_owned();
+            let port = url.port().unwrap_or(if config.engine == "postgres" {
+                5432
+            } else {
+                3306
+            });
+            let options: Vec<_> = url
+                .query_pairs()
+                .filter(|(k, _)| !klyndb_connections::ssh::OPTIONS.contains(&k.as_ref()))
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            url.query_pairs_mut().clear().extend_pairs(options);
+            address = url.to_string();
+            Some(klyndb_ssh::Tunnel::open(ssh, target, port, ssh_password, timeout).await?)
+        } else {
+            None
+        };
+        let endpoint = tunnel.as_ref().map(|t| t.endpoint);
+        let driver = match config.engine.as_str() {
             "sqlite" => Ok(Arc::new(
                 klyndb_sqlite::Sqlite::connect(
                     config.address.clone(),
@@ -262,25 +291,28 @@ async fn open_session(
                 .await?,
             ) as Arc<dyn Session>),
             "postgres" => Ok(Arc::new(
-                klyndb_postgres::Postgres::connect(
-                    &config.address,
+                klyndb_postgres::Postgres::connect_via(
+                    &address,
                     password,
                     config.read_only,
                     identity_password,
+                    endpoint,
                 )
                 .await?,
             ) as Arc<dyn Session>),
             "mysql" => Ok(Arc::new(
-                klyndb_mysql::Mysql::connect(
-                    &config.address,
+                klyndb_mysql::Mysql::connect_via(
+                    &address,
                     password,
                     config.read_only,
                     identity_password,
+                    endpoint,
                 )
                 .await?,
             ) as Arc<dyn Session>),
             _ => Err(Error::new("Database driver is not installed")),
-        }
+        }?;
+        Ok((driver, tunnel))
     })
     .await
     .map_err(|_| {
@@ -304,6 +336,7 @@ impl Engine {
         id: &str,
         password: Option<String>,
         identity_password: Option<String>,
+        ssh_password: Option<String>,
     ) -> Result<Capabilities> {
         let config = self.store.connection(id)?;
         let password = if let Some(p) = password {
@@ -321,19 +354,28 @@ impl Engine {
         } else {
             None
         };
+        let ssh_password = self.ssh_password(&config, ssh_password, true)?;
         // ponytail: serialize session creation; use per-connection gates if overlapping opens become a bottleneck.
         let mut sessions = self.sessions.lock().await;
         if let Some(existing) = sessions.get(id) {
             return Ok(existing.driver.capabilities());
         }
-        let driver = open_session(
+        let (driver, tunnel) = open_session(
             &config,
             password.as_deref().map(|s| s.as_str()),
             identity_password.as_deref().map(|s| s.as_str()),
+            ssh_password.as_deref().map(|s| s.as_str()),
         )
         .await?;
         let capabilities = driver.capabilities();
-        sessions.insert(id.into(), OpenConnection { driver, config });
+        sessions.insert(
+            id.into(),
+            OpenConnection {
+                driver,
+                config,
+                tunnel,
+            },
+        );
         tracing::info!(engine = %self.store.connection(id)?.engine, "connection opened");
         Ok(capabilities)
     }
@@ -342,6 +384,7 @@ impl Engine {
         mut config: Connection,
         password: Option<String>,
         identity_password: Option<String>,
+        ssh_password: Option<String>,
     ) -> Result<Capabilities> {
         let saved = !config.id.is_empty();
         let password = password.map(Zeroizing::new);
@@ -366,19 +409,24 @@ impl Engine {
         } else {
             None
         };
+        let ssh_password = self.ssh_password(&config, ssh_password, saved)?;
         // Testing opens an isolated read-only session and never creates a user database file.
         config.read_only = true;
         config.create_file = false;
         let timeout = config.connect_timeout()?;
         tokio::time::timeout(timeout, async {
-            let driver = open_session(
+            let (driver, mut tunnel) = open_session(
                 &config,
                 password.as_deref().map(|s| s.as_str()),
                 identity_password.as_deref().map(|s| s.as_str()),
+                ssh_password.as_deref().map(|s| s.as_str()),
             )
             .await?;
             let probe = driver.transaction_state().await;
             let closed = driver.disconnect().await;
+            if let Some(tunnel) = &mut tunnel {
+                tunnel.close().await;
+            }
             probe?;
             closed?;
             Ok(driver.capabilities())
@@ -399,10 +447,48 @@ impl Engine {
             }
         }
         self.imports.cancel_connection(id).await?;
-        if let Some(connection) = connection {
-            connection.driver.disconnect().await?;
+        if let Some(mut connection) = connection {
+            let closed = connection.driver.disconnect().await;
+            if let Some(tunnel) = &mut connection.tunnel {
+                tunnel.close().await;
+            }
+            closed?;
         }
         Ok(())
+    }
+    fn ssh_password(
+        &self,
+        config: &Connection,
+        supplied: Option<String>,
+        saved: bool,
+    ) -> Result<Option<Zeroizing<String>>> {
+        match config.ssh()? {
+            Some(ssh) if ssh.auth != "agent" => {
+                let password = match supplied {
+                    Some(password) => Some(Zeroizing::new(password)),
+                    None if saved => {
+                        let previous = self
+                            .store
+                            .connections()?
+                            .into_iter()
+                            .find(|c| c.id == config.id);
+                        if previous.map(|c| c.ssh()).transpose()?.flatten().as_ref() == Some(&ssh) {
+                            klyndb_connections::password(&klyndb_connections::ssh::credential_key(
+                                &config.id,
+                            ))?
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                };
+                if let Some(password) = &password {
+                    klyndb_connections::ssh::validate_password(password)?;
+                }
+                Ok(password)
+            }
+            _ => Ok(None),
+        }
     }
     pub async fn driver(&self, id: &str) -> Result<Arc<dyn Session>> {
         self.sessions
@@ -608,6 +694,70 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "writes and removes a synthetic, uniquely named OS keychain entry"]
+    fn ssh_keychain_credentials_are_scoped_to_the_saved_bastion() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::new(Store::open(&dir.path().join("state.db")).unwrap());
+        let mut config = Connection {
+            id: String::new(),
+            name: "Synthetic SSH scope contract".into(),
+            engine: "postgres".into(),
+            address: format!(
+                "postgresql://test@db.internal/test?ssh_host=bastion.example&ssh_user=test&ssh_auth=password&ssh_fingerprint=SHA256:{}",
+                "A".repeat(43)
+            ),
+            environment: "development".into(),
+            group: String::new(),
+            color: "#79c7a4".into(),
+            favorite: false,
+            read_only: true,
+            create_file: false,
+        };
+        config.validate().unwrap();
+        engine.store.save(&config).unwrap();
+        let key = klyndb_connections::ssh::credential_key(&config.id);
+        struct Cleanup(String);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = klyndb_connections::delete_password(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(key.clone());
+        klyndb_connections::save_password(&key, "synthetic-scope-secret").unwrap();
+        assert_eq!(
+            engine
+                .ssh_password(&config, None, true)
+                .unwrap()
+                .as_deref()
+                .map(|s| s.as_str()),
+            Some("synthetic-scope-secret")
+        );
+        for (option, value) in [
+            ("ssh_host", "other.example"),
+            ("ssh_port", "23"),
+            ("ssh_user", "other"),
+            ("ssh_fingerprint", &format!("SHA256:{}", "B".repeat(43))),
+            ("ssh_auth", "agent"),
+        ] {
+            let mut changed = config.clone();
+            let mut url = url::Url::parse(&changed.address).unwrap();
+            let options: Vec<_> = url
+                .query_pairs()
+                .filter(|(k, _)| k != option)
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            url.query_pairs_mut()
+                .clear()
+                .extend_pairs(options)
+                .append_pair(option, value);
+            changed.address = url.to_string();
+            assert!(engine.ssh_password(&changed, None, true).unwrap().is_none());
+        }
+        assert!(engine.ssh_password(&config, None, false).unwrap().is_none());
+        klyndb_connections::delete_password(&key).unwrap();
+        assert!(klyndb_connections::password(&key).unwrap().is_none());
+    }
     #[tokio::test]
     async fn isolated_connection_test_and_handshake_timeout() {
         let dir = tempfile::tempdir().unwrap();
@@ -626,7 +776,7 @@ mod tests {
         };
         config.validate().unwrap();
         engine.store.save(&config).unwrap();
-        engine.connect(&config.id, None, None).await.unwrap();
+        engine.connect(&config.id, None, None, None).await.unwrap();
         let original = engine.driver(&config.id).await.unwrap();
         let (tx, _rx) = mpsc::channel(4);
         original
@@ -638,7 +788,7 @@ mod tests {
         draft.name.clear();
         assert!(
             engine
-                .test_connection(draft.clone(), None, None)
+                .test_connection(draft.clone(), None, None, None)
                 .await
                 .unwrap()
                 .transactions
@@ -656,7 +806,7 @@ mod tests {
         draft.address = missing.to_string_lossy().into();
         assert!(
             engine
-                .test_connection(draft.clone(), None, None)
+                .test_connection(draft.clone(), None, None, None)
                 .await
                 .is_err()
         );
@@ -664,7 +814,7 @@ mod tests {
         std::fs::write(&missing, b"not a SQLite database").unwrap();
         assert!(
             engine
-                .test_connection(draft.clone(), None, None)
+                .test_connection(draft.clone(), None, None, None)
                 .await
                 .is_err()
         );
@@ -679,7 +829,7 @@ mod tests {
                 // No keychain entry or saved connection is created for successful server tests.
                 assert!(
                     engine
-                        .test_connection(draft.clone(), None, None)
+                        .test_connection(draft.clone(), None, None, None)
                         .await
                         .unwrap()
                         .transactions
@@ -687,7 +837,7 @@ mod tests {
                 assert_eq!(engine.store.connections().unwrap().len(), 1);
             }
         }
-        for kind in ["postgres", "mysql"] {
+        for (kind, tunneled) in [("postgres", false), ("mysql", false), ("postgres", true)] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
             let peer = tokio::spawn(async move {
@@ -709,10 +859,17 @@ mod tests {
                     "tls=disabled"
                 }
             );
+            if tunneled {
+                draft.address = format!(
+                    "postgresql://test@db.internal/test?sslmode=disable&connect_timeout=1&ssh_host=127.0.0.1&ssh_port={}&ssh_user=test&ssh_fingerprint=SHA256:{}",
+                    address.port(),
+                    "A".repeat(43)
+                );
+            }
             let began = std::time::Instant::now();
             let failure = tokio::time::timeout(
                 std::time::Duration::from_secs(3),
-                engine.test_connection(draft.clone(), None, None),
+                engine.test_connection(draft.clone(), None, None, None),
             )
             .await
             .unwrap()
@@ -725,7 +882,7 @@ mod tests {
             engine.store.save(&draft).unwrap();
             let failure = tokio::time::timeout(
                 std::time::Duration::from_secs(3),
-                engine.connect(&draft.id, Some(String::new()), None),
+                engine.connect(&draft.id, Some(String::new()), None, None),
             )
             .await
             .unwrap()
@@ -760,7 +917,10 @@ mod tests {
         connection.validate().unwrap();
         store.save(&connection).unwrap();
         let engine = Engine::new(store);
-        engine.connect(&connection.id, None, None).await.unwrap();
+        engine
+            .connect(&connection.id, None, None, None)
+            .await
+            .unwrap();
         assert!(
             engine
                 .start(connection.id.clone(), "DROP TABLE t".into(), 100, 5, false)

@@ -19,6 +19,14 @@ pub struct Connection {
     pub create_file: bool,
 }
 impl Connection {
+    pub fn ssh(&self) -> Result<Option<ssh::Config>> {
+        if self.engine == "sqlite" {
+            return Ok(None);
+        }
+        let url = url::Url::parse(&self.address)
+            .map_err(|_| Error::new("Enter a valid database connection URL"))?;
+        ssh::parse(&url)
+    }
     pub fn connect_timeout(&self) -> Result<std::time::Duration> {
         if self.engine == "sqlite" {
             return Ok(std::time::Duration::from_secs(10));
@@ -101,13 +109,14 @@ impl Connection {
                     {
                         return Err(Error::new("MySQL tls must be required or disabled"));
                     }
-                    if !options.contains(&key.as_ref()) {
+                    if !options.contains(&key.as_ref()) && !ssh::OPTIONS.contains(&key.as_ref()) {
                         return Err(Error::new(format!(
                             "Unsupported URL parameter: {key}. Use the password field for credentials."
                         )));
                     }
                 }
                 self.connect_timeout()?;
+                self.ssh()?;
                 let password = url.password().map(|p| Zeroizing::new(percent_decode(p)));
                 url.set_password(None)
                     .map_err(|_| Error::new("Invalid URL credentials"))?;

@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     connection.validate()?;
     store.save(&connection)?;
     let engine = Engine::new(store);
-    engine.connect(&connection.id, None, None).await?;
+    engine.connect(&connection.id, None, None, None).await?;
     let started = Instant::now();
     let id=engine.start(connection.id.clone(),format!("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<{rows}) SELECT x,printf('row-%d',x) AS label FROM n"),rows,3600,false).await?;
     let job = engine.job(&id)?;

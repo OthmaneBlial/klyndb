@@ -190,6 +190,8 @@ interface Commands {
       remember: boolean;
       identityPassword?: string | null;
       rememberIdentity?: boolean;
+      sshPassword?: string | null;
+      rememberSsh?: boolean;
     };
     result: Connection;
   };
@@ -199,6 +201,7 @@ interface Commands {
       id: string;
       password: string | null;
       identityPassword?: string | null;
+      sshPassword?: string | null;
     };
     result: Capabilities;
   };
@@ -207,6 +210,7 @@ interface Commands {
       connection: Connection;
       password: string | null;
       identityPassword?: string | null;
+      sshPassword?: string | null;
     };
     result: Capabilities;
   };
@@ -272,6 +276,7 @@ interface Commands {
   clear_history: { args: undefined; result: void };
   choose_ca_file: { args: undefined; result: string | null };
   choose_client_identity_file: { args: undefined; result: string | null };
+  choose_ssh_identity_file: { args: undefined; result: string | null };
   choose_database_file: { args: { create: boolean }; result: string | null };
   choose_import_file: {
     args: { options: CsvOptions };

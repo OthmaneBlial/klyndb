@@ -57,7 +57,7 @@ async fn delayed_connection(variable: &str, kind: &str) {
     let engine = Engine::new(Store::open(&state.path().join("state.db")).unwrap());
     let began = Instant::now();
     engine
-        .test_connection(connection.clone(), None, None)
+        .test_connection(connection.clone(), None, None, None)
         .await
         .unwrap();
     assert!(began.elapsed() >= Duration::from_secs(11));
@@ -71,7 +71,7 @@ async fn delayed_connection(variable: &str, kind: &str) {
     let began = Instant::now();
     // Explicit session-only credentials avoid touching the OS keychain in this contract.
     engine
-        .connect(&connection.id, Some(password), None)
+        .connect(&connection.id, Some(password), None, None)
         .await
         .unwrap();
     assert!(began.elapsed() >= Duration::from_secs(11));

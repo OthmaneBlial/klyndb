@@ -24,6 +24,7 @@ async fn connections(engine: State<'_, Arc<Engine>>) -> ApiResult<Vec<Connection
     blocking(move || store.connections().map_err(api)).await
 }
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Separate typed IPC secrets retain compatibility with saved-connection callers.
 async fn save_connection(
     engine: State<'_, Arc<Engine>>,
     mut connection: Connection,
@@ -31,10 +32,16 @@ async fn save_connection(
     remember: bool,
     identity_password: Option<String>,
     remember_identity: Option<bool>,
+    ssh_password: Option<String>,
+    remember_ssh: Option<bool>,
 ) -> ApiResult<Connection> {
     let secret = connection.validate().map_err(api)?;
     let password = password.map(zeroize::Zeroizing::new).or(secret);
     let identity_password = identity_password.map(zeroize::Zeroizing::new);
+    let ssh_password = ssh_password.map(zeroize::Zeroizing::new);
+    if let Some(password) = &ssh_password {
+        klyndb_connections::ssh::validate_password(password).map_err(api)?;
+    }
     if let Some(password) = &identity_password {
         klyndb_driver_api::tls::validate_identity_password(password).map_err(api)?;
     }
@@ -64,6 +71,24 @@ async fn save_connection(
         {
             klyndb_connections::delete_password(&identity_key).map_err(api)?;
         }
+        let ssh_key = klyndb_connections::ssh::credential_key(&connection.id);
+        let current_ssh = connection.ssh().map_err(api)?;
+        let previous_ssh = previous
+            .as_ref()
+            .map(Connection::ssh)
+            .transpose()
+            .map_err(api)?
+            .flatten();
+        if current_ssh.as_ref().is_some_and(|s| s.auth != "agent") && remember_ssh.unwrap_or(false)
+        {
+            if let Some(password) = ssh_password {
+                klyndb_connections::save_password(&ssh_key, &password).map_err(api)?;
+            } else if previous_ssh.is_some() && previous_ssh != current_ssh {
+                klyndb_connections::delete_password(&ssh_key).map_err(api)?;
+            }
+        } else if previous_ssh.is_some() {
+            klyndb_connections::delete_password(&ssh_key).map_err(api)?;
+        }
         store.save(&connection).map_err(api)?;
         Ok(connection)
     })
@@ -82,6 +107,10 @@ async fn delete_connection(engine: State<'_, Arc<Engine>>, id: String) -> ApiRes
             klyndb_connections::delete_password(&klyndb_connections::client_identity_key(&id))
                 .map_err(api)?;
         }
+        if c.ssh().map_err(api)?.is_some() {
+            klyndb_connections::delete_password(&klyndb_connections::ssh::credential_key(&id))
+                .map_err(api)?;
+        }
         store.delete(&id).map_err(api)
     })
     .await
@@ -92,9 +121,10 @@ async fn connect(
     id: String,
     password: Option<String>,
     identity_password: Option<String>,
+    ssh_password: Option<String>,
 ) -> ApiResult<Capabilities> {
     engine
-        .connect(&id, password, identity_password)
+        .connect(&id, password, identity_password, ssh_password)
         .await
         .map_err(api)
 }
@@ -104,9 +134,10 @@ async fn test_connection(
     connection: Connection,
     password: Option<String>,
     identity_password: Option<String>,
+    ssh_password: Option<String>,
 ) -> ApiResult<Capabilities> {
     engine
-        .test_connection(connection, password, identity_password)
+        .test_connection(connection, password, identity_password, ssh_password)
         .await
         .map_err(api)
 }
@@ -315,6 +346,14 @@ async fn clear_history(engine: State<'_, Arc<Engine>>) -> ApiResult<()> {
     blocking(move || store.clear_history().map_err(api)).await
 }
 #[tauri::command]
+async fn choose_ssh_identity_file() -> ApiResult<Option<String>> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_title("Choose SSH private key")
+        .pick_file()
+        .await
+        .map(|f| f.path().to_string_lossy().into_owned()))
+}
+#[tauri::command]
 async fn choose_client_identity_file() -> ApiResult<Option<String>> {
     Ok(rfd::AsyncFileDialog::new()
         .set_title("Choose client identity")
@@ -471,6 +510,7 @@ fn main() {
             choose_database_file,
             choose_ca_file,
             choose_client_identity_file,
+            choose_ssh_identity_file,
             choose_import_file,
             preview_import,
             start_import,

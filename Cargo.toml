@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "apps/desktop/src-tauri"]
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "apps/desktop/src-tauri"]
 default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-rust-version = "1.85"
+rust-version = "1.89"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

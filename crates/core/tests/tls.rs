@@ -78,7 +78,7 @@ async fn verified_tls(variable: &str, kind: &str) {
     ] {
         assert!(
             engine
-                .test_connection(draft, Some(String::new()), None)
+                .test_connection(draft, Some(String::new()), None, None)
                 .await
                 .is_err()
         );
@@ -93,6 +93,7 @@ async fn verified_tls(variable: &str, kind: &str) {
             .test_connection(
                 make(None, Some("ca.pem"), disabled),
                 Some(String::new()),
+                None,
                 None
             )
             .await
@@ -102,6 +103,7 @@ async fn verified_tls(variable: &str, kind: &str) {
         .test_connection(
             make(None, Some("bundle.pem"), secure),
             Some(String::new()),
+            None,
             None,
         )
         .await
@@ -117,6 +119,7 @@ async fn verified_tls(variable: &str, kind: &str) {
             make(None, Some(der.to_str().unwrap()), secure),
             Some(String::new()),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -125,7 +128,7 @@ async fn verified_tls(variable: &str, kind: &str) {
     c.validate().unwrap();
     engine.store.save(&c).unwrap();
     engine
-        .connect(&c.id, Some(String::new()), None)
+        .connect(&c.id, Some(String::new()), None, None)
         .await
         .unwrap();
     let rows = query(
@@ -292,7 +295,12 @@ async fn mutual_tls(variable: &str, kind: &str) {
         (Some("invalid.pem"), SECRET),
     ] {
         let error = engine
-            .test_connection(make(identity), Some(String::new()), Some(password.into()))
+            .test_connection(
+                make(identity),
+                Some(String::new()),
+                Some(password.into()),
+                None,
+            )
             .await
             .unwrap_err();
         assert!(!error.to_string().contains(password));
@@ -302,6 +310,7 @@ async fn mutual_tls(variable: &str, kind: &str) {
             make(Some("client.p12")),
             Some(String::new()),
             Some(SECRET.into()),
+            None,
         )
         .await
         .unwrap();
@@ -315,7 +324,12 @@ async fn mutual_tls(variable: &str, kind: &str) {
             .contains(SECRET)
     );
     engine
-        .connect(&connection.id, Some(String::new()), Some(SECRET.into()))
+        .connect(
+            &connection.id,
+            Some(String::new()),
+            Some(SECRET.into()),
+            None,
+        )
         .await
         .unwrap();
     if kind == "postgres" {
@@ -399,7 +413,12 @@ async fn mutual_tls(variable: &str, kind: &str) {
     );
     engine.disconnect(&connection.id).await.unwrap();
     engine
-        .connect(&connection.id, Some(String::new()), Some(SECRET.into()))
+        .connect(
+            &connection.id,
+            Some(String::new()),
+            Some(SECRET.into()),
+            None,
+        )
         .await
         .unwrap();
     assert_eq!(

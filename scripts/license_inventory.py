@@ -17,6 +17,18 @@ def collect(ecosystem, name, version, license_expression, directory):
     entries.append((ecosystem, name, version, license_expression))
     header = f"{ecosystem}: {name}@{version} ({license_expression})"
     candidates = sorted(p for p in directory.iterdir() if p.is_file() and p.name.lower().startswith(("license", "copying", "copyright"))) if directory.exists() else []
+    # Native libraries bundled by these crates have their own retained notices.
+    bundled = {
+        "libssh2-sys": ["libssh2/COPYING", "libssh2/LICENSES"],
+        "openssl-src": ["openssl/LICENSE.txt"],
+        "libz-sys": ["src/zlib/LICENSE", "src/zlib-ng/LICENSE.md"],
+    }
+    for relative in bundled.get(name, []):
+        path = directory / relative
+        if path.is_dir():
+            candidates.extend(sorted(p for p in path.iterdir() if p.is_file()))
+        elif path.is_file():
+            candidates.append(path)
     for path in candidates:
         try:
             texts.append(f"\n{'=' * 72}\n{header}\n{path.name}\n{'=' * 72}\n{path.read_text()}\n")

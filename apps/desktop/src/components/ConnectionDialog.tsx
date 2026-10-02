@@ -7,6 +7,9 @@ import {
   updateConnectTimeout,
   tlsSettings,
   updateTls,
+  sshSettings,
+  updateSsh,
+  type SshSettings,
 } from "../connection";
 const fresh = (): Connection => ({
   id: "",
@@ -32,6 +35,7 @@ export function ConnectionDialog({
     password: string | null,
     connect: boolean,
     identityPassword: string | null,
+    sshPassword: string | null,
   ) => void;
 }) {
   const [form, setForm] = useState(initial ?? fresh),
@@ -39,6 +43,8 @@ export function ConnectionDialog({
     [remember, setRemember] = useState(true),
     [identityPassword, setIdentityPassword] = useState(""),
     [rememberIdentity, setRememberIdentity] = useState(true),
+    [sshPassword, setSshPassword] = useState(""),
+    [rememberSsh, setRememberSsh] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [testStatus, setTestStatus] = useState("");
@@ -60,6 +66,24 @@ export function ConnectionDialog({
     }
   }
   const tls = tlsSettings(form.engine, form.address);
+  const ssh = sshSettings(form.address);
+  function changeSsh(settings: SshSettings) {
+    try {
+      field("address", updateSsh(form.address, settings));
+      setSshPassword("");
+      setError("");
+    } catch (error) {
+      setError(String(error));
+    }
+  }
+  async function chooseSshIdentity() {
+    try {
+      const path = await api("choose_ssh_identity_file");
+      if (path) changeSsh({ ...ssh, identity: path });
+    } catch (error) {
+      setError(String(error));
+    }
+  }
   function changeTls(mode: string, ca: string, identity?: string) {
     try {
       field(
@@ -104,6 +128,8 @@ export function ConnectionDialog({
         connection: form,
         password: password || null,
         identityPassword: tls.identity ? identityPassword || null : null,
+        sshPassword:
+          ssh.enabled && ssh.auth !== "agent" ? sshPassword || null : null,
       });
       setTestStatus("Connection verified. The test session has been closed.");
     } catch (e) {
@@ -129,12 +155,16 @@ export function ConnectionDialog({
         remember,
         identityPassword: tls.identity ? identityPassword || null : null,
         rememberIdentity,
+        sshPassword:
+          ssh.enabled && ssh.auth !== "agent" ? sshPassword || null : null,
+        rememberSsh,
       });
       onSaved(
         connection,
         secret || null,
         connect,
         tls.identity ? identityPassword || null : null,
+        ssh.enabled && ssh.auth !== "agent" ? sshPassword || null : null,
       );
       onClose();
     } catch (e) {
@@ -168,6 +198,7 @@ export function ConnectionDialog({
                 onClick={() => {
                   setTestStatus("");
                   setIdentityPassword("");
+                  setSshPassword("");
                   setForm((f) => ({
                     ...f,
                     engine,
@@ -238,7 +269,10 @@ export function ConnectionDialog({
                 Connection URL
                 <input
                   value={form.address}
-                  onChange={(e) => field("address", e.target.value)}
+                  onChange={(e) => {
+                    field("address", e.target.value);
+                    setSshPassword("");
+                  }}
                   placeholder={
                     form.engine === "mysql"
                       ? "mysql://user@localhost:3306/database"
@@ -282,6 +316,168 @@ export function ConnectionDialog({
                     testing; query timeout is separate.
                   </small>
                 </label>
+              </details>
+              <details className="tls-options">
+                <summary>SSH tunnel</summary>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={ssh.enabled}
+                    onChange={(e) =>
+                      changeSsh({ ...ssh, enabled: e.target.checked })
+                    }
+                  />
+                  Connect through an SSH server
+                </label>
+                {ssh.enabled && (
+                  <>
+                    <div className="form-row">
+                      <label>
+                        SSH host
+                        <input
+                          aria-label="SSH host"
+                          required
+                          value={ssh.host}
+                          placeholder="bastion.example.com"
+                          onChange={(e) =>
+                            changeSsh({ ...ssh, host: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Port
+                        <input
+                          aria-label="SSH port"
+                          type="number"
+                          min={1}
+                          max={65535}
+                          step={1}
+                          required
+                          value={ssh.port}
+                          onChange={(e) =>
+                            changeSsh({ ...ssh, port: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      SSH username
+                      <input
+                        aria-label="SSH username"
+                        required
+                        maxLength={128}
+                        value={ssh.user}
+                        autoComplete="off"
+                        onChange={(e) =>
+                          changeSsh({ ...ssh, user: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Host key fingerprint
+                      <input
+                        aria-label="SSH host key fingerprint"
+                        required
+                        maxLength={50}
+                        value={ssh.fingerprint}
+                        placeholder="SHA256:…"
+                        onChange={(e) =>
+                          changeSsh({ ...ssh, fingerprint: e.target.value })
+                        }
+                      />
+                      <small>
+                        Use the SHA256 fingerprint verified with your
+                        administrator. Unknown or changed keys are rejected
+                        before authentication.
+                      </small>
+                    </label>
+                    <label>
+                      Authentication
+                      <select
+                        aria-label="SSH authentication"
+                        value={ssh.auth}
+                        onChange={(e) =>
+                          changeSsh({
+                            ...ssh,
+                            auth: e.target.value,
+                            identity: "",
+                          })
+                        }
+                      >
+                        <option value="agent">SSH agent</option>
+                        <option value="key">Private key file</option>
+                        <option value="password">SSH password</option>
+                      </select>
+                    </label>
+                    {ssh.auth === "key" && (
+                      <label>
+                        SSH private key
+                        <div className="input-action">
+                          <input
+                            aria-label="SSH private key file"
+                            required
+                            value={ssh.identity}
+                            placeholder="/path/to/id_ed25519"
+                            onChange={(e) =>
+                              changeSsh({ ...ssh, identity: e.target.value })
+                            }
+                          />
+                          <button
+                            type="button"
+                            aria-label="Choose SSH private key file"
+                            onClick={() => void chooseSshIdentity()}
+                          >
+                            <FolderOpen size={17} />
+                          </button>
+                        </div>
+                        <small>
+                          OpenSSH or supported PEM key, up to 1 MiB. Rust reads
+                          it; private keys stay outside the interface.
+                        </small>
+                      </label>
+                    )}
+                    {ssh.auth !== "agent" && (
+                      <>
+                        <label>
+                          {ssh.auth === "key"
+                            ? "Key passphrase"
+                            : "SSH password"}
+                          <input
+                            aria-label="SSH password or key passphrase"
+                            type="password"
+                            autoComplete="off"
+                            maxLength={16384}
+                            value={sshPassword}
+                            placeholder={
+                              initial
+                                ? "Leave empty to use the stored SSH secret"
+                                : ssh.auth === "key"
+                                  ? "Private key passphrase · optional"
+                                  : "SSH password"
+                            }
+                            onChange={(e) => {
+                              setSshPassword(e.target.value);
+                              setTestStatus("");
+                            }}
+                          />
+                        </label>
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            checked={rememberSsh}
+                            onChange={(e) => setRememberSsh(e.target.checked)}
+                          />
+                          Store SSH secret in the OS keychain
+                        </label>
+                      </>
+                    )}
+                    <small>
+                      The database URL names the server as seen from SSH.
+                      Database TLS keeps verifying that hostname; the connection
+                      deadline covers SSH and database setup.
+                    </small>
+                  </>
+                )}
               </details>
               <details className="tls-options">
                 <summary>TLS &amp; certificates</summary>

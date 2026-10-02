@@ -21,7 +21,7 @@ Certificate and hostname checks cannot be disabled. In Klyndb, PostgreSQL `sslmo
 
 Expand **Network** in a server connection to choose a connection timeout from **1 to 300 seconds** (default **10**). It is saved as `connect_timeout` in the URL and applies to PostgreSQL, MySQL and MariaDB. For example, `postgresql://user@host/database?connect_timeout=45` or `mysql://user@host/database?connect_timeout=45` keeps default verified TLS while allowing a slower connection.
 
-The application bounds connection setup, including DNS/socket attempts, TLS/authentication and initial session setup. Test connection uses the same total deadline through its probe and disconnect. The deadline starts when the connection attempt begins; waiting for the OS credential store or the serialized creation gate is separate. A failed attempt is not added as an active session. This does not change query timeout, metadata deadlines or cancellation's cleanup bound. An existing saved URL without this option keeps the ten-second default; no state migration is needed. Invalid, duplicate, zero or unbounded timeout options are rejected.
+The application bounds connection setup, including SSH when enabled, DNS/socket attempts, TLS/authentication and initial session setup. Test connection uses the same total deadline through its probe and disconnect. The deadline starts when the connection attempt begins; waiting for the OS credential store or the serialized creation gate is separate. A failed attempt is not added as an active session. This does not change query timeout, metadata deadlines or cancellation's cleanup bound. An existing saved URL without this option keeps the ten-second default; no state migration is needed. Invalid, duplicate, zero or unbounded timeout options are rejected.
 
 ## Trusted local development
 
@@ -37,7 +37,7 @@ The identity path is stored as the URL option `sslidentity`. Passwords are separ
 
 A client identity requires verified TLS without plaintext fallback, even when using system trust roots instead of a custom CA. The server must trust the client issuer and authorize the certificate identity. PostgreSQL certificate authentication also checks the certificate name or configured mapping. Certificate format/encryption support follows the native TLS provider; standalone PEM client keys and identity-file creation/conversion remain follow-ups.
 
-SSH tunnels/bastions and proxy configuration remain pending. A CA file provides server trust; it is separate from your client identity.
+[SSH tunnels/bastions](SSH.md) retain the original database hostname for TLS verification. Proxy and multi-hop configuration remain pending. A CA file provides server trust; it is separate from your client identity.
 
 ## Local validation
 

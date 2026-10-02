@@ -68,7 +68,10 @@ async fn real_plan_workflow() {
         };
         connection.validate().unwrap();
         engine.store.save(&connection).unwrap();
-        let capabilities = engine.connect(&connection.id, None, None).await.unwrap();
+        let capabilities = engine
+            .connect(&connection.id, None, None, None)
+            .await
+            .unwrap();
         let table = format!("klyndb_plan_{}", uuid::Uuid::new_v4().simple());
         run(&engine, &connection, &format!("CREATE TABLE {table}(id INTEGER PRIMARY KEY, value INTEGER); INSERT INTO {table} VALUES(1,10),(2,20)")).await;
         let select = format!(
@@ -251,7 +254,7 @@ async fn real_plan_workflow() {
         engine.store.save(&readonly).unwrap();
         assert!(
             !engine
-                .connect(&readonly.id, None, None)
+                .connect(&readonly.id, None, None, None)
                 .await
                 .unwrap()
                 .explain_analyze
