@@ -175,6 +175,13 @@ pub struct CsvOptions {
     pub empty_as_null: bool,
 }
 impl CsvOptions {
+    pub fn validate(&self) -> Result<()> {
+        self.delimiter()?;
+        if self.null_value.as_ref().is_some_and(|s| s.len() > 256) {
+            return Err(Error::new("NULL tokens are limited to 256 bytes"));
+        }
+        Ok(())
+    }
     fn delimiter(&self) -> Result<u8> {
         match self.delimiter.as_str() {
             "" | "," => Ok(b','),

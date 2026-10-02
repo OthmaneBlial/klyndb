@@ -3,11 +3,12 @@
 </p>
 
 <p align="center">
-  <strong>The free, open-source database client for a cleaner everyday workflow.</strong><br />
-  Write SQL. Explore schemas. Edit safely. Keep your data on your machine.
+  <strong>🦀 A native database workbench. Free, open source, and yours.</strong><br />
+  SQL tabs. Real databases. A workspace that stays on your machine.
 </p>
 
 <p align="center">
+  <a href="https://github.com/OthmaneBlial/klyndb/stargazers"><img src="https://img.shields.io/github/stars/OthmaneBlial/klyndb?style=flat-square&amp;label=Star%20Klyndb&amp;color=e3c27e&amp;labelColor=142624" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-93d0b5?style=flat-square&labelColor=1c2225" alt="MIT license" /></a>
   <img src="https://img.shields.io/badge/core-Rust-93d0b5?style=flat-square&labelColor=1c2225" alt="Native Rust core" />
   <img src="https://img.shields.io/badge/desktop-Tauri_2-93d0b5?style=flat-square&labelColor=1c2225" alt="Tauri 2 desktop" />
@@ -15,16 +16,26 @@
 </p>
 
 <p align="center">
-  <a href="#get-started">Get started</a> ·
-  <a href="#what-you-can-do-today">Features</a> ·
-  <a href="docs/COMPATIBILITY.md">Database support</a> ·
-  <a href="ROADMAP.md">Roadmap</a> ·
-  <a href="CONTRIBUTING.md">Contribute</a>
+  <a href="#-get-started">🚀 Get started</a> ·
+  <a href="#-what-you-can-do-today">✨ Features</a> ·
+  <a href="docs/COMPATIBILITY.md">🗄️ Databases</a> ·
+  <a href="ROADMAP.md">🧭 Roadmap</a> ·
+  <a href="CONTRIBUTING.md">🤝 Contribute</a>
 </p>
 
 ---
 
-**Looking for a free, open-source alternative to DBeaver?** Klyndb brings SQL editing, database exploration, streamed results and safe table editing into a focused desktop workspace. It uses a **native Rust core and your system WebView**, built with Tauri 2 and React.
+## ✨ Your daily database work, with less clutter
+
+**Klyndb is a free, open-source alternative to DBeaver.** Connect to your databases, write SQL, browse tables and review edits in one focused desktop workspace. Built with **Rust + Tauri**, using your system WebView.
+
+<table>
+<tr>
+<td width="33%"><h3>🦀 Native at the core</h3>Rust handles queries, streaming, cancellation and files.</td>
+<td width="33%"><h3>🔒 Your data stays yours</h3>OS keychain credentials. Local workspace. No account required.</td>
+<td width="33%"><h3>⌨️ Built around SQL</h3>Multiple tabs, a command palette and keyboard shortcuts.</td>
+</tr>
+</table>
 
 **No Electron. No account. No mandatory cloud. No query telemetry.**
 
@@ -33,23 +44,24 @@
   <br /><sub>Captured from the native macOS app with 10,000 synthetic test records in a local validation database.</sub>
 </p>
 
-## What you can do today
+## 🛠️ What you can do today
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **Connect** | PostgreSQL, MySQL, MariaDB and SQLite; connection testing, saved connections, groups, favorites and environment labels. |
-| **Explore** | Tables and views, columns, primary keys, indexes, foreign keys and table DDL. |
-| **Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
-| **Work with results** | Incremental Rust streaming, disk-backed results, a virtualized grid, resizing/reordering, page sort/filter and cell inspection. |
-| **Change data safely** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |
-| **Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
-| **Stay in control** | Cancellation, timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
-| **Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
-| **Pick up where you left off** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
+| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite; connection testing, saved connections, groups, favorites and environment labels. |
+| **🧭 Explore** | Tables and views, columns, primary keys, indexes, foreign keys and table DDL. |
+| **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
+| **📊 Work with results** | Incremental Rust streaming, disk-backed results, a virtualized grid, resizing/reordering, page sort/filter and cell inspection. |
+| **✍️ Edit data** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |
+| **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
+| **🛡️ Stay in control** | Cancellation, timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
+| **📥 Import CSV** | Native file picker, preview, column mapping, streaming inserts and progress/cancel. [Import guide](docs/IMPORTS.md). |
+| **📤 Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
+| **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
 
 Server passwords stay in the **OS keychain**. TLS verification is enabled by default. Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 
-### Database support, with real evidence
+## 🗄️ Four databases. One workspace.
 
 | Database | Queries & schema | Staged grid edits | Verified against |
 | --- | --- | --- | --- |
@@ -60,9 +72,9 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-**Development preview:** Klyndb is already runnable from source. Imports, SSH tunnels, more drivers, native package validation and broader desktop testing are still in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
+**Development preview:** Klyndb is already runnable from source. JSON/SQL imports, SSH tunnels, additional drivers and native release packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 
-## Built for a lighter database workflow
+## ⚡ Rust does the heavy lifting
 
 Database work belongs in Rust: connections, query execution, cancellation, result paging and exports. React handles the interface. Drivers initialize only when you connect; opening the app does not open database sessions.
 
@@ -70,7 +82,7 @@ Large results go to a bounded, temporary disk spool. The interface holds a **500
 
 A reproducible SQLite backend baseline retained **1 million rows** at a median **352,393 rows/second**, with **13.50 MiB peak backend-process RSS** on the recorded Apple M2 machine. This measures the backend only, not total desktop memory or a comparison with DBeaver. See the [benchmark methodology and raw samples](benchmarks/README.md). Desktop startup, memory and scrolling measurements are on the roadmap.
 
-## Get started
+## 🚀 Get started
 
 You need **Rust stable**, **Node.js 22.12+** and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). Linux also needs Secret Service/DBus development libraries; remembered passwords require an unlocked OS keychain.
 
@@ -92,7 +104,7 @@ Then create a connection, open a table or SQL tab, and run a real query.
 
 Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Public downloadable releases are not available yet. macOS signing and notarization require Apple credentials.
 
-## Local checks
+## 🧪 Local checks
 
 ```sh
 ./scripts/check.sh
@@ -104,9 +116,15 @@ Set `KLYNDB_TEST_POSTGRES_URL` or `KLYNDB_TEST_MYSQL_URL` to run the real-server
 
 **GitHub Actions is disabled by owner instruction. All current CI checks run locally.**
 
-## Help shape the alternative
+## ⭐ Help shape the alternative
 
-Try Klyndb on a development database. Report a reproducible issue, request a database workflow, or contribute a complete driver or UI improvement. If this is the kind of open-source database client you want to use, **star the repository** and follow its progress.
+Try Klyndb on a development database. Report a reproducible issue, request a database workflow, or contribute a complete driver or UI improvement. If you want a free, open-source DBeaver alternative to keep growing, **[give Klyndb a star](https://github.com/OthmaneBlial/klyndb)**. Stars help other developers find the project.
+
+<p align="center">
+  <a href="https://github.com/OthmaneBlial/klyndb"><img src="docs/assets/star.svg" alt="Star Klyndb and help build the database client you want to use" width="100%" /></a>
+</p>
+
+**Found a bug?** [Open an issue](https://github.com/OthmaneBlial/klyndb/issues). **Missing a workflow?** Tell us what you need. **Want to build it?** Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 [Contributing](CONTRIBUTING.md) · [Architecture](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · [Validation evidence](docs/VALIDATION.md) · [Full product scope](docs/PRODUCT_SPEC.md)
 

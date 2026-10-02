@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use klyndb_connections::{Connection, Store};
+use klyndb_core::import::{CsvOptions, ImportRequest, ImportSource, ImportStatus, Preview};
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
     Capabilities, Change, MutationResult, Row, Table, TableInfo, TransactionState,
@@ -248,6 +249,50 @@ async fn choose_database_file(create: bool) -> ApiResult<Option<String>> {
     Ok(file.map(|f| f.path().to_string_lossy().into_owned()))
 }
 #[tauri::command]
+async fn choose_import_file(
+    engine: State<'_, Arc<Engine>>,
+    options: CsvOptions,
+) -> ApiResult<Option<ImportSource>> {
+    options.validate().map_err(api)?;
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter("CSV data", &["csv", "tsv", "txt"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    engine
+        .imports
+        .prepare(file.path().to_owned(), options)
+        .await
+        .map(Some)
+        .map_err(api)
+}
+#[tauri::command]
+async fn preview_import(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    options: CsvOptions,
+) -> ApiResult<Preview> {
+    engine.imports.preview(&id, options).await.map_err(api)
+}
+#[tauri::command]
+async fn start_import(engine: State<'_, Arc<Engine>>, request: ImportRequest) -> ApiResult<String> {
+    engine.start_import(request).await.map_err(api)
+}
+#[tauri::command]
+async fn import_status(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<ImportStatus> {
+    engine.imports.status(&id).map_err(api)
+}
+#[tauri::command]
+async fn cancel_import(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<()> {
+    engine.imports.cancel(&id).map_err(api)
+}
+#[tauri::command]
+async fn release_import(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<()> {
+    engine.imports.release(&id).map_err(api)
+}
+#[tauri::command]
 async fn export_result(
     engine: State<'_, Arc<Engine>>,
     id: String,
@@ -326,8 +371,31 @@ fn main() {
             history,
             clear_history,
             choose_database_file,
+            choose_import_file,
+            preview_import,
+            start_import,
+            import_status,
+            cancel_import,
+            release_import,
             export_result
         ])
-        .run(tauri::generate_context!())
-        .expect("Could not start Klyndb");
+        .build(tauri::generate_context!())
+        .expect("Could not start Klyndb")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let imports = app.state::<Arc<Engine>>().imports.clone();
+                if imports.begin_shutdown() {
+                    api.prevent_exit();
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match imports.shutdown().await {
+                            Ok(()) => handle.exit(0),
+                            Err(e) => {
+                                tracing::error!(error=%e, "could not terminate imports before exit")
+                            }
+                        }
+                    });
+                }
+            }
+        });
 }

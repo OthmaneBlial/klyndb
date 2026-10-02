@@ -28,6 +28,7 @@ import {
   X,
   WandSparkles,
   Download,
+  FileUp,
   Shield,
   Command,
   ArrowUpRight,
@@ -58,6 +59,7 @@ import {
 import { CommandPalette } from "./components/CommandPalette";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { RowDialog } from "./components/RowDialog";
+import { ImportDialog } from "./components/ImportDialog";
 import { Modal } from "./components/Modal";
 import {
   defaults,
@@ -115,12 +117,19 @@ export default function App() {
       inspector: Inspector;
       old: Row | null;
     } | null>(null),
+    [importDialog, setImportDialog] = useState<{
+      tab: Tab;
+      inspector: Inspector;
+      connection: Connection;
+    } | null>(null),
     [applying, setApplying] = useState<Record<string, boolean>>({}),
     [transactionStates, setTransactionStates] = useState<
       Record<string, "idle" | "active" | "failed" | "unknown">
     >({});
   const applyingRef = useRef(applying);
   applyingRef.current = applying;
+  const importDialogRef = useRef(importDialog);
+  importDialogRef.current = importDialog;
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
   const editorRef = useRef<EditorHandle | null>(null);
@@ -219,6 +228,10 @@ export default function App() {
     getCurrentWindow()
       .onCloseRequested(async (event) => {
         event.preventDefault();
+        if (importDialogRef.current) {
+          report("Close the import dialog before closing the workspace.");
+          return;
+        }
         if (Object.values(applyingRef.current).some(Boolean)) {
           report("Wait for the editing batch to finish before closing.");
           return;
@@ -711,6 +724,7 @@ export default function App() {
   ];
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (importDialogRef.current) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -1158,6 +1172,26 @@ export default function App() {
                     >
                       <Plus size={14} /> Insert row
                     </button>
+                    {connection && connected[connection.id]?.import_rows && (
+                      <button
+                        disabled={
+                          busy ||
+                          !!staged[active]?.length ||
+                          Object.values(statuses).some(
+                            (s) => s.connection_id === connection.id && !s.done,
+                          )
+                        }
+                        onClick={() =>
+                          setImportDialog({
+                            tab: current,
+                            inspector,
+                            connection,
+                          })
+                        }
+                      >
+                        <FileUp size={14} /> Import CSV
+                      </button>
+                    )}
                     <span className="muted">
                       {staged[active]?.length ?? 0} staged changes
                       {!keyed ? " · no primary key: insert only" : ""}
@@ -1452,6 +1486,32 @@ export default function App() {
           old={rowDialog.old}
           onStage={(change) => stage(rowDialog.tab.id, change)}
           onClose={() => setRowDialog(null)}
+        />
+      )}
+      {importDialog && (
+        <ImportDialog
+          connection={importDialog.connection}
+          table={importDialog.inspector.table}
+          info={importDialog.inspector.info}
+          timeout={preferences.timeout}
+          onClose={() => setImportDialog(null)}
+          onComplete={(result) => {
+            if (/connection (?:is )?closed/i.test(result.error ?? "")) {
+              void disconnect(importDialog.connection);
+            }
+            setTransactionStates((s) => ({
+              ...s,
+              [result.connection_id]: result.transaction ?? "unknown",
+            }));
+            if (result.result && !result.error) {
+              void executeTab(
+                importDialog.tab,
+                importDialog.inspector.query,
+                false,
+                importDialog.inspector,
+              ).catch((e) => report(String(e)));
+            }
+          }}
         />
       )}
       {exportOpen && status && (

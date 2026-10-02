@@ -1269,6 +1269,217 @@ small {
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
+.import-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+}
+.import-target > svg {
+  color: var(--accent);
+}
+.import-target > div {
+  flex: 1;
+  min-width: 0;
+}
+.import-target strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.import-target small,
+.import-file small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 11px;
+}
+.import-settings,
+.import-mapping fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.import-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 22px;
+}
+.import-file {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 22px;
+}
+.import-file > span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.import-file strong {
+  font-size: 12px;
+}
+.import-section-label {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.import-section-label small {
+  color: var(--muted);
+}
+.import-mapping {
+  display: grid;
+  grid-template-columns: minmax(145px, 0.8fr) minmax(220px, 1.5fr);
+  gap: 22px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.import-mapping nav {
+  max-height: 290px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+}
+.import-mapping nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: 5px;
+  margin-bottom: 3px;
+  padding: 8px 10px;
+}
+.import-mapping nav button span,
+.import-mapping nav button small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.import-mapping nav button.selected {
+  background: var(--selection);
+  color: var(--accent);
+}
+.import-mapping nav button small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.import-mapping fieldset {
+  overflow: hidden;
+}
+.import-mapping fieldset > small {
+  overflow-wrap: anywhere;
+}
+.import-samples {
+  margin-top: 15px;
+  font-size: 11px;
+}
+.import-samples > small {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+}
+.import-samples > div {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.import-samples > div > span {
+  color: var(--muted);
+  min-width: 12px;
+}
+.import-samples code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.import-help {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.import-preview summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 10px 0;
+}
+.import-preview[open] summary svg {
+  transform: rotate(90deg);
+}
+.import-preview > div {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.import-preview table {
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.import-preview th,
+.import-preview td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  max-width: 230px;
+  min-width: 100px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.import-preview th small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 3px;
+}
+.import-policy {
+  font-size: 11px;
+  line-height: 1.7;
+  padding: 10px 13px;
+  background: var(--raised);
+  border-radius: 6px;
+  color: var(--muted);
+}
+.import-progress {
+  display: grid;
+  gap: 8px;
+  padding: 17px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 18px;
+}
+.import-progress.complete {
+  border-color: var(--accent);
+}
+.import-progress.failed {
+  border-color: var(--danger);
+}
+.import-progress > span,
+.import-progress > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.import-progress p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.import-confirm {
+  padding: 6px 0;
+}
 .staged-change .icon {
   float: right;
 }

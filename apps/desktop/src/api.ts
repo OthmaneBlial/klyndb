@@ -55,6 +55,38 @@ export interface MutationResult {
   affected: number;
   pending_transaction: boolean;
 }
+export interface CsvOptions {
+  delimiter: string;
+  trim: boolean;
+  null_value: string | null;
+  empty_as_null: boolean;
+}
+export interface ImportPreview {
+  headers: string[];
+  rows: string[][];
+  clipped: boolean;
+}
+export interface ImportSource {
+  id: string;
+  name: string;
+  bytes: number;
+  preview: ImportPreview;
+}
+export type ImportValueKind = "text" | "number" | "boolean" | "binary" | "json";
+export interface ImportMapping {
+  column: string | null;
+  kind: ImportValueKind;
+}
+export interface ImportStatus {
+  id: string;
+  connection_id: string;
+  done: boolean;
+  read_rows: number;
+  elapsed_ms: number;
+  result: MutationResult | null;
+  transaction: "idle" | "active" | "failed" | null;
+  error: string | null;
+}
 export interface ResultSet {
   columns: string[];
   rows: number;
@@ -166,6 +198,31 @@ interface Commands {
   history: { args: undefined; result: History[] };
   clear_history: { args: undefined; result: void };
   choose_database_file: { args: { create: boolean }; result: string | null };
+  choose_import_file: {
+    args: { options: CsvOptions };
+    result: ImportSource | null;
+  };
+  preview_import: {
+    args: { id: string; options: CsvOptions };
+    result: ImportPreview;
+  };
+  start_import: {
+    args: {
+      request: {
+        source: string;
+        connection: string;
+        table: Table;
+        options: CsvOptions;
+        mapping: ImportMapping[];
+        timeout_seconds: number;
+        confirmed: boolean;
+      };
+    };
+    result: string;
+  };
+  import_status: { args: { id: string }; result: ImportStatus };
+  cancel_import: { args: { id: string }; result: void };
+  release_import: { args: { id: string }; result: void };
   export_result: {
     args: { id: string; set: number; format: string; table: string };
     result: number | null;

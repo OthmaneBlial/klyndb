@@ -228,8 +228,13 @@ impl Session for Sqlite {
                 Ok(MutationResult { affected, pending_transaction: pending })
             })();
             if result.is_err() && conn.execute_batch(&format!("ROLLBACK TO {savepoint}; RELEASE {savepoint}")).is_err() {
+                let ended_outer = pending && conn.is_autocommit();
                 guard.take();
-                return Err(Error::new("Import rollback could not be confirmed; connection closed. Verify data before retrying."));
+                return Err(Error::new(if ended_outer {
+                    "SQLite ended the outer transaction; earlier uncommitted changes may have been rolled back. Import rollback could not be confirmed; connection closed. Verify data before retrying."
+                } else {
+                    "Import rollback could not be confirmed; connection closed. Verify data before retrying."
+                }));
             }
             result
         }).await.map_err(err)?

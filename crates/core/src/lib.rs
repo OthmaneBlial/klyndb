@@ -1,3 +1,4 @@
+pub mod import;
 use klyndb_connections::{Connection, Store};
 use klyndb_driver_api::*;
 use rusqlite::params;
@@ -241,6 +242,7 @@ pub struct Engine {
     pub store: Arc<Store>,
     sessions: tokio::sync::Mutex<HashMap<String, OpenConnection>>,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
+    pub imports: Arc<import::Imports>,
 }
 async fn open_session(config: &Connection, password: Option<&str>) -> Result<Arc<dyn Session>> {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
@@ -272,6 +274,7 @@ impl Engine {
             store: Arc::new(store),
             sessions: tokio::sync::Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),
+            imports: Arc::new(import::Imports::default()),
         }
     }
     pub async fn connect(&self, id: &str, password: Option<String>) -> Result<Capabilities> {
@@ -326,12 +329,14 @@ impl Engine {
         .map_err(|_| Error::new("Connection test timed out after 10 seconds"))?
     }
     pub async fn disconnect(&self, id: &str) -> Result<()> {
+        let connection = self.sessions.lock().await.remove(id);
         for job in self.jobs.lock().map_err(error)?.values() {
             if job.connection_id == id {
                 job.cancel.cancel();
             }
         }
-        if let Some(connection) = self.sessions.lock().await.remove(id) {
+        self.imports.cancel_connection(id).await?;
+        if let Some(connection) = connection {
             connection.driver.disconnect().await?;
         }
         Ok(())
