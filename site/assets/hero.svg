@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="500" viewBox="0 0 1280 500" role="img" aria-labelledby="title desc">
+  <title id="title">Klyndb — Your databases. Your workspace. Your rules.</title>
+  <desc id="desc">An original illustrated SQL workspace beside Klyndb branding. A free, open-source alternative to DBeaver, built with Rust and Tauri.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1"><stop stop-color="#101b1e"/><stop offset="1" stop-color="#192c2c"/></linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#a8edd2" stroke-opacity=".045"/></pattern>
+    <linearGradient id="edge"><stop stop-color="#b7f5d8"/><stop offset="1" stop-color="#6fa591" stop-opacity=".1"/></linearGradient>
+  </defs>
+  <rect width="1280" height="500" rx="24" fill="url(#background)"/>
+  <rect width="1280" height="500" rx="24" fill="url(#grid)"/>
+  <path d="M1150 0L830 500H1280V0" fill="#b7f5d8" opacity=".025"/>
+  <g font-family="'IBM Plex Sans','Trebuchet MS',sans-serif">
+    <rect x="52" y="42" width="204" height="29" rx="14" fill="#b7f5d8" fill-opacity=".08" stroke="#b7f5d8" stroke-opacity=".24"/>
+    <circle cx="69" cy="56" r="4" fill="#b7f5d8"/>
+    <text x="82" y="61" font-size="11" letter-spacing="1.4" fill="#b7f5d8">FREE &amp; OPEN SOURCE</text>
+    <text x="48" y="158" font-size="86" font-weight="700" letter-spacing="-5" fill="#f5f2e7">Klyndb<tspan fill="#b7f5d8">.</tspan></text>
+    <text x="52" y="211" font-size="32" font-weight="600" letter-spacing="-.7" fill="#f5f2e7">Your databases.</text>
+    <text x="52" y="251" font-size="32" font-weight="600" letter-spacing="-.7" fill="#f5f2e7">Your workspace. Your rules.</text>
+    <text x="52" y="300" font-size="18" fill="#b3c9c0">A modern, open-source alternative to DBeaver.</text>
+    <text x="52" y="330" font-size="16" fill="#8ea89e">Native Rust core. System WebView. Local-first.</text>
+    <rect x="52" y="363" width="118" height="36" rx="7" fill="#b7f5d8"/>
+    <text x="111" y="386" text-anchor="middle" font-size="13" font-weight="600" fill="#132623">MIT licensed</text>
+    <text x="191" y="386" font-size="13" fill="#b3c9c0">Built for people who live in SQL.</text>
+  </g>
+  <g transform="translate(645 81)">
+    <rect x="7" y="10" width="574" height="318" rx="13" fill="#050d0f" opacity=".35"/>
+    <rect width="574" height="318" rx="13" fill="#122124" stroke="#b7f5d8" stroke-opacity=".22"/>
+    <path d="M0 40H574M139 40V318M139 203H574" stroke="#b7f5d8" stroke-opacity=".12"/>
+    <circle cx="20" cy="20" r="4" fill="#e89989"/><circle cx="36" cy="20" r="4" fill="#e3c27e"/><circle cx="52" cy="20" r="4" fill="#93c8a4"/>
+    <g font-family="'IBM Plex Mono',Consolas,monospace" font-size="12">
+      <text x="76" y="24" fill="#8ea89e">klyndb / workspace</text>
+      <text x="19" y="70" fill="#7c9a8e" font-size="9" letter-spacing="1.5">DATABASES</text>
+      <circle cx="23" cy="95" r="3" fill="#b7f5d8"/><text x="34" y="99" fill="#dce7df">development</text>
+      <text x="34" y="128" fill="#8ea89e">▸ public</text>
+      <rect x="12" y="141" width="115" height="26" rx="4" fill="#b7f5d8" fill-opacity=".09"/>
+      <text x="34" y="158" fill="#b7f5d8">customers</text>
+      <text x="34" y="187" fill="#8ea89e">orders</text>
+      <text x="34" y="216" fill="#8ea89e">products</text>
+      <text x="160" y="65" fill="#b7f5d8">customers.sql</text>
+      <text x="160" y="100" fill="#597a6b">1</text><text x="185" y="100" fill="#b7f5d8">SELECT <tspan fill="#e8eadf">id, name, plan</tspan></text>
+      <text x="160" y="126" fill="#597a6b">2</text><text x="185" y="126" fill="#b7f5d8">FROM <tspan fill="#e8eadf">customers</tspan></text>
+      <text x="160" y="152" fill="#597a6b">3</text><text x="185" y="152" fill="#b7f5d8">WHERE <tspan fill="#e8eadf">active = </tspan><tspan fill="#e3c27e">true</tspan><tspan fill="#e8eadf">;</tspan></text>
+      <rect x="458" y="174" width="95" height="22" rx="4" fill="#b7f5d8"/>
+      <text x="505" y="189" text-anchor="middle" font-size="10" fill="#132623">Run ⌘ ↵</text>
+      <text x="160" y="227" fill="#7c9a8e">id</text><text x="218" y="227" fill="#7c9a8e">name</text><text x="452" y="227" fill="#7c9a8e">plan</text>
+      <path d="M153 238H560M153 268H560" stroke="#b7f5d8" stroke-opacity=".08"/>
+      <text x="160" y="257" fill="#e3c27e">01</text><text x="218" y="257" fill="#dce7df">Ada</text><text x="452" y="257" fill="#b7f5d8">free</text>
+      <text x="160" y="287" fill="#e3c27e">02</text><text x="218" y="287" fill="#dce7df">Linus</text><text x="452" y="287" fill="#b7f5d8">free</text>
+    </g>
+    <text x="570" y="343" text-anchor="end" fill="#6b897c" font-family="'IBM Plex Mono',monospace" font-size="9" letter-spacing="1">ORIGINAL WORKSPACE ILLUSTRATION</text>
+  </g>
+  <path d="M52 433H1228" stroke="url(#edge)" stroke-opacity=".4"/>
+  <g font-family="'IBM Plex Mono',Consolas,monospace" font-size="12" letter-spacing="1.2" fill="#b3c9c0">
+    <text x="52" y="466">POSTGRESQL</text><text x="238" y="466">MYSQL</text><text x="357" y="466">MARIADB</text><text x="502" y="466">SQLITE</text>
+    <text x="1228" y="466" text-anchor="end" fill="#e3c27e">DEVELOPMENT PREVIEW →</text>
+  </g>
+</svg>

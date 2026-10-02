@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="146" viewBox="0 0 1280 146" role="img" aria-labelledby="title desc">
+<title id="title">Help build the database client you want to use</title><desc id="desc">Star Klyndb on GitHub, try it on a development database, and help shape its next chapter.</desc>
+<rect width="1280" height="146" rx="18" fill="#142624"/>
+<path d="M78 39l9 20 22 3-16 16 4 22-19-11-20 11 4-22-16-16 22-3z" fill="#e3c27e"/>
+<g font-family="'IBM Plex Sans','Trebuchet MS',sans-serif"><text x="140" y="65" font-size="27" font-weight="600" fill="#f5f2e7">Help build the database client you want to use.</text><text x="140" y="100" font-size="16" fill="#a4c1b3">Star the repo. Try the preview. Tell us what your workflow needs.</text><rect x="1013" y="49" width="205" height="48" rx="8" fill="#b7f5d8"/><text x="1115" y="79" text-anchor="middle" font-size="16" font-weight="600" fill="#142624">Star on GitHub →</text></g>
+</svg>

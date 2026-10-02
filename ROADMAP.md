@@ -30,7 +30,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] CSV desktop file picker, opaque source/job IDs, mapping/preview, production confirmation, deadlines, progress/cancel and result refresh. Core contracts pass on all four engines; packaged macOS SQLite file selection, mapping/preview, append and grid refresh verified.
 - [ ] Streaming JSON/SQL imports and server-side table filters/sort/pagination.
 - [ ] Equivalent Windows/Linux import workflows and automated desktop import E2E.
-- [ ] Publish the original Klyndb showcase/docs at OthmaneBlial.github.io/klyndb/.
+- [x] Publish the original Klyndb showcase/docs at OthmaneBlial.github.io/klyndb/: portable static pages, real screenshots, local fonts, mobile layout and snippet copy.
 - [x] MySQL/MariaDB native connection/query/metadata slice, exact numeric/binary/NULL cells, multiple results, row cap, cancellation, read-only validation, native identifier quoting and actual transaction state. Real MySQL 8.4.11 / MariaDB 13.0.2 contracts and native macOS MySQL workflow passed.
 - [x] MySQL/MariaDB InnoDB staged insert/update/delete; exact bound values, optimistic conflicts, savepoint rollback, manual/autocommit-disabled transactions, conversion-warning guards and table-level editability.
 - [x] MySQL/MariaDB real 60-second locked-row edit timeout and incomplete-trigger rollback contracts; unconfirmed rollback closes the session.

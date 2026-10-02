@@ -16,8 +16,10 @@
 </p>
 
 <p align="center">
-  <a href="#-get-started">🚀 Get started</a> ·
-  <a href="#-what-you-can-do-today">✨ Features</a> ·
+  <a href="https://othmaneblial.github.io/klyndb/">🌐 Website</a> ·
+  <a href="https://othmaneblial.github.io/klyndb/docs.html">📖 Docs</a> ·
+  <a href="#get-started">🚀 Get started</a> ·
+  <a href="#features">✨ Features</a> ·
   <a href="docs/COMPATIBILITY.md">🗄️ Databases</a> ·
   <a href="ROADMAP.md">🧭 Roadmap</a> ·
   <a href="CONTRIBUTING.md">🤝 Contribute</a>
@@ -43,6 +45,8 @@
   <img src="docs/assets/workbench-macos.jpg" alt="Actual Klyndb macOS application with connected SQLite and MySQL databases, SQL tabs and a 10,000-row SQLite result" width="100%" />
   <br /><sub>Captured from the native macOS app with 10,000 synthetic test records in a local validation database.</sub>
 </p>
+
+<a id="features"></a>
 
 ## 🛠️ What you can do today
 
@@ -81,6 +85,8 @@ Database work belongs in Rust: connections, query execution, cancellation, resul
 Large results go to a bounded, temporary disk spool. The interface holds a **500-row page**, rather than copying an entire result into browser memory.
 
 A reproducible SQLite backend baseline retained **1 million rows** at a median **352,393 rows/second**, with **13.50 MiB peak backend-process RSS** on the recorded Apple M2 machine. This measures the backend only, not total desktop memory or a comparison with DBeaver. See the [benchmark methodology and raw samples](benchmarks/README.md). Desktop startup, memory and scrolling measurements are on the roadmap.
+
+<a id="get-started"></a>
 
 ## 🚀 Get started
 
