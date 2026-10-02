@@ -163,6 +163,30 @@ pub struct Engine {
     sessions: tokio::sync::Mutex<HashMap<String, OpenConnection>>,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
 }
+async fn open_session(config: &Connection, password: Option<&str>) -> Result<Arc<dyn Session>> {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        match config.engine.as_str() {
+            "sqlite" => Ok(Arc::new(
+                klyndb_sqlite::Sqlite::connect(
+                    config.address.clone(),
+                    config.read_only,
+                    config.create_file,
+                )
+                .await?,
+            ) as Arc<dyn Session>),
+            "postgres" => Ok(Arc::new(
+                klyndb_postgres::Postgres::connect(&config.address, password, config.read_only)
+                    .await?,
+            ) as Arc<dyn Session>),
+            "mysql" => Ok(Arc::new(
+                klyndb_mysql::Mysql::connect(&config.address, password, config.read_only).await?,
+            ) as Arc<dyn Session>),
+            _ => Err(Error::new("Database driver is not installed")),
+        }
+    })
+    .await
+    .map_err(|_| Error::new("Connection timed out after 10 seconds"))?
+}
 impl Engine {
     pub fn new(store: Store) -> Self {
         Self {
@@ -180,41 +204,47 @@ impl Engine {
         } else {
             None
         };
+        // ponytail: serialize session creation; use per-connection gates if overlapping opens become a bottleneck.
         let mut sessions = self.sessions.lock().await;
         if let Some(existing) = sessions.get(id) {
             return Ok(existing.driver.capabilities());
         }
-        let driver: Arc<dyn Session> = match config.engine.as_str() {
-            "sqlite" => Arc::new(
-                klyndb_sqlite::Sqlite::connect(
-                    config.address.clone(),
-                    config.read_only,
-                    config.create_file,
-                )
-                .await?,
-            ),
-            "postgres" => Arc::new(
-                klyndb_postgres::Postgres::connect(
-                    &config.address,
-                    password.as_deref().map(|s| s.as_str()),
-                    config.read_only,
-                )
-                .await?,
-            ),
-            "mysql" => Arc::new(
-                klyndb_mysql::Mysql::connect(
-                    &config.address,
-                    password.as_deref().map(|s| s.as_str()),
-                    config.read_only,
-                )
-                .await?,
-            ),
-            _ => return Err(Error::new("Database driver is not installed")),
-        };
+        let driver = open_session(&config, password.as_deref().map(|s| s.as_str())).await?;
         let capabilities = driver.capabilities();
         sessions.insert(id.into(), OpenConnection { driver, config });
         tracing::info!(engine = %self.store.connection(id)?.engine, "connection opened");
         Ok(capabilities)
+    }
+    pub async fn test_connection(
+        &self,
+        mut config: Connection,
+        password: Option<String>,
+    ) -> Result<Capabilities> {
+        let saved = !config.id.is_empty();
+        let password = password.map(Zeroizing::new);
+        if config.name.trim().is_empty() {
+            config.name = "Connection test".into();
+        }
+        let embedded = config.validate()?;
+        let password = password.or(embedded);
+        let password = if password.is_none() && saved && config.engine != "sqlite" {
+            klyndb_connections::password(&config.id)?
+        } else {
+            password
+        };
+        // Testing opens an isolated read-only session and never creates a user database file.
+        config.read_only = true;
+        config.create_file = false;
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let driver = open_session(&config, password.as_deref().map(|s| s.as_str())).await?;
+            let probe = driver.transaction_state().await;
+            let closed = driver.disconnect().await;
+            probe?;
+            closed?;
+            Ok(driver.capabilities())
+        })
+        .await
+        .map_err(|_| Error::new("Connection test timed out after 10 seconds"))?
     }
     pub async fn disconnect(&self, id: &str) -> Result<()> {
         for job in self.jobs.lock().map_err(error)?.values() {
@@ -383,6 +413,99 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn isolated_connection_test_and_handshake_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::new(Store::open(&dir.path().join("state.db")).unwrap());
+        let mut config = Connection {
+            id: String::new(),
+            name: "existing".into(),
+            engine: "sqlite".into(),
+            address: dir.path().join("user.db").to_string_lossy().into(),
+            environment: "development".into(),
+            group: String::new(),
+            color: "#78c6a3".into(),
+            favorite: false,
+            read_only: false,
+            create_file: true,
+        };
+        config.validate().unwrap();
+        engine.store.save(&config).unwrap();
+        engine.connect(&config.id, None).await.unwrap();
+        let original = engine.driver(&config.id).await.unwrap();
+        let (tx, _rx) = mpsc::channel(4);
+        original
+            .execute("BEGIN".into(), tx, CancellationToken::new(), 100)
+            .await
+            .unwrap();
+        let mut draft = config.clone();
+        draft.id.clear();
+        draft.name.clear();
+        assert!(
+            engine
+                .test_connection(draft.clone(), None)
+                .await
+                .unwrap()
+                .transactions
+        );
+        assert_eq!(engine.store.connections().unwrap().len(), 1);
+        assert!(Arc::ptr_eq(
+            &original,
+            &engine.driver(&config.id).await.unwrap()
+        ));
+        assert_eq!(
+            original.transaction_state().await.unwrap(),
+            TransactionState::Active
+        );
+        let missing = dir.path().join("not-created.db");
+        draft.address = missing.to_string_lossy().into();
+        assert!(engine.test_connection(draft.clone(), None).await.is_err());
+        assert!(!missing.exists());
+        std::fs::write(&missing, b"not a SQLite database").unwrap();
+        assert!(engine.test_connection(draft.clone(), None).await.is_err());
+        assert_eq!(std::fs::read(&missing).unwrap(), b"not a SQLite database");
+        for (name, engine_name) in [
+            ("KLYNDB_TEST_POSTGRES_URL", "postgres"),
+            ("KLYNDB_TEST_MYSQL_URL", "mysql"),
+        ] {
+            if let Ok(url) = std::env::var(name) {
+                draft.address = url;
+                draft.engine = engine_name.into();
+                // No keychain entry or saved connection is created for successful server tests.
+                assert!(
+                    engine
+                        .test_connection(draft.clone(), None)
+                        .await
+                        .unwrap()
+                        .transactions
+                );
+                assert_eq!(engine.store.connections().unwrap().len(), 1);
+            }
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        draft.engine = "postgres".into();
+        draft.address = format!("postgresql://test@{address}/test?sslmode=disable");
+        let began = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(12),
+            engine.test_connection(draft, None),
+        )
+        .await
+        .unwrap();
+        peer.abort();
+        assert!(result.unwrap_err().message.contains("timed out"));
+        assert!(began.elapsed() >= std::time::Duration::from_secs(9));
+        assert_eq!(
+            original.transaction_state().await.unwrap(),
+            TransactionState::Active
+        );
+        engine.disconnect(&config.id).await.unwrap();
+    }
     #[tokio::test]
     async fn end_to_end_disk_pages_and_safety() {
         let dir = tempfile::tempdir().unwrap();

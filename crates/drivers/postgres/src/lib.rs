@@ -44,19 +44,21 @@ impl Postgres {
         let worker = tokio::spawn(async move {
             let _ = connection.await;
         });
-        if read_only {
-            client
-                .batch_execute("SET default_transaction_read_only=on")
-                .await
-                .map_err(err)?;
-        }
-        Ok(Self {
+        let session = Self {
             client,
             worker,
             serial: Mutex::new(()),
             tls,
             read_only,
-        })
+        };
+        if read_only {
+            session
+                .client
+                .batch_execute("SET default_transaction_read_only=on")
+                .await
+                .map_err(err)?;
+        }
+        Ok(session)
     }
     async fn stream(
         &self,

@@ -96,6 +96,10 @@ interface Commands {
     args: { id: string; password: string | null };
     result: Capabilities;
   };
+  test_connection: {
+    args: { connection: Connection; password: string | null };
+    result: Capabilities;
+  };
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
   inspect_table: { args: { id: string; table: Table }; result: TableInfo };

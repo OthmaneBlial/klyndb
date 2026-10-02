@@ -27,8 +27,10 @@ export function ConnectionDialog({
     [password, setPassword] = useState(""),
     [remember, setRemember] = useState(true),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [testStatus, setTestStatus] = useState("");
   function field<K extends keyof Connection>(key: K, value: Connection[K]) {
+    setTestStatus("");
     setForm((f) => ({ ...f, [key]: value }));
   }
   async function choose(create: boolean) {
@@ -44,9 +46,26 @@ export function ConnectionDialog({
       setError(String(e));
     }
   }
+  async function test() {
+    setBusy(true);
+    setError("");
+    setTestStatus("");
+    try {
+      await api("test_connection", {
+        connection: form,
+        password: password || null,
+      });
+      setTestStatus("Connection verified. The test session has been closed.");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function save(connect: boolean) {
     setBusy(true);
     setError("");
+    setTestStatus("");
     try {
       let secret = password;
       try {
@@ -78,173 +97,187 @@ export function ConnectionDialog({
           void save(true);
         }}
       >
-        <div className="engine-picker">
-          {["sqlite", "postgres", "mysql"].map((engine) => (
-            <button
-              type="button"
-              key={engine}
-              className={form.engine === engine ? "selected" : ""}
-              onClick={() =>
-                setForm((f) => ({
-                  ...f,
-                  engine,
-                  address: "",
-                  create_file: false,
-                }))
-              }
-            >
-              <Database size={20} />
-              <strong>
-                {engine === "sqlite"
-                  ? "SQLite"
-                  : engine === "mysql"
-                    ? "MySQL / MariaDB"
-                    : "PostgreSQL"}
-              </strong>
-              <span>
-                {engine === "sqlite" ? "Local file" : "Server connection"}
-              </span>
-            </button>
-          ))}
-        </div>
-        <label>
-          Name
-          <input
-            value={form.name}
-            onChange={(e) => field("name", e.target.value)}
-            autoFocus
-            placeholder="e.g. Analytics · local"
-            required
-            maxLength={200}
-          />
-        </label>
-        {form.engine === "sqlite" ? (
+        <fieldset
+          className="connection-fields"
+          disabled={busy}
+          aria-label="Connection details"
+        >
+          <div className="engine-picker">
+            {["sqlite", "postgres", "mysql"].map((engine) => (
+              <button
+                type="button"
+                key={engine}
+                className={form.engine === engine ? "selected" : ""}
+                onClick={() => {
+                  setTestStatus("");
+                  setForm((f) => ({
+                    ...f,
+                    engine,
+                    address: "",
+                    create_file: false,
+                  }));
+                }}
+              >
+                <Database size={20} />
+                <strong>
+                  {engine === "sqlite"
+                    ? "SQLite"
+                    : engine === "mysql"
+                      ? "MySQL / MariaDB"
+                      : "PostgreSQL"}
+                </strong>
+                <span>
+                  {engine === "sqlite" ? "Local file" : "Server connection"}
+                </span>
+              </button>
+            ))}
+          </div>
           <label>
-            Database file
-            <div className="input-action">
-              <input
-                value={form.address}
-                onChange={(e) => field("address", e.target.value)}
-                placeholder="/path/to/database.sqlite"
-                required
-              />
-              <button
-                type="button"
-                aria-label="Browse database file"
-                onClick={() => void choose(false)}
-              >
-                <FolderOpen size={17} />
-              </button>
-              <button
-                type="button"
-                title="Create database file"
-                onClick={() => void choose(true)}
-              >
-                <Plus size={17} />
-              </button>
-            </div>
-            <small>
-              {form.create_file
-                ? "A new database will be created when you connect."
-                : "Choose an existing SQLite database, or use + to create one."}
-            </small>
+            Name
+            <input
+              value={form.name}
+              onChange={(e) => field("name", e.target.value)}
+              autoFocus
+              placeholder="e.g. Analytics · local"
+              required
+              maxLength={200}
+            />
           </label>
-        ) : (
-          <>
+          {form.engine === "sqlite" ? (
             <label>
-              Connection URL
-              <input
-                value={form.address}
-                onChange={(e) => field("address", e.target.value)}
-                placeholder={
-                  form.engine === "mysql"
-                    ? "mysql://user@localhost:3306/database"
-                    : "postgresql://user@localhost:5432/database"
-                }
-                required
-                autoComplete="off"
-              />
+              Database file
+              <div className="input-action">
+                <input
+                  value={form.address}
+                  onChange={(e) => field("address", e.target.value)}
+                  placeholder="/path/to/database.sqlite"
+                  required
+                />
+                <button
+                  type="button"
+                  aria-label="Browse database file"
+                  onClick={() => void choose(false)}
+                >
+                  <FolderOpen size={17} />
+                </button>
+                <button
+                  type="button"
+                  title="Create database file"
+                  onClick={() => void choose(true)}
+                >
+                  <Plus size={17} />
+                </button>
+              </div>
               <small>
-                TLS verification is enabled by default. Add{" "}
-                {form.engine === "mysql" ? "tls=disabled" : "sslmode=disable"}{" "}
-                only for a trusted local server.
+                {form.create_file
+                  ? "A new database will be created when you connect."
+                  : "Choose an existing SQLite database, or use + to create one."}
               </small>
             </label>
+          ) : (
+            <>
+              <label>
+                Connection URL
+                <input
+                  value={form.address}
+                  onChange={(e) => field("address", e.target.value)}
+                  placeholder={
+                    form.engine === "mysql"
+                      ? "mysql://user@localhost:3306/database"
+                      : "postgresql://user@localhost:5432/database"
+                  }
+                  required
+                  autoComplete="off"
+                />
+                <small>
+                  TLS verification is enabled by default. Add{" "}
+                  {form.engine === "mysql" ? "tls=disabled" : "sslmode=disable"}{" "}
+                  only for a trusted local server.
+                </small>
+              </label>
+              <label>
+                Password
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setTestStatus("");
+                  }}
+                  placeholder={
+                    initial
+                      ? "Leave empty to keep stored password"
+                      : "Database password"
+                  }
+                  autoComplete="new-password"
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                <ShieldCheck size={15} /> Store password in the OS keychain
+              </label>
+            </>
+          )}
+          <div className="form-row">
             <label>
-              Password
+              Environment
+              <select
+                value={form.environment}
+                onChange={(e) => field("environment", e.target.value)}
+              >
+                <option value="development">Development</option>
+                <option value="staging">Staging</option>
+                <option value="production">Production</option>
+              </select>
+            </label>
+            <label>
+              Group
               <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={
-                  initial
-                    ? "Leave empty to keep stored password"
-                    : "Database password"
-                }
-                autoComplete="new-password"
+                value={form.group}
+                onChange={(e) => field("group", e.target.value)}
+                placeholder="Personal"
               />
             </label>
-            <label className="check">
+            <label className="color-label">
+              Label
               <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
+                type="color"
+                value={form.color}
+                onChange={(e) => field("color", e.target.value)}
               />
-              <ShieldCheck size={15} /> Store password in the OS keychain
             </label>
-          </>
-        )}
-        <div className="form-row">
-          <label>
-            Environment
-            <select
-              value={form.environment}
-              onChange={(e) => field("environment", e.target.value)}
-            >
-              <option value="development">Development</option>
-              <option value="staging">Staging</option>
-              <option value="production">Production</option>
-            </select>
-          </label>
-          <label>
-            Group
+          </div>
+          <label className="check">
             <input
-              value={form.group}
-              onChange={(e) => field("group", e.target.value)}
-              placeholder="Personal"
-            />
+              type="checkbox"
+              checked={form.read_only}
+              onChange={(e) => field("read_only", e.target.checked)}
+            />{" "}
+            Read-only connection
           </label>
-          <label className="color-label">
-            Label
+          <label className="check">
             <input
-              type="color"
-              value={form.color}
-              onChange={(e) => field("color", e.target.value)}
-            />
+              type="checkbox"
+              checked={form.favorite}
+              onChange={(e) => field("favorite", e.target.checked)}
+            />{" "}
+            Favorite
           </label>
-        </div>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={form.read_only}
-            onChange={(e) => field("read_only", e.target.checked)}
-          />{" "}
-          Read-only connection
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={form.favorite}
-            onChange={(e) => field("favorite", e.target.checked)}
-          />{" "}
-          Favorite
-        </label>
+        </fieldset>
+        {testStatus && <p role="status">{testStatus}</p>}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
         <footer>
+          <button type="button" disabled={busy} onClick={() => void test()}>
+            {busy ? "Working…" : "Test connection"}
+          </button>
           <button
             type="button"
             disabled={busy}
@@ -253,7 +286,7 @@ export function ConnectionDialog({
             Save
           </button>
           <button className="primary" type="submit" disabled={busy}>
-            {busy ? "Saving…" : "Save & connect"}
+            {busy ? "Working…" : "Save & connect"}
           </button>
         </footer>
       </form>

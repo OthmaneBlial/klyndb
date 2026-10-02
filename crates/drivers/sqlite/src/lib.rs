@@ -27,6 +27,8 @@ impl Sqlite {
             let conn = Connection::open_with_flags(path, flags).map_err(err)?;
             conn.busy_timeout(std::time::Duration::from_secs(5))
                 .map_err(err)?;
+            conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
+                .map_err(err)?;
             conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(err)?;
             if read_only {
                 conn.execute_batch("PRAGMA query_only=ON;").map_err(err)?;

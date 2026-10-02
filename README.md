@@ -37,7 +37,7 @@
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **Connect** | PostgreSQL, MySQL, MariaDB and SQLite; saved connections, groups, favorites and environment labels. |
+| **Connect** | PostgreSQL, MySQL, MariaDB and SQLite; connection testing, saved connections, groups, favorites and environment labels. |
 | **Explore** | Tables and views, columns, primary keys, indexes, foreign keys and table DDL. |
 | **Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **Work with results** | Incremental Rust streaming, disk-backed results, a virtualized grid, resizing/reordering, page sort/filter and cell inspection. |

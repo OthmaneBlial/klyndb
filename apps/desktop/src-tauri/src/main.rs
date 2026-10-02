@@ -68,6 +68,17 @@ async fn connect(
     engine.connect(&id, password).await.map_err(api)
 }
 #[tauri::command]
+async fn test_connection(
+    engine: State<'_, Arc<Engine>>,
+    connection: Connection,
+    password: Option<String>,
+) -> ApiResult<Capabilities> {
+    engine
+        .test_connection(connection, password)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
 async fn disconnect(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<()> {
     engine.disconnect(&id).await.map_err(api)
 }
@@ -297,6 +308,7 @@ fn main() {
             save_connection,
             delete_connection,
             connect,
+            test_connection,
             disconnect,
             tables,
             inspect_table,

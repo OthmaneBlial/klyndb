@@ -30,7 +30,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] MySQL/MariaDB InnoDB staged insert/update/delete; exact bound values, optimistic conflicts, savepoint rollback, manual/autocommit-disabled transactions, conversion-warning guards and table-level editability.
 - [x] MySQL/MariaDB real 60-second locked-row edit timeout and incomplete-trigger rollback contracts; unconfirmed rollback closes the session.
 - [x] Native macOS MySQL staged review/update/insert/delete, manual transaction rollback and stale-row rejection.
-- [ ] Reconnect, connection testing, configurable network timeouts and broader metadata.
+- [x] Isolated connection tests before saving; no metadata/credential writes or SQLite file creation, existing sessions/transactions preserved. A 10-second end-to-end deadline covers stalled handshakes; invalid SQLite files fail on connect.
+- [ ] Reconnect, configurable network timeouts and broader metadata.
 - [ ] Verified TLS options/client certificates and SSH tunnels/bastion support.
 - [ ] SQL Server, DuckDB and ClickHouse with actual integration services.
 - [ ] Explain tree, ER diagrams with saved layouts, DDL/statistics/triggers/constraints.

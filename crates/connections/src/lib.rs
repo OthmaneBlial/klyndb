@@ -38,7 +38,7 @@ impl Connection {
             }
             "postgres" | "mysql" => {
                 let mut url = url::Url::parse(&self.address)
-                    .map_err(|_| Error::new("Enter a valid PostgreSQL URL"))?;
+                    .map_err(|_| Error::new("Enter a valid database connection URL"))?;
                 let mysql = self.engine == "mysql";
                 let schemes: &[&str] = if mysql {
                     &["mysql"]
