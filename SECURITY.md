@@ -10,6 +10,8 @@ Read-only mode and destructive SQL confirmations reduce accidents. They do not r
 
 Executable MySQL/MariaDB comments (`/*!...*/`, `/*M!...*/`, including version guards) are rejected before query submission because their meaning depends on the server and version. Write the SQL explicitly so read-only and destructive-query validation can inspect it. Ordinary comments, optimizer hints and SQL strings remain supported.
 
+Runtime ANALYZE always requires confirmation, including SELECT plans and PostgreSQL's parenthesized ANALYZE option. It can execute writes and side effects; Klyndb does not automatically roll back the statement. Read-only connections disable runtime analysis. Estimated plans remain non-executing requests; server read-only restrictions also apply.
+
 Local state includes SQL history, editor text and saved queries. These may contain sensitive SQL literals even though connection passwords are excluded. Avoid putting credentials in queries. Clear history when appropriate. Result spools are private temporary directories removed when released or on normal shutdown; unexpected termination may leave files for OS temporary-directory cleanup.
 
 Logs record engine type, timings and failure booleans; they omit submitted SQL and credentials. Dependency checks use `cargo audit` and `npm audit`. Advisory exceptions, if any, must be documented rather than silently ignored.

@@ -18,6 +18,7 @@
   --selection: #93d4b515;
   --danger: #e7998d;
   --editor-font-size: 13px;
+  --mono: "IBM Plex Mono", monospace;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -1285,4 +1286,93 @@ small {
   padding: 0;
   margin: 0;
   min-width: 0;
+}
+
+.plan-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 24px;
+}
+.plan-heading,
+.plan-heading > div,
+.plan-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.plan-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.plan-kind {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.plan-note {
+  font-size: 12px;
+  max-width: 90ch;
+  line-height: 1.6;
+}
+.plan-tree {
+  margin-top: 18px;
+}
+.plan-node {
+  border-left: 1px solid var(--border);
+  padding: 6px 0 6px 14px;
+  margin-left: 8px;
+}
+.plan-node > summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.plan-node[open] > summary {
+  color: var(--accent);
+}
+.plan-attributes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 10px 12px;
+}
+.plan-attributes > div {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 9px;
+  max-width: 100%;
+}
+.plan-attributes dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+.plan-attributes dd {
+  margin: 3px 0 0;
+  font: 12px var(--mono);
+  overflow-wrap: anywhere;
+}
+.plan-raw,
+.plan-warnings pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.7 var(--mono);
+}
+.plan-warnings {
+  margin: 14px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.plan-warnings summary {
+  cursor: pointer;
+  font-size: 12px;
 }

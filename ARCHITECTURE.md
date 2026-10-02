@@ -8,7 +8,7 @@ The desktop is a Tauri 2 system-WebView shell. React represents the workspace; R
 | `drivers/sqlite` | rusqlite on blocking workers; persistent connection and VM cancellation |
 | `drivers/postgres` | tokio-postgres native protocol, verified native TLS, server cancellation |
 | `drivers/mysql` | mysql_async native protocol, dedicated user session, lazy cancellation connection, verified native TLS |
-| `query` | Dialect parsing and AST-based destructive-query checks |
+| `query` | Dialect parsing, AST safety and bounded native-plan tree decoding |
 | `connections` | SQLite application-state migration, metadata validation, URL secret extraction and OS credential store |
 | `core` | Session/job lifecycle, timeout and disk-backed result spool |
 | `export` | Streaming formats, independent of database engines and UI |
@@ -31,6 +31,8 @@ SQLite state uses `user_version` migrations, parameter binding and WAL. Password
 5. Run a contract against a real disposable database: connect, schema, DDL/DML, multi-results, NULL/types, row cap, cancellation, reconnect and disconnect. Add the compatibility row with explicit evidence.
 
 Driver feature flags/process isolation are planned when compiled drivers or vendor libraries justify them. There are no untrusted native plugins or arbitrary shell commands.
+
+Execution plans reuse the same query jobs, disk spool, cancellation and timeout path. The core validates one original statement before the driver supplies native plan SQL. The original statement's syntax/comments are retained; only trailing delimiters/comments are excluded before appending MySQL/MariaDB SHOW WARNINGS. ANALYZE requires backend confirmation, including for SELECT, and is unavailable on read-only connections. PostgreSQL option-form ANALYZE and MariaDB native syntax are validated as execution. Tree conversion runs in Rust with explicit size/depth/node limits; React renders the native fields without inventing metrics.
 
 ## Table changes
 

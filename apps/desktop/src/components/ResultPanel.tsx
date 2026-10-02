@@ -1,7 +1,8 @@
 import { Download, KeyRound, Table2 } from "lucide-react";
 import type { QueryStatus, Table, TableInfo, Row } from "../api";
 import { ResultGrid } from "./ResultGrid";
-export type ResultView = "results" | "messages" | "structure";
+import { PlanPanel } from "./PlanPanel";
+export type ResultView = "results" | "messages" | "structure" | "explain";
 export interface Inspector {
   table: Table;
   info: TableInfo;
@@ -63,6 +64,14 @@ export function ResultPanel({
               Structure
             </button>
           )}
+          {status?.plan_format && (
+            <button
+              className={view === "explain" ? "selected" : ""}
+              onClick={() => onView("explain")}
+            >
+              Explain
+            </button>
+          )}
         </div>
         <div>
           {status?.done && (
@@ -96,7 +105,9 @@ export function ResultPanel({
           ))}
         </div>
       )}
-      {view === "structure" && inspector ? (
+      {view === "explain" && status?.plan_format ? (
+        <PlanPanel key={`${status.id}-${status.done}`} status={status} />
+      ) : view === "structure" && inspector ? (
         <div className="structure">
           <h3>
             {inspector.table.schema}.{inspector.table.name}

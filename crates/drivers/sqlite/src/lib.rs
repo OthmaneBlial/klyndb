@@ -66,10 +66,19 @@ impl Session for Sqlite {
             transactions: true,
             schemas: false,
             explain: true,
+            explain_analyze: false,
             edit_rows: true,
             cancel: true,
             tls: false,
         }
+    }
+    fn explain_sql(&self, sql: &str, analyze: bool) -> Result<(String, PlanFormat)> {
+        if analyze {
+            return Err(Error::new(
+                "SQLite provides estimated QUERY PLAN output, without runtime ANALYZE metrics",
+            ));
+        }
+        Ok((format!("EXPLAIN QUERY PLAN {sql}"), PlanFormat::Sqlite))
     }
     async fn execute(
         &self,

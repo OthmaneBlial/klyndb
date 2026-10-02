@@ -52,9 +52,19 @@ pub struct Capabilities {
     pub transactions: bool,
     pub schemas: bool,
     pub explain: bool,
+    pub explain_analyze: bool,
     pub edit_rows: bool,
     pub cancel: bool,
     pub tls: bool,
+}
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanFormat {
+    Sqlite,
+    PostgresJson,
+    MysqlJson,
+    MysqlTree,
+    MariaJson,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Table {
@@ -186,6 +196,10 @@ pub enum Batch {
 #[async_trait]
 pub trait Session: Send + Sync {
     fn capabilities(&self) -> Capabilities;
+    /// The core validates a single original statement before calling this method.
+    fn explain_sql(&self, _sql: &str, _analyze: bool) -> Result<(String, PlanFormat)> {
+        Err(Error::new("This driver does not support execution plans"))
+    }
     fn quote_identifier(&self, name: &str) -> String {
         quote_identifier(name)
     }

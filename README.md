@@ -41,7 +41,8 @@
 | **Explore** | Tables and views, columns, primary keys, indexes, foreign keys and table DDL. |
 | **Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **Work with results** | Incremental Rust streaming, disk-backed results, a virtualized grid, resizing/reordering, page sort/filter and cell inspection. |
-| **Change data safely** | Staged SQLite/PostgreSQL inserts, updates and deletes; review, parameter binding, conflict detection and atomic batches. |
+| **Change data safely** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |
+| **Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
 | **Stay in control** | Cancellation, timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
 | **Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
 | **Pick up where you left off** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |

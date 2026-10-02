@@ -19,6 +19,8 @@ pub struct Mysql {
     connection: Mutex<Option<Conn>>,
     control: Pool,
     read_only: bool,
+    maria: bool,
+    explain_analyze: bool,
 }
 fn err(e: mysql_async::Error) -> Error {
     match e {
@@ -66,16 +68,24 @@ impl Mysql {
             builder = builder.pass(Some(password));
         }
         let opts: Opts = builder.into();
-        let connection =
-            tokio::time::timeout(std::time::Duration::from_secs(10), Conn::new(opts.clone()))
-                .await
-                .map_err(|_| Error::new("MySQL connection timed out after 10 seconds"))?
-                .map_err(err)?;
+        let (connection, maria, version) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                let mut connection = Conn::new(opts.clone()).await?;
+                let version: Option<String> = connection.query_first("SELECT VERSION()").await?;
+                let maria = version.is_some_and(|v| v.to_ascii_lowercase().contains("mariadb"));
+                let version = connection.server_version();
+                Ok::<_, mysql_async::Error>((connection, maria, version))
+            })
+            .await
+            .map_err(|_| Error::new("MySQL connection timed out after 10 seconds"))?
+            .map_err(err)?;
         // Only cancellation uses the lazy one-connection pool. User SQL retains a dedicated transaction-stable session.
         Ok(Self {
             connection: Mutex::new(Some(connection)),
             control: Pool::new(opts),
             read_only,
+            maria,
+            explain_analyze: !read_only && version >= if maria { (10, 1, 0) } else { (8, 0, 18) },
         })
     }
     async fn interrupt<F, T>(
@@ -269,10 +279,30 @@ impl Session for Mysql {
             transactions: true,
             schemas: true,
             explain: true,
+            explain_analyze: self.explain_analyze,
             edit_rows: true,
             cancel: true,
             tls: true,
         }
+    }
+    fn explain_sql(&self, sql: &str, analyze: bool) -> Result<(String, PlanFormat)> {
+        if analyze && !self.explain_analyze {
+            return Err(Error::new(
+                "Runtime ANALYZE is unavailable on this server or read-only connection",
+            ));
+        }
+        if analyze && !self.maria && !klyndb_query::analyze(sql, "mysql")?.read_only {
+            return Err(Error::new(
+                "MySQL runtime plans currently support read-only SELECT queries. Use estimated Explain for writes.",
+            ));
+        }
+        let (prefix, format) = match (self.maria, analyze) {
+            (true, true) => ("ANALYZE FORMAT=JSON", PlanFormat::MariaJson),
+            (true, false) => ("EXPLAIN FORMAT=JSON", PlanFormat::MariaJson),
+            (false, true) => ("EXPLAIN ANALYZE FORMAT=TREE", PlanFormat::MysqlTree),
+            (false, false) => ("EXPLAIN FORMAT=JSON", PlanFormat::MysqlJson),
+        };
+        Ok((format!("{prefix} {sql}; SHOW WARNINGS"), format))
     }
     async fn execute(
         &self,

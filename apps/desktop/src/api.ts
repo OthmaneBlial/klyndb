@@ -15,6 +15,7 @@ export interface Capabilities {
   transactions: boolean;
   schemas: boolean;
   explain: boolean;
+  explain_analyze: boolean;
   edit_rows: boolean;
   cancel: boolean;
   tls: boolean;
@@ -67,6 +68,21 @@ export interface QueryStatus {
   elapsed_ms: number;
   connection_id: string;
   transaction: "idle" | "active" | "failed" | null;
+  plan_format: PlanFormat | null;
+  plan_analyze: boolean;
+}
+export type PlanFormat =
+  "sqlite" | "postgres_json" | "mysql_json" | "mysql_tree" | "maria_json";
+export interface PlanNode {
+  label: string;
+  attributes: [string, string][];
+  children: PlanNode[];
+}
+export interface ExecutionPlan {
+  format: PlanFormat;
+  raw: string;
+  nodes: PlanNode[];
+  warnings: string[];
 }
 export interface Analysis {
   statements: string[];
@@ -127,6 +143,17 @@ interface Commands {
     result: string;
   };
   query_status: { args: { id: string }; result: QueryStatus };
+  start_plan: {
+    args: {
+      connection: string;
+      sql: string;
+      analyze: boolean;
+      timeoutSeconds: number;
+      confirmed: boolean;
+    };
+    result: string;
+  };
+  execution_plan: { args: { id: string }; result: ExecutionPlan };
   result_page: {
     args: { id: string; set: number; offset: number; limit: number };
     result: Row[];

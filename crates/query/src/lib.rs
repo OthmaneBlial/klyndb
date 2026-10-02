@@ -4,9 +4,10 @@ use sqlparser::{
     ast::{Query, SetExpr, Statement, Visit, Visitor},
     dialect::{Dialect, GenericDialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect},
     parser::Parser,
-    tokenizer::{Token, Tokenizer, Whitespace},
+    tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace},
 };
 use std::ops::ControlFlow;
+pub mod plan;
 
 // Keep executable comments visible: their meaning varies with the server/version.
 sqlparser::derive_dialect!(
@@ -26,6 +27,14 @@ struct Safety {
     warnings: Vec<String>,
     read_only: bool,
 }
+fn executes_plan(statement: &Statement) -> bool {
+    matches!(statement, Statement::Explain { analyze, options, .. }
+    if *analyze || options.as_ref().is_some_and(|options| options.iter().any(|option| {
+        option.name.value.eq_ignore_ascii_case("ANALYZE") && option.arg.as_ref().is_none_or(|arg|
+            !["FALSE", "OFF", "0"].contains(&arg.to_string().trim_matches('\'').to_ascii_uppercase().as_str())
+        )
+    })))
+}
 fn read_only_body(body: &SetExpr) -> bool {
     match body {
         SetExpr::Select(s) => s.into.is_none(),
@@ -39,6 +48,9 @@ impl Visitor for Safety {
     type Break = ();
     fn pre_visit_statement(&mut self, statement: &Statement) -> ControlFlow<()> {
         let warning = match statement {
+            Statement::Explain { .. } if executes_plan(statement) => {
+                Some("ANALYZE executes the statement, including its writes and side effects")
+            }
             Statement::Drop { .. } => Some("DROP removes database objects"),
             Statement::Truncate(_) => Some("TRUNCATE removes all rows"),
             Statement::Delete(delete) if delete.selection.is_none() => {
@@ -52,10 +64,9 @@ impl Visitor for Safety {
         if let Some(warning) = warning {
             self.warnings.push(warning.into());
         }
-        self.read_only &= matches!(
-            statement,
-            Statement::Query(_) | Statement::Explain { analyze: false, .. }
-        );
+        self.read_only &= matches!(statement, Statement::Query(_))
+            || matches!(statement, Statement::Explain { .. } if !executes_plan(statement))
+            || matches!(statement, Statement::ShowVariable { variable } if variable.len() == 1 && variable[0].value.eq_ignore_ascii_case("WARNINGS"));
         ControlFlow::Continue(())
     }
     fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<()> {
@@ -63,7 +74,7 @@ impl Visitor for Safety {
         ControlFlow::Continue(())
     }
 }
-pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
+fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
     if sql.len() > 4 * 1024 * 1024 {
         return Err(Error::new(
             "SQL exceeds the 4 MiB editor limit. Import a file instead.",
@@ -75,7 +86,7 @@ pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
         "mysql" => &ValidatedMySqlDialect::new(),
         _ => &GenericDialect {},
     };
-    let tokens = Tokenizer::new(dialect, sql)
+    let mut tokens = Tokenizer::new(dialect, sql)
         .tokenize_with_location()
         .map_err(|e| Error::new(format!("SQL could not be validated: {e}")))?;
     if engine == "mysql"
@@ -91,6 +102,27 @@ pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
             "Executable MySQL/MariaDB comments cannot be validated. Write their SQL explicitly.",
         ));
     }
+    let end = tokens
+        .iter()
+        .rev()
+        .find(|t| {
+            !matches!(
+                t.token,
+                Token::Whitespace(_) | Token::SemiColon | Token::EOF
+            )
+        })
+        .map_or(sql.len(), |t| byte_offset(sql, t.span.end));
+    // MariaDB's runtime plan syntax is ANALYZE FORMAT=JSON, not EXPLAIN ANALYZE.
+    // Normalize tokens for validation only; the original SQL is always executed.
+    let leading: Vec<_> = tokens
+        .iter()
+        .filter(|t| !matches!(t.token, Token::Whitespace(_)))
+        .take(4)
+        .map(|t| t.token.to_string().to_ascii_uppercase())
+        .collect();
+    if engine == "mysql" && leading == ["ANALYZE", "FORMAT", "=", "JSON"] {
+        tokens.insert(0, TokenWithSpan::wrap(Token::make_word("EXPLAIN", None)));
+    }
     let statements = Parser::new(dialect)
         .with_tokens_with_locations(tokens)
         .parse_statements()
@@ -98,11 +130,50 @@ pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
     if statements.is_empty() {
         return Err(Error::new("Enter a SQL statement."));
     }
+    Ok((statements, end))
+}
+fn byte_offset(sql: &str, target: Location) -> usize {
+    let (mut line, mut column) = (1, 1);
+    for (offset, c) in sql.char_indices() {
+        if line == target.line && column == target.column {
+            return offset;
+        }
+        if c == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    sql.len()
+}
+/// Preserve vendor syntax while excluding trailing delimiters/comments before adding plan SQL.
+pub fn explain_target<'a>(sql: &'a str, engine: &str) -> DriverResult<&'a str> {
+    let (statements, end) = parse(sql, engine)?;
+    if statements.len() != 1
+        || matches!(
+            statements[0],
+            Statement::Explain { .. } | Statement::ExplainTable { .. }
+        )
+    {
+        return Err(Error::new(
+            "Explain one statement or selection, without an existing EXPLAIN.",
+        ));
+    }
+    Ok(&sql[..end])
+}
+pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
+    let (statements, _) = parse(sql, engine)?;
     let mut safety = Safety {
         warnings: vec![],
         read_only: true,
     };
-    let _ = statements.visit(&mut safety);
+    for statement in &statements {
+        if matches!(statement, Statement::Explain { .. }) && !executes_plan(statement) {
+            continue;
+        }
+        let _ = statement.visit(&mut safety);
+    }
     // Execute original SQL: AST formatting can change vendor syntax and comments.
     Ok(Analysis {
         statements: statements.iter().map(ToString::to_string).collect(),
@@ -114,6 +185,43 @@ pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explain_analyze_options_require_execution_confirmation() {
+        let actual = analyze("EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1", "postgres").unwrap();
+        assert!(!actual.read_only);
+        assert!(actual.warnings.iter().any(|w| w.contains("executes")));
+        for option in ["FALSE", "OFF", "0"] {
+            assert!(
+                analyze(
+                    &format!("EXPLAIN (ANALYZE {option}) UPDATE t SET x=1"),
+                    "postgres"
+                )
+                .unwrap()
+                .read_only
+            );
+        }
+        let actual = analyze(
+            "ANALYZE FORMAT=JSON UPDATE t SET x=1; SHOW WARNINGS",
+            "mysql",
+        )
+        .unwrap();
+        assert!(!actual.read_only);
+        assert_eq!(actual.warnings.len(), 2);
+        assert!(
+            analyze(
+                "EXPLAIN FORMAT=JSON UPDATE t SET x=1; SHOW WARNINGS",
+                "mysql"
+            )
+            .unwrap()
+            .read_only
+        );
+        assert_eq!(
+            explain_target("SELECT 'é;--'\r\n /* hint */ + 1;;; -- trailing\n", "mysql").unwrap(),
+            "SELECT 'é;--'\r\n /* hint */ + 1"
+        );
+        assert!(explain_target("SELECT 1; SELECT 2", "postgres").is_err());
+        assert!(explain_target("EXPLAIN SELECT 1", "sqlite").is_err());
+    }
     #[test]
     fn mysql_executable_comments_cannot_bypass_validation() {
         for sql in [

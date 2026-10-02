@@ -27,6 +27,8 @@ pub struct QueryStatus {
     pub elapsed_ms: u64,
     pub connection_id: String,
     pub transaction: Option<TransactionState>,
+    pub plan_format: Option<PlanFormat>,
+    pub plan_analyze: bool,
 }
 pub struct Job {
     pub status: Mutex<QueryStatus>,
@@ -54,6 +56,8 @@ impl Job {
                 elapsed_ms: 0,
                 connection_id: connection_id.clone(),
                 transaction: None,
+                plan_format: None,
+                plan_analyze: false,
             }),
             db: Mutex::new(db),
             cancel: CancellationToken::new(),
@@ -90,6 +94,56 @@ impl Job {
             serde_json::from_str(&json).map_err(error)
         })
         .collect()
+    }
+    pub fn plan(&self) -> Result<klyndb_query::plan::Plan> {
+        let status = self.status()?;
+        let format = status
+            .plan_format
+            .ok_or_else(|| Error::new("This result is not an execution plan"))?;
+        if !status.done || status.error.is_some() {
+            return Err(Error::new(
+                status
+                    .error
+                    .unwrap_or_else(|| "Wait for the plan to finish".into()),
+            ));
+        }
+        let first = status
+            .sets
+            .first()
+            .ok_or_else(|| Error::new("The server returned no execution plan"))?;
+        if first.truncated {
+            return Err(Error::new(
+                "The native plan was truncated. Narrow the query.",
+            ));
+        }
+        let mut rows = vec![];
+        let mut bytes = 0;
+        for offset in (0..first.rows).step_by(500) {
+            let page = self.page(0, offset, 500)?;
+            bytes += page.iter().flatten().map(Cell::byte_len).sum::<usize>();
+            if bytes > 4 * 1024 * 1024 {
+                return Err(Error::new("Plan exceeds 4 MiB. Export the raw results."));
+            }
+            rows.extend(page);
+        }
+        let mut warnings = vec![];
+        if let Some(set) = status.sets.get(1) {
+            for offset in (0..set.rows).step_by(500) {
+                for row in self.page(1, offset, 500)? {
+                    bytes += row.iter().map(Cell::byte_len).sum::<usize>();
+                    if bytes > 4 * 1024 * 1024 {
+                        return Err(Error::new(
+                            "Plan and warnings exceed 4 MiB. Export the raw results.",
+                        ));
+                    }
+                    warnings.push(row.iter().map(Cell::text).collect::<Vec<_>>().join(" · "));
+                }
+            }
+            if set.truncated {
+                warnings.push("Server warning output reached the row limit.".into());
+            }
+        }
+        klyndb_query::plan::decode(format, &first.columns, &rows, warnings)
     }
     fn consume(&self, mut input: mpsc::Receiver<Batch>) -> Result<()> {
         let mut total_bytes = 0usize;
@@ -358,6 +412,35 @@ impl Engine {
                 "query finished"
             );
         });
+        Ok(id)
+    }
+    pub async fn start_plan(
+        &self,
+        connection: String,
+        sql: String,
+        analyze: bool,
+        timeout_seconds: u64,
+        confirmed: bool,
+    ) -> Result<String> {
+        let sessions = self.sessions.lock().await;
+        let open = sessions
+            .get(&connection)
+            .ok_or_else(|| Error::new("Connect to the database first"))?;
+        let target = klyndb_query::explain_target(&sql, &open.config.engine)?;
+        let (sql, format) = open.driver.explain_sql(target, analyze)?;
+        if analyze && !confirmed {
+            return Err(Error::new(
+                "Confirmation required: ANALYZE executes the statement, including writes and side effects",
+            ));
+        }
+        drop(sessions);
+        let id = self
+            .start(connection, sql, 5000, timeout_seconds, confirmed)
+            .await?;
+        let job = self.job(&id)?;
+        let mut status = job.status.lock().map_err(error)?;
+        status.plan_format = Some(format);
+        status.plan_analyze = analyze;
         Ok(id)
     }
     pub async fn apply_changes(

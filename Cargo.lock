@@ -2316,6 +2316,7 @@ version = "0.1.0"
 dependencies = [
  "klyndb-driver-api",
  "serde",
+ "serde_json",
  "sqlparser",
 ]
 

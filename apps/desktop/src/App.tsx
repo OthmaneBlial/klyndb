@@ -417,18 +417,21 @@ export default function App() {
   async function run(
     sql = editorRef.current?.runText() ?? current?.sql ?? "",
     confirmed = false,
+    plan?: "estimate" | "analyze",
   ) {
     if (stagedRef.current[active]?.length) {
       report("Apply or discard staged changes before running another query.");
       return;
     }
-    if (current) await executeTab(current, sql, confirmed);
+    if (current)
+      await executeTab(current, sql, confirmed, inspectors[current.id], plan);
   }
   async function executeTab(
     tab: Tab,
     sql: string,
     confirmed = false,
     inspected = inspectors[tab.id],
+    plan?: "estimate" | "analyze",
   ) {
     const c = connections.find((c) => c.id === tab.connection),
       previous = statuses[tab.id];
@@ -441,46 +444,54 @@ export default function App() {
         report("Connect to this database before running SQL.");
         return;
       }
-      const analysis = await api("analyze_query", { sql, engine: c.engine });
-      if (!confirmed && analysis.warnings.length) {
+      const warnings =
+        plan === "estimate"
+          ? []
+          : (await api("analyze_query", { sql, engine: c.engine })).warnings;
+      if (plan === "analyze")
+        warnings.unshift(
+          "ANALYZE executes this statement, including writes and side effects. It does not roll back automatically.",
+        );
+      if (!confirmed && warnings.length) {
         setConfirm({
-          title: "Confirm destructive SQL",
-          message: `${c.name} · ${c.environment}\n${analysis.warnings.join("\n")}`,
+          title: plan === "analyze" ? "Run ANALYZE?" : "Confirm SQL execution",
+          message: `${c.name} · ${c.environment}\n${warnings.join("\n")}`,
           sql,
           action: () => {
-            void executeTab(tab, sql, true);
+            void executeTab(tab, sql, true, inspected, plan);
           },
         });
         return;
       }
-      const id = await api("start_query", {
-        connection: c.id,
-        sql,
-        limit: preferences.rowLimit,
-        timeoutSeconds: preferences.timeout,
-        confirmed,
-      });
+      const id = plan
+        ? await api("start_plan", {
+            connection: c.id,
+            sql,
+            analyze: plan === "analyze",
+            timeoutSeconds: preferences.timeout,
+            confirmed,
+          })
+        : await api("start_query", {
+            connection: c.id,
+            sql,
+            limit: preferences.rowLimit,
+            timeoutSeconds: preferences.timeout,
+            confirmed,
+          });
+      const initial = await api("query_status", { id });
       if (previous) await api("release_result", { id: previous.id });
       setStatuses((s) => ({
         ...s,
-        [tab.id]: {
-          id,
-          sets: [],
-          done: false,
-          error: null,
-          elapsed_ms: 0,
-          connection_id: c.id,
-          transaction: null,
-        },
+        [tab.id]: initial,
       }));
       setTableJobs((s) => {
         const next = { ...s };
-        if (inspected?.query === sql) next[tab.id] = id;
+        if (!plan && inspected?.query === sql) next[tab.id] = id;
         else delete next[tab.id];
         return next;
       });
       setResultSets((s) => ({ ...s, [tab.id]: 0 }));
-      setView("results");
+      setView(plan ? "explain" : "results");
     } catch (e) {
       report(String(e));
     } finally {
@@ -1061,6 +1072,26 @@ export default function App() {
                   </button>
                 ) : (
                   <>
+                    {connection && connected[connection.id]?.explain && (
+                      <>
+                        <button
+                          title="Estimate the current statement or selection without executing it"
+                          onClick={() => void run(undefined, false, "estimate")}
+                        >
+                          Explain
+                        </button>
+                        {connected[connection.id]?.explain_analyze && (
+                          <button
+                            title="Execute with runtime statistics; confirmation required"
+                            onClick={() =>
+                              void run(undefined, false, "analyze")
+                            }
+                          >
+                            Analyze
+                          </button>
+                        )}
+                      </>
+                    )}
                     <button
                       className="primary"
                       disabled={!connection || !connected[connection.id]}

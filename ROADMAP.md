@@ -34,7 +34,10 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Reconnect, configurable network timeouts and broader metadata.
 - [ ] Verified TLS options/client certificates and SSH tunnels/bastion support.
 - [ ] SQL Server, DuckDB and ClickHouse with actual integration services.
-- [ ] Explain tree, ER diagrams with saved layouts, DDL/statistics/triggers/constraints.
+- [x] Native estimated plans and confirmed runtime analysis: PostgreSQL JSON, MySQL JSON/TREE, MariaDB JSON and SQLite QUERY PLAN; bounded Rust tree decoding, raw output, native metrics and server warnings. Real-engine cancellation/timeouts and explicit transaction behavior verified.
+- [x] Native macOS MySQL estimated/runtime tree, raw output/copy, confirmation, server messages, cancellation and session reuse; SQLite QUERY PLAN without invented runtime metrics.
+- [ ] PostgreSQL/MariaDB native desktop plan checks, Windows/Linux plan workflows and MySQL runtime DML beyond the verified SELECT slice.
+- [ ] ER diagrams with saved layouts, DDL/statistics/triggers/constraints.
 - [ ] MongoDB document/aggregation/editing UI and Redis typed keys/TTL/explorer.
 - [ ] CockroachDB/Redshift/TiDB compatibility verified against actual servers.
 - [ ] Broader engines: Oracle, Cassandra/Scylla, Firebird, LibSQL, BigQuery, Snowflake, DynamoDB, Trino/Presto, SurrealDB and practical HANA support.

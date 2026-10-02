@@ -169,6 +169,28 @@ async fn query_status(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<Q
     engine.job(&id).map_err(api)?.status().map_err(api)
 }
 #[tauri::command]
+async fn start_plan(
+    engine: State<'_, Arc<Engine>>,
+    connection: String,
+    sql: String,
+    analyze: bool,
+    timeout_seconds: u64,
+    confirmed: bool,
+) -> ApiResult<String> {
+    engine
+        .start_plan(connection, sql, analyze, timeout_seconds, confirmed)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn execution_plan(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+) -> ApiResult<klyndb_query::plan::Plan> {
+    let job = engine.job(&id).map_err(api)?;
+    blocking(move || job.plan().map_err(api)).await
+}
+#[tauri::command]
 async fn result_page(
     engine: State<'_, Arc<Engine>>,
     id: String,
@@ -317,6 +339,8 @@ fn main() {
             transaction_state,
             analyze_query,
             start_query,
+            start_plan,
+            execution_plan,
             query_status,
             result_page,
             cancel_query,

@@ -170,10 +170,25 @@ impl Session for Postgres {
             transactions: true,
             schemas: true,
             explain: true,
+            explain_analyze: !self.read_only,
             edit_rows: true,
             cancel: true,
             tls: true,
         }
+    }
+    fn explain_sql(&self, sql: &str, analyze: bool) -> Result<(String, PlanFormat)> {
+        if analyze && self.read_only {
+            return Err(Error::new(
+                "ANALYZE executes the statement and is disabled on read-only connections",
+            ));
+        }
+        Ok((
+            format!(
+                "EXPLAIN (FORMAT JSON{}) {sql}",
+                if analyze { ", ANALYZE, BUFFERS" } else { "" }
+            ),
+            PlanFormat::PostgresJson,
+        ))
     }
     async fn execute(
         &self,
