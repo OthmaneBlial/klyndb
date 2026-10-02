@@ -2221,6 +2221,7 @@ version = "0.1.0"
 dependencies = [
  "klyndb-connections",
  "klyndb-driver-api",
+ "klyndb-export",
  "klyndb-mysql",
  "klyndb-postgres",
  "klyndb-query",
@@ -2243,7 +2244,6 @@ dependencies = [
  "klyndb-connections",
  "klyndb-core",
  "klyndb-driver-api",
- "klyndb-export",
  "klyndb-query",
  "rfd",
  "serde",

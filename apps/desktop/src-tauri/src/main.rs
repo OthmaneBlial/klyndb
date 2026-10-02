@@ -263,11 +263,7 @@ async fn export_result(
     if !status.done {
         return Err("Wait for the query to finish before exporting".into());
     }
-    let result = status
-        .sets
-        .get(set)
-        .cloned()
-        .ok_or("Result set not found")?;
+    status.sets.get(set).ok_or("Result set not found")?;
     let Some(file) = rfd::AsyncFileDialog::new()
         .set_file_name(format!(
             "query-result.{}",
@@ -282,28 +278,8 @@ async fn export_result(
     blocking(move || {
         let parent = path.parent().ok_or("Invalid export path")?;
         let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(api)?;
-        let mut offset = 0;
-        let mut buffer = Vec::<Row>::new().into_iter();
-        let rows = std::iter::from_fn(|| {
-            if let Some(row) = buffer.next() {
-                return Some(Ok(row));
-            }
-            if offset >= result.rows {
-                return None;
-            }
-            match job.page(set, offset, 500) {
-                Ok(page) => {
-                    offset += page.len();
-                    buffer = page.into_iter();
-                    buffer.next().map(Ok)
-                }
-                Err(e) => {
-                    offset = result.rows;
-                    Some(Err(e))
-                }
-            }
-        });
-        let count = klyndb_export::export(&mut temporary, &result.columns, rows, &format, &table)
+        let count = job
+            .export(&mut temporary, set, &format, &table)
             .map_err(api)?;
         temporary.as_file().sync_all().map_err(api)?;
         temporary.persist(path).map_err(api)?;

@@ -17,7 +17,6 @@ klyndb-core = { path = "../../../crates/core" }
 klyndb-connections = { path = "../../../crates/connections" }
 klyndb-driver-api = { path = "../../../crates/driver-api" }
 klyndb-query = { path = "../../../crates/query" }
-klyndb-export = { path = "../../../crates/export" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

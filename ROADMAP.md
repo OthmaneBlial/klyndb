@@ -12,6 +12,7 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] SQL tabs, current statement/selection/all execution, formatting, completion, results and cancellation.
 - [x] Bounded cursor transport, disk spool, virtualized page, column layout/copy/cell inspector.
 - [x] Rust CSV/JSON/JSONL/SQL/Markdown export.
+- [x] Stream exports directly from the native result spool, one row at a time, independently of the 8 MiB UI page bound; wide-result regression verifies all rows and result-set selection.
 - [x] Workspace persistence, query history, saved queries, theme/settings, command palette.
 - [x] Real packaged macOS workflow: saved connection, 10,000-row query, paging, cancellation and verified CSV export.
 - [x] Cross-platform CI: macOS, Windows and Linux builds/tests; PostgreSQL and audit jobs (run 36995057710).

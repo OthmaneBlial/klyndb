@@ -95,6 +95,31 @@ impl Job {
         })
         .collect()
     }
+    pub fn export(
+        &self,
+        out: impl std::io::Write,
+        set: usize,
+        format: &str,
+        table: &str,
+    ) -> Result<u64> {
+        let status = self.status()?;
+        if !status.done {
+            return Err(Error::new("Wait for the query to finish before exporting"));
+        }
+        let result = status
+            .sets
+            .get(set)
+            .ok_or_else(|| Error::new("Result set not found"))?;
+        let db = self.db.lock().map_err(error)?;
+        let mut stmt = db
+            .prepare("SELECT data FROM rows WHERE result_set=? ORDER BY ordinal")
+            .map_err(error)?;
+        let rows = stmt
+            .query_map([set as i64], |row| row.get::<_, String>(0))
+            .map_err(error)?
+            .map(|row| serde_json::from_str(&row.map_err(error)?).map_err(error));
+        klyndb_export::export(out, &result.columns, rows, format, table)
+    }
     pub fn plan(&self) -> Result<klyndb_query::plan::Plan> {
         let status = self.status()?;
         let format = status
