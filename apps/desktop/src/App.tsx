@@ -149,6 +149,11 @@ export default function App() {
   diagramRef.current = diagramConnection;
   const stagedRef = useRef(staged);
   stagedRef.current = staged;
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const statusesRef = useRef(statuses);
+  statusesRef.current = statuses;
+  const connectingRef = useRef(new Set<string>());
   const editorRef = useRef<EditorHandle | null>(null);
   const browsingRef = useRef(new Set<string>());
   const [browsing, setBrowsing] = useState<Record<string, boolean>>({});
@@ -430,43 +435,110 @@ export default function App() {
     password: string | null = null,
     identityPassword: string | null = null,
     sshPassword: string | null = null,
+    reconnecting = false,
   ) {
-    if (connecting.includes(c.id)) return;
+    if (connectingRef.current.has(c.id)) return;
+    connectingRef.current.add(c.id);
     setConnecting((ids) => [...ids, c.id]);
     try {
-      const capabilities = await api("connect", {
-        id: c.id,
-        password,
-        identityPassword,
-        sshPassword,
-      });
+      const credentials = { id: c.id, password, identityPassword, sshPassword };
+      if (reconnecting) clearConnection(c.id);
+      const capabilities = reconnecting
+        ? await api("reconnect", { ...credentials, confirmed: true })
+        : await api("connect", credentials);
       setConnected((s) => ({ ...s, [c.id]: capabilities }));
+      const state = await api("transaction_state", { id: c.id }).catch(
+        () => "unknown" as const,
+      );
+      setTransactionStates((s) => ({ ...s, [c.id]: state }));
       setExpanded((s) => ({ ...s, [c.id]: true }));
       await refresh(c.id);
       if (!tabs.some((t) => t.connection === c.id)) newTab(c.id);
-      else setActive(tabs.find((t) => t.connection === c.id)!.id);
+      else if (!reconnecting)
+        setActive(tabs.find((t) => t.connection === c.id)!.id);
       setNotice("");
     } catch (e) {
-      report(String(e));
+      report(
+        reconnecting
+          ? `Reconnect failed; connection is closed. ${e}`
+          : String(e),
+      );
     } finally {
+      connectingRef.current.delete(c.id);
       setConnecting((ids) => ids.filter((id) => id !== c.id));
     }
   }
+  function clearConnection(id: string) {
+    setConnected((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setTables((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setColumns((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setTransactionStates((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    // Completed results remain readable/exportable, but belong to the previous session.
+    const previousTabs = new Set(
+      tabsRef.current.filter((t) => t.connection === id).map((t) => t.id),
+    );
+    setTableJobs((s) =>
+      Object.fromEntries(
+        Object.entries(s).filter(([tab]) => !previousTabs.has(tab)),
+      ),
+    );
+  }
+  function reconnect(c: Connection, confirmed = false) {
+    if (connectingRef.current.has(c.id)) return;
+    if (
+      importDialogRef.current ||
+      sqlImportRef.current ||
+      diagramRef.current ||
+      tabsRef.current.some(
+        (t) =>
+          t.connection === c.id &&
+          (stagedRef.current[t.id]?.length ||
+            applyingRef.current[t.id] ||
+            browsingRef.current.has(t.id) ||
+            starting.current.has(t.id) ||
+            statusesRef.current[t.id]?.done === false),
+      )
+    ) {
+      report(
+        "Finish the current operation, apply or discard staged changes, and close open import/diagram dialogs before reconnecting.",
+      );
+      return;
+    }
+    if (!confirmed) {
+      setConfirm({
+        title: `Reconnect ${c.name}?`,
+        message: `${c.environment} · This closes the current session and rolls back uncommitted changes. Temporary tables and session settings are reset. SQL tabs and completed results are kept; queries are not replayed. If connecting fails, the connection stays closed.`,
+        action: () => reconnect(c, true),
+      });
+      return;
+    }
+    void connect(c, null, null, null, true);
+  }
   async function disconnect(c: Connection) {
+    if (connectingRef.current.has(c.id)) return;
     try {
       await api("disconnect", { id: c.id });
-      setConnected((s) => {
-        const next = { ...s };
-        delete next[c.id];
-        return next;
-      });
-      setTables((t) => {
-        const next = { ...t };
-        delete next[c.id];
-        return next;
-      });
     } catch (e) {
       report(String(e));
+    } finally {
+      // Native disconnect removes the registry entry even if transport cleanup reports an error.
+      clearConnection(c.id);
     }
   }
   const starting = useRef(new Set<string>());
@@ -494,6 +566,10 @@ export default function App() {
       previous = statuses[tab.id];
     if (!c || starting.current.has(tab.id) || (previous && !previous.done))
       return;
+    if (connectingRef.current.has(c.id)) {
+      report("Wait for the connection to finish opening.");
+      return;
+    }
     starting.current.add(tab.id);
     setNotice("");
     try {
@@ -596,6 +672,7 @@ export default function App() {
     }
   }
   async function openTable(c: Connection, table: Table) {
+    if (connectingRef.current.has(c.id)) return;
     try {
       const info = await api("inspect_table", { id: c.id, table });
       setColumns((s) => ({
@@ -649,6 +726,7 @@ export default function App() {
     const changes = stagedRef.current[tab.id] ?? [],
       c = connections.find((c) => c.id === tab.connection);
     if (!changes.length || !c || starting.current.has(tab.id)) return;
+    if (connectingRef.current.has(c.id)) return;
     if (
       !confirmed &&
       (c.environment === "production" ||
@@ -827,6 +905,13 @@ export default function App() {
       key: "",
       action: () => void connect(c),
     })),
+    ...connections
+      .filter((c) => connected[c.id])
+      .map((c) => ({
+        name: `Reconnect · ${c.name}`,
+        key: "",
+        action: () => reconnect(c),
+      })),
     ...(tables[current?.connection ?? ""] ?? []).map((t) => ({
       name: `Open table · ${t.schema}.${t.name}`,
       key: "",
@@ -996,13 +1081,23 @@ export default function App() {
                             <Copy size={12} />
                           </button>
                           {connected[c.id] ? (
-                            <button
-                              className="icon"
-                              aria-label={`Disconnect ${c.name}`}
-                              onClick={() => void disconnect(c)}
-                            >
-                              <Unplug size={12} />
-                            </button>
+                            <>
+                              <button
+                                className="icon"
+                                aria-label={`Reconnect ${c.name}`}
+                                disabled={connecting.includes(c.id)}
+                                onClick={() => reconnect(c)}
+                              >
+                                <RefreshCw size={12} />
+                              </button>
+                              <button
+                                className="icon"
+                                aria-label={`Disconnect ${c.name}`}
+                                onClick={() => void disconnect(c)}
+                              >
+                                <Unplug size={12} />
+                              </button>
+                            </>
                           ) : (
                             <button
                               className="icon"
@@ -1173,7 +1268,10 @@ export default function App() {
                   ))}
                 </select>
                 {connection && !connected[connection.id] && (
-                  <button onClick={() => void connect(connection)}>
+                  <button
+                    disabled={connecting.includes(connection.id)}
+                    onClick={() => void connect(connection)}
+                  >
                     <Database size={14} /> Connect
                   </button>
                 )}

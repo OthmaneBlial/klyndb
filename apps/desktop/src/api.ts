@@ -224,6 +224,16 @@ interface Commands {
     };
     result: Capabilities;
   };
+  reconnect: {
+    args: {
+      id: string;
+      password: string | null;
+      identityPassword?: string | null;
+      sshPassword?: string | null;
+      confirmed: boolean;
+    };
+    result: Capabilities;
+  };
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
   diagram_tables: { args: { id: string; tables: Table[] }; result: Diagram };

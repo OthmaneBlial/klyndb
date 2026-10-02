@@ -132,6 +132,20 @@ async fn connect(
         .map_err(api)
 }
 #[tauri::command]
+async fn reconnect(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    password: Option<String>,
+    identity_password: Option<String>,
+    ssh_password: Option<String>,
+    confirmed: bool,
+) -> ApiResult<Capabilities> {
+    engine
+        .reconnect(&id, password, identity_password, ssh_password, confirmed)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
 async fn test_connection(
     engine: State<'_, Arc<Engine>>,
     connection: Connection,
@@ -515,6 +529,7 @@ fn main() {
             save_connection,
             delete_connection,
             connect,
+            reconnect,
             test_connection,
             disconnect,
             tables,

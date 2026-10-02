@@ -483,6 +483,25 @@ impl Engine {
         }
         Ok(())
     }
+    pub async fn reconnect(
+        &self,
+        id: &str,
+        password: Option<String>,
+        identity_password: Option<String>,
+        ssh_password: Option<String>,
+        confirmed: bool,
+    ) -> Result<Capabilities> {
+        if !confirmed {
+            return Err(Error::new(
+                "Confirmation required: reconnect closes the session and rolls back uncommitted changes",
+            ));
+        }
+        // A fresh session intentionally resets transactions, temporary objects and session settings.
+        // Reuse disconnect's query/import cancellation and native cleanup; never replay SQL.
+        self.disconnect(id).await?;
+        self.connect(id, password, identity_password, ssh_password)
+            .await
+    }
     async fn ssh_password(
         &self,
         config: &Connection,
@@ -575,7 +594,6 @@ impl Engine {
         }
         let driver = open.driver.clone();
         let dialect = open.config.engine.clone();
-        drop(sessions);
         let job = Arc::new(Job::new(connection.clone(), dialect)?);
         let id = job.status()?.id;
         {
@@ -587,6 +605,8 @@ impl Engine {
             }
             jobs.insert(id.clone(), job.clone());
         }
+        // Register while holding the session gate so disconnect/reconnect cannot miss this job.
+        drop(sessions);
         let store = self.store.clone();
         tokio::spawn(async move {
             let began = Instant::now();

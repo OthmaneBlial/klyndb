@@ -27,6 +27,15 @@ The application bounds connection setup, including SSH when enabled, DNS/socket 
 
 Use `sslmode=disable` (PostgreSQL) or `tls=disabled` (MySQL/MariaDB) only for a trusted local server. PostgreSQL also accepts `sslmode=prefer`, which can fall back to plaintext; it is an explicit opt-out from the default TLS requirement. Remove the custom CA before selecting either option. A successful connection test alone does not prove encryption when a fallback/plaintext mode was selected.
 
+## Reconnect a saved connection
+
+Choose **Reconnect** beside an open connection, or **Reconnect · connection name** in the command palette. Review the confirmation before proceeding: reconnect closes the old session, rolls back uncommitted transactions and resets temporary objects/session settings. Finish running queries or edits, apply or discard staged rows, and close import/diagram dialogs first. SQL tabs and completed results remain available; their old table results become read-only until you reopen/run the table in the new session. No SQL is automatically replayed.
+
+Rust cancels and awaits native import cleanup, cancels old query jobs and closes the database session/SSH tunnel before opening a new one with the saved settings. The normal credential lookup, connection deadline, read-only and TLS/SSH verification rules still apply. Session-only passwords are not retained for automatic reuse: if needed, enter them again through **Edit connection → Save & connect**. If reconnect fails, the connection remains closed; review the error, correct the settings and connect again. The app does not silently keep the old transaction alive.
+
+The four-engine core contract in `crates/core/tests/reconnect.rs` verifies native session replacement, rollback, temporary-table reset, retained result export, query/import cancellation and recovery after a failed reconnect. Native desktop interaction and Windows/Linux checks are tracked separately in [validation](VALIDATION.md).
+
+
 ## Client certificates (mutual TLS)
 
 When a server requires client authentication, choose a **Client identity** in TLS & certificates. Use a PKCS#12 `.p12` / `.pfx` archive containing your client certificate, private key and intermediate chain. Enter its separate **Certificate password**, test, then save and connect. PostgreSQL, MySQL and MariaDB support this flow.
