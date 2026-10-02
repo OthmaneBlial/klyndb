@@ -1,49 +1,112 @@
-# Klyndb
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="Klyndb — a free, open-source alternative to DBeaver" width="100%" />
+</p>
 
-A local-first, open-source database workbench built with **Rust + Tauri 2 + React**.
+<p align="center">
+  <strong>The free, open-source database client for a cleaner everyday workflow.</strong><br />
+  Write SQL. Explore schemas. Edit safely. Keep your data on your machine.
+</p>
 
-No Electron. No account. No mandatory cloud service. No query telemetry.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-93d0b5?style=flat-square&labelColor=1c2225" alt="MIT license" /></a>
+  <img src="https://img.shields.io/badge/core-Rust-93d0b5?style=flat-square&labelColor=1c2225" alt="Native Rust core" />
+  <img src="https://img.shields.io/badge/desktop-Tauri_2-93d0b5?style=flat-square&labelColor=1c2225" alt="Tauri 2 desktop" />
+  <img src="https://img.shields.io/badge/status-preview-e8c587?style=flat-square&labelColor=1c2225" alt="Development preview" />
+</p>
 
-Klyndb is in early development. Its goal is to become a fast, lightweight alternative to DBeaver. Performance comparisons have not yet been established.
+<p align="center">
+  <a href="#get-started">Get started</a> ·
+  <a href="#what-you-can-do-today">Features</a> ·
+  <a href="docs/COMPATIBILITY.md">Database support</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
 
-## Run from source
+---
 
-Install Rust stable, Node.js 22.12+ and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). On Linux, install Secret Service/DBus development libraries as well. An unlocked OS keychain is needed only for remembered server credentials.
+**Looking for a free, open-source alternative to DBeaver?** Klyndb brings SQL editing, database exploration, streamed results and safe table editing into a focused desktop workspace. It uses a **native Rust core and your system WebView**, built with Tauri 2 and React.
+
+**No Electron. No account. No mandatory cloud. No query telemetry.**
+
+<p align="center">
+  <img src="docs/assets/workbench-macos.jpg" alt="Actual Klyndb macOS application with connected SQLite and MySQL databases, SQL tabs and a 10,000-row SQLite result" width="100%" />
+  <br /><sub>Captured from the native macOS app with 10,000 synthetic test records in a local validation database.</sub>
+</p>
+
+## What you can do today
+
+| Your workflow | Klyndb |
+| --- | --- |
+| **Connect** | PostgreSQL, MySQL, MariaDB and SQLite; saved connections, groups, favorites and environment labels. |
+| **Explore** | Tables and views, columns, primary keys, indexes, foreign keys and table DDL. |
+| **Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
+| **Work with results** | Incremental Rust streaming, disk-backed results, a virtualized grid, resizing/reordering, page sort/filter and cell inspection. |
+| **Change data safely** | Staged SQLite/PostgreSQL inserts, updates and deletes; review, parameter binding, conflict detection and atomic batches. |
+| **Stay in control** | Cancellation, timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
+| **Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
+| **Pick up where you left off** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
+
+Server passwords stay in the **OS keychain**. TLS verification is enabled by default. Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
+
+### Database support, with real evidence
+
+| Database | Queries & schema | Staged grid edits | Verified against |
+| --- | --- | --- | --- |
+| PostgreSQL | ✓ | ✓ | PostgreSQL 16 |
+| MySQL | ✓ | SQL writes; grid edits next | MySQL 8.4.11 |
+| MariaDB | ✓ | SQL writes; grid edits next | MariaDB 13.0.2 |
+| SQLite | ✓ | ✓ | Real SQLite files |
+
+These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
+
+**Development preview:** Klyndb is already runnable from source. Imports, SSH tunnels, more drivers, native package validation and broader desktop testing are still in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
+
+## Built for a lighter database workflow
+
+Database work belongs in Rust: connections, query execution, cancellation, result paging and exports. React handles the interface. Drivers initialize only when you connect; opening the app does not open database sessions.
+
+Large results go to a bounded, temporary disk spool. The interface holds a **500-row page**, rather than copying an entire result into browser memory.
+
+A reproducible SQLite backend baseline retained **1 million rows** at a median **352,393 rows/second**, with **13.50 MiB peak backend-process RSS** on the recorded Apple M2 machine. This measures the backend only, not total desktop memory or a comparison with DBeaver. See the [benchmark methodology and raw samples](benchmarks/README.md). Desktop startup, memory and scrolling measurements are on the roadmap.
+
+## Get started
+
+You need **Rust stable**, **Node.js 22.12+** and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). Linux also needs Secret Service/DBus development libraries; remembered passwords require an unlocked OS keychain.
 
 ```sh
-cd apps/desktop
+git clone https://github.com/OthmaneBlial/klyndb.git
+cd klyndb/apps/desktop
 npm ci
 npm run tauri dev
 ```
 
-Build a native package with `npm run tauri build`. macOS distribution signing and notarization require your own Apple credentials. GitHub Actions is disabled by owner instruction; all current checks run locally. A local macOS build does not prove Windows or Linux behavior.
+Then create a connection, open a table or SQL tab, and run a real query.
 
-## Available now
+| Shortcut | Action |
+| --- | --- |
+| `Cmd/Ctrl + Enter` | Run the selected SQL or current statement |
+| `Cmd/Ctrl + K` | Open the command palette |
+| `Shift + Cmd/Ctrl + F` | Format SQL |
+| `Cmd/Ctrl + S` | Save a query |
 
-- SQLite files and PostgreSQL / MySQL / MariaDB servers; native Rust drivers, verified TLS by default for server connections.
-- Saved connection metadata, groups, favorites, environment labels and OS keychain passwords.
-- Lazy connection activation, table/view discovery on connection, on-demand column/index/foreign-key inspection.
-- SQL highlighting, statement/selection/batch execution, schema completion, formatting, multiple tabs and multiple result sets.
-- Rust cancellation, query timeout, destructive-query confirmation and read-only connection mode.
-- Disk-backed incremental results, a virtualized 500-row page, resizing/reordering, page sort/filter, cell/row/column copying and cell inspection.
-- Rust CSV, lossless typed JSON/JSONL, SQL INSERT and Markdown export using native save dialogs and atomic file replacement.
-- Staged SQLite/PostgreSQL table inserts, updates and deletes; atomic batches, conflict detection, PK/generation guards and manual transaction visibility.
-- Local SQL history, saved/favorite queries, theme/settings and automatic workspace restoration.
+Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Public downloadable releases are not available yet. macOS signing and notarization require Apple credentials.
 
-Only implemented engines appear in the connection form. See the [compatibility matrix](docs/COMPATIBILITY.md) for limitations. This is not yet a replacement for all everyday database workflows: import, SSH, further drivers and release gates remain in progress.
-
-## Checks
+## Local checks
 
 ```sh
 ./scripts/check.sh
 ```
 
-Install the audit tools once with `cargo install cargo-audit cargo-deny --locked`. The script installs locked frontend dependencies, runs formatting, Clippy, Rust/frontend tests, typecheck, production frontend build, native debug build and dependency/license audits. It runs the real PostgreSQL contract when `KLYNDB_TEST_POSTGRES_URL` is set, and MySQL/MariaDB when `KLYNDB_TEST_MYSQL_URL` is set. Keep GitHub Actions disabled.
+Install the audit tools with `cargo install cargo-audit cargo-deny --locked`. The script runs locked frontend installation, lint, typecheck, tests, production build, Rust formatting/Clippy/tests, a native debug build and dependency/license audits.
 
-Use `cargo test -p klyndb-postgres --test integration` with `-- --ignored` and `KLYNDB_TEST_POSTGRES_URL` to run the real-server contract once installed. Never point integration tests at a production database.
+Set `KLYNDB_TEST_POSTGRES_URL` or `KLYNDB_TEST_MYSQL_URL` to run the real-server contracts against **disposable local databases**. The MySQL contract runs on either MySQL or MariaDB; verify both separately. Never use production databases for integration tests.
 
-## Contribute
+**GitHub Actions is disabled by owner instruction. All current CI checks run locally.**
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md) and the [roadmap](ROADMAP.md). The full requested product scope is retained in [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md).
+## Help shape the alternative
 
-Original implementation and branding. Beekeeper Studio is a functional reference only; no Beekeeper source or assets are bundled. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Try Klyndb on a development database. Report a reproducible issue, request a database workflow, or contribute a complete driver or UI improvement. If this is the kind of open-source database client you want to use, **star the repository** and follow its progress.
+
+[Contributing](CONTRIBUTING.md) · [Architecture](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · [Validation evidence](docs/VALIDATION.md) · [Full product scope](docs/PRODUCT_SPEC.md)
+
+**MIT licensed.** Original code and branding. Beekeeper Studio is a functional reference; no Beekeeper source or assets are bundled. Third-party dependencies retain their own licenses: [notices and provenance](THIRD_PARTY_NOTICES.md).

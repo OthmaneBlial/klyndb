@@ -53,3 +53,7 @@ By explicit owner request, GitHub Actions was disabled at repository level (`ena
 `./scripts/check.sh` passed again after the parser correction, with four frontend tests, workspace checks, real PostgreSQL and MariaDB contracts, native build and audits. The MySQL contract also passed separately. Logs are kept in ignored local artifacts; GitHub Actions stayed disabled.
 
 The final native bundle was relaunched and reconnected. With two statements in the editor and the cursor at the end, Run returned only `current_statement = 42`; the earlier SELECT was not executed. Both servers passed the additional legacy-encoding preservation contract; focused Clippy/rustfmt passed after that change.
+
+## Public repository presentation — 2026-10-02
+
+README positioning explicitly describes Klyndb as a free, open-source alternative to DBeaver. The original SVG cover uses Klyndb branding; the unedited JPEG is captured from the actual packaged macOS application with a disposable SQLite validation database and a real MySQL connection. It contains synthetic test records and no user data. Current engine support, preview limitations and backend-only benchmark scope remain explicit. GitHub Actions stays disabled.

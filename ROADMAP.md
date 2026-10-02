@@ -47,7 +47,9 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Extend local real-database integration and desktop E2E as new drivers are added.
 - [ ] macOS ARM/Intel, Windows x64 and Linux x64 local package verification; signed/notarized artifacts where credentials permit.
 - [x] GitHub Actions disabled; active native-package run cancelled. Remote package validation remains incomplete.
-- [ ] License inventory and audit, real screenshots, public release notes and downloadable packages.
+- [x] Locked dependency license inventory/audit and real native macOS screenshot in the README.
+- [x] GitHub positioning as a free, open-source alternative to DBeaver; original README cover, verified feature matrix and preview limits.
+- [ ] Public release notes and downloadable, validated native packages.
 - [ ] Signed updater configuration when a release distribution/key infrastructure exists.
 - [ ] Driver loading/package isolation after measuring multi-driver footprint; safe extension model after core stability.
 - [ ] Later XLSX/Parquet, backup/restore, additional platforms.

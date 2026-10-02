@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+<title id="title">Klyndb — a free, open-source alternative to DBeaver</title>
+<desc id="desc">Original Klyndb branding. A local-first database workbench built with Rust and Tauri.</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#10191b"/><stop offset="1" stop-color="#20292c"/></linearGradient><radialGradient id="glow"><stop stop-color="#93d0b5" stop-opacity=".12"/><stop offset="1" stop-color="#93d0b5" stop-opacity="0"/></radialGradient></defs>
+<rect width="1280" height="320" rx="20" fill="url(#bg)"/>
+<ellipse cx="1120" cy="100" rx="330" ry="260" fill="url(#glow)"/>
+<g stroke="#93d0b5" stroke-opacity=".07" fill="none"><path d="M900 0v320M980 0v320M1060 0v320M1140 0v320M1220 0v320M860 80h420M860 160h420M860 240h420"/></g>
+<rect x="64" y="80" width="142" height="142" rx="34" fill="#1c2225" stroke="#93d0b5" stroke-opacity=".15"/>
+<g fill="#93d0b5" transform="translate(88 100) scale(.26)"><path d="M52 38h62v164l112-118h78L177 213l136 113h-88L114 227v99H52z"/><circle cx="276" cy="38" r="14"/></g>
+<g font-family="Arial,Helvetica,sans-serif"><text x="246" y="67" fill="#93d0b5" font-size="13" letter-spacing="3">FREE. OPEN SOURCE. YOUR DATABASES.</text>
+<text x="242" y="151" fill="#f2f5f4" font-size="80" font-weight="700" letter-spacing="-4">Klyndb</text>
+<text x="246" y="199" fill="#d0dbd7" font-size="25">A modern alternative to DBeaver.</text>
+<text x="246" y="234" fill="#8eaaa0" font-size="17">Native Rust core · Tauri · Local-first</text>
+<text x="64" y="282" fill="#a4b9b0" font-size="14" letter-spacing="1">POSTGRESQL     /     MYSQL     /     MARIADB     /     SQLITE</text>
+<rect x="1136" y="256" width="84" height="29" rx="14" fill="#93d0b5" fill-opacity=".09" stroke="#93d0b5" stroke-opacity=".25"/><text x="1178" y="275" text-anchor="middle" fill="#93d0b5" font-size="11" letter-spacing="1.5">PREVIEW</text></g>
+</svg>
