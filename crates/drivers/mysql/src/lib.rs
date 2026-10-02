@@ -42,6 +42,11 @@ impl Mysql {
         if url.scheme() != "mysql" {
             return Err(Error::new("Expected mysql://user@host/database"));
         }
+        let timeout = connect_timeout(
+            url.query_pairs()
+                .filter(|(k, _)| k == "connect_timeout")
+                .map(|(_, v)| v),
+        )?;
         let tls = url
             .query_pairs()
             .find(|(k, _)| k == "tls")
@@ -52,7 +57,7 @@ impl Mysql {
         }
         let mut seen = std::collections::HashSet::new();
         if url.query_pairs().any(|(k, _)| {
-            !["tls", "sslrootcert", "sslidentity"].contains(&k.as_ref())
+            !["tls", "sslrootcert", "sslidentity", "connect_timeout"].contains(&k.as_ref())
                 || !seen.insert(k.into_owned())
         }) {
             return Err(Error::new("Unsupported MySQL URL option"));
@@ -103,17 +108,21 @@ impl Mysql {
             builder = builder.pass(Some(password));
         }
         let opts: Opts = builder.into();
-        let (connection, maria, version) =
-            tokio::time::timeout(std::time::Duration::from_secs(10), async {
-                let mut connection = Conn::new(opts.clone()).await?;
-                let version: Option<String> = connection.query_first("SELECT VERSION()").await?;
-                let maria = version.is_some_and(|v| v.to_ascii_lowercase().contains("mariadb"));
-                let version = connection.server_version();
-                Ok::<_, mysql_async::Error>((connection, maria, version))
-            })
-            .await
-            .map_err(|_| Error::new("MySQL connection timed out after 10 seconds"))?
-            .map_err(err)?;
+        let (connection, maria, version) = tokio::time::timeout(timeout, async {
+            let mut connection = Conn::new(opts.clone()).await?;
+            let version: Option<String> = connection.query_first("SELECT VERSION()").await?;
+            let maria = version.is_some_and(|v| v.to_ascii_lowercase().contains("mariadb"));
+            let version = connection.server_version();
+            Ok::<_, mysql_async::Error>((connection, maria, version))
+        })
+        .await
+        .map_err(|_| {
+            Error::new(format!(
+                "MySQL connection timed out after {} seconds",
+                timeout.as_secs()
+            ))
+        })?
+        .map_err(err)?;
         // Only cancellation uses the lazy one-connection pool. User SQL retains a dedicated transaction-stable session.
         Ok(Self {
             connection: Mutex::new(Some(connection)),

@@ -129,6 +129,12 @@ impl Postgres {
     ) -> Result<Self> {
         let mut address =
             url::Url::parse(url).map_err(|_| Error::new("Invalid PostgreSQL connection URL"))?;
+        let timeout = connect_timeout(
+            address
+                .query_pairs()
+                .filter(|(k, _)| k == "connect_timeout")
+                .map(|(_, v)| v),
+        )?;
         let roots: Vec<_> = address
             .query_pairs()
             .filter(|(k, _)| k == "sslrootcert")
@@ -161,7 +167,7 @@ impl Postgres {
         if let Some(password) = password {
             config.password(password);
         }
-        config.connect_timeout(std::time::Duration::from_secs(10));
+        config.connect_timeout(timeout);
         config.keepalives(true);
         let mut builder = native_tls::TlsConnector::builder();
         if let Some(path) = roots.first() {
@@ -190,25 +196,34 @@ impl Postgres {
                 .build()
                 .map_err(|_| Error::new("Could not initialize TLS"))?,
         );
-        let (client, connection) = config.connect(tls.clone()).await.map_err(err)?;
-        let worker = tokio::spawn(async move {
-            let _ = connection.await;
-        });
-        let session = Self {
-            client,
-            worker,
-            serial: Mutex::new(()),
-            tls,
-            read_only,
-        };
-        if read_only {
-            session
-                .client
-                .batch_execute("SET default_transaction_read_only=on")
-                .await
-                .map_err(err)?;
-        }
-        Ok(session)
+        tokio::time::timeout(timeout, async {
+            let (client, connection) = config.connect(tls.clone()).await.map_err(err)?;
+            let worker = tokio::spawn(async move {
+                let _ = connection.await;
+            });
+            let session = Self {
+                client,
+                worker,
+                serial: Mutex::new(()),
+                tls,
+                read_only,
+            };
+            if read_only {
+                session
+                    .client
+                    .batch_execute("SET default_transaction_read_only=on")
+                    .await
+                    .map_err(err)?;
+            }
+            Ok(session)
+        })
+        .await
+        .map_err(|_| {
+            Error::new(format!(
+                "PostgreSQL connection timed out after {} seconds",
+                timeout.as_secs()
+            ))
+        })?
     }
     async fn stream(
         &self,

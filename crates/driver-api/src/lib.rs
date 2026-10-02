@@ -18,6 +18,33 @@ impl Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// One shared bound for connection setup, including stalled protocol handshakes.
+pub fn connect_timeout(
+    values: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Result<std::time::Duration> {
+    let mut values = values.into_iter();
+    let seconds = match values.next() {
+        Some(value) => {
+            let value = value.as_ref();
+            if value.is_empty() || !value.bytes().all(|c| c.is_ascii_digit()) {
+                return Err(Error::new(
+                    "Connection timeout must be an integer from 1 to 300 seconds",
+                ));
+            }
+            value.parse::<u64>().map_err(|_| {
+                Error::new("Connection timeout must be an integer from 1 to 300 seconds")
+            })?
+        }
+        None => 10,
+    };
+    if !(1..=300).contains(&seconds) || values.next().is_some() {
+        return Err(Error::new(
+            "Choose one connection timeout from 1 to 300 seconds",
+        ));
+    }
+    Ok(std::time::Duration::from_secs(seconds))
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Cell {

@@ -24,6 +24,12 @@ else
   echo 'MySQL/MariaDB integration skipped: set KLYNDB_TEST_MYSQL_URL to a disposable test server.'
 fi
 for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
+  variable="KLYNDB_TEST_${entry%%:*}_URL"
+  if [[ -n "${!variable:-}" ]]; then
+    cargo test --locked -p klyndb-core --test connect "${entry#*:}_delayed_connection" -- --ignored
+  else
+    echo "Delayed-handshake integration skipped: set $variable to a disposable server."
+  fi
   variable="KLYNDB_TEST_TLS_${entry%%:*}_URL"
   if [[ -n "${!variable:-}" ]]; then
     : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for TLS contracts}"

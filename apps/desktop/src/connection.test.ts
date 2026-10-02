@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { tlsSettings, updateTls } from "./connection";
+import {
+  connectionTimeout,
+  updateConnectTimeout,
+  tlsSettings,
+  updateTls,
+} from "./connection";
 it("round-trips TLS certificate paths without dropping connection options", () => {
   const ca = "/tmp/private database/ca.pem";
   const address = updateTls(
@@ -46,4 +51,21 @@ it("round-trips TLS certificate paths without dropping connection options", () =
     ).identity,
   ).toBe("");
   expect(() => updateTls("postgres", "not a URL", "require", ca)).toThrow();
+});
+it("round-trips a network deadline while preserving TLS identity and other options", () => {
+  for (const engine of ["postgres", "mysql"]) {
+    const address = updateTls(
+      engine,
+      `${engine}://alice@localhost/db`,
+      engine === "mysql" ? "required" : "require",
+      "/tmp/ca.pem",
+      "/tmp/client.p12",
+    );
+    expect(connectionTimeout(address)).toBe("10");
+    const changed = updateConnectTimeout(address, "45");
+    expect(connectionTimeout(changed)).toBe("45");
+    expect(tlsSettings(engine, changed)).toEqual(tlsSettings(engine, address));
+    expect(connectionTimeout(updateConnectTimeout(changed, ""))).toBe("");
+  }
+  expect(() => updateConnectTimeout("sqlite:///file.db", "30")).toThrow();
 });

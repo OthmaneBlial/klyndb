@@ -18,6 +18,18 @@ pub struct Connection {
     pub create_file: bool,
 }
 impl Connection {
+    pub fn connect_timeout(&self) -> Result<std::time::Duration> {
+        if self.engine == "sqlite" {
+            return Ok(std::time::Duration::from_secs(10));
+        }
+        let url = url::Url::parse(&self.address)
+            .map_err(|_| Error::new("Enter a valid database connection URL"))?;
+        klyndb_driver_api::connect_timeout(
+            url.query_pairs()
+                .filter(|(k, _)| k == "connect_timeout")
+                .map(|(_, v)| v),
+        )
+    }
     pub fn has_client_identity(&self) -> bool {
         if !["postgres", "mysql"].contains(&self.engine.as_str()) {
             return false;
@@ -60,7 +72,7 @@ impl Connection {
                     }));
                 }
                 let options: &[&str] = if mysql {
-                    &["tls", "sslrootcert", "sslidentity"]
+                    &["tls", "sslrootcert", "sslidentity", "connect_timeout"]
                 } else {
                     &[
                         "sslmode",
@@ -94,6 +106,7 @@ impl Connection {
                         )));
                     }
                 }
+                self.connect_timeout()?;
                 let password = url.password().map(|p| Zeroizing::new(percent_decode(p)));
                 url.set_password(None)
                     .map_err(|_| Error::new("Invalid URL credentials"))?;
@@ -295,6 +308,34 @@ mod tests {
             let mut invalid = c.clone();
             invalid.address = address.into();
             assert!(invalid.validate().is_err());
+        }
+        for engine in ["postgres", "mysql"] {
+            let mut timed = c.clone();
+            timed.engine = engine.into();
+            timed.address = format!("{engine}://alice@localhost/db");
+            assert_eq!(timed.connect_timeout().unwrap().as_secs(), 10);
+            for seconds in ["1", "45", "300"] {
+                timed.address = format!("{engine}://alice@localhost/db?connect_timeout={seconds}");
+                timed.validate().unwrap();
+                assert_eq!(
+                    timed.connect_timeout().unwrap().as_secs(),
+                    seconds.parse::<u64>().unwrap()
+                );
+            }
+            for seconds in [
+                "",
+                "0",
+                "301",
+                "-1",
+                "1.5",
+                "+2",
+                "1e2",
+                "999999999999999999999999",
+                "5&connect_timeout=10",
+            ] {
+                timed.address = format!("{engine}://alice@localhost/db?connect_timeout={seconds}");
+                assert!(timed.validate().is_err());
+            }
         }
         assert_ne!(client_identity_key(&c.id), c.id);
         let mut identity = c.clone();

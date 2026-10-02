@@ -17,6 +17,12 @@ The equivalent URL option is `sslrootcert`, alongside `sslmode=require` for Post
 
 Certificate and hostname checks cannot be disabled. In Klyndb, PostgreSQL `sslmode=require` still verifies both; it does not adopt libpq's weaker interpretation of that mode. A custom CA cannot be combined with plaintext or fallback modes.
 
+## Connection deadline
+
+Expand **Network** in a server connection to choose a connection timeout from **1 to 300 seconds** (default **10**). It is saved as `connect_timeout` in the URL and applies to PostgreSQL, MySQL and MariaDB. For example, `postgresql://user@host/database?connect_timeout=45` or `mysql://user@host/database?connect_timeout=45` keeps default verified TLS while allowing a slower connection.
+
+The application bounds connection setup, including DNS/socket attempts, TLS/authentication and initial session setup. Test connection uses the same total deadline through its probe and disconnect. The deadline starts when the connection attempt begins; waiting for the OS credential store or the serialized creation gate is separate. A failed attempt is not added as an active session. This does not change query timeout, metadata deadlines or cancellation's cleanup bound. An existing saved URL without this option keeps the ten-second default; no state migration is needed. Invalid, duplicate, zero or unbounded timeout options are rejected.
+
 ## Trusted local development
 
 Use `sslmode=disable` (PostgreSQL) or `tls=disabled` (MySQL/MariaDB) only for a trusted local server. PostgreSQL also accepts `sslmode=prefer`, which can fall back to plaintext; it is an explicit opt-out from the default TLS requirement. Remove the custom CA before selecting either option. A successful connection test alone does not prove encryption when a fallback/plaintext mode was selected.

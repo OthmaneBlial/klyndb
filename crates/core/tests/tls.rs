@@ -47,7 +47,10 @@ async fn verified_tls(variable: &str, kind: &str) {
         if let Some(host) = host {
             u.set_host(Some(host)).unwrap();
         }
-        u.query_pairs_mut().clear().append_pair(option, mode);
+        u.query_pairs_mut()
+            .clear()
+            .append_pair(option, mode)
+            .append_pair("connect_timeout", "45");
         if let Some(file) = ca {
             u.query_pairs_mut()
                 .append_pair("sslrootcert", &dir.join(file).to_string_lossy());
@@ -260,7 +263,8 @@ async fn mutual_tls(variable: &str, kind: &str) {
                     "required"
                 },
             )
-            .append_pair("sslrootcert", &dir.join("ca.pem").to_string_lossy());
+            .append_pair("sslrootcert", &dir.join("ca.pem").to_string_lossy())
+            .append_pair("connect_timeout", "45");
         if let Some(identity) = identity {
             address
                 .query_pairs_mut()

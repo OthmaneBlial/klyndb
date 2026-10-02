@@ -2,7 +2,12 @@ import { useState } from "react";
 import { FolderOpen, Database, ShieldCheck, Plus } from "lucide-react";
 import { api, type Connection } from "../api";
 import { Modal } from "./Modal";
-import { tlsSettings, updateTls } from "../connection";
+import {
+  connectionTimeout,
+  updateConnectTimeout,
+  tlsSettings,
+  updateTls,
+} from "../connection";
 const fresh = (): Connection => ({
   id: "",
   name: "",
@@ -248,6 +253,36 @@ export function ConnectionDialog({
                   only for a trusted local server.
                 </small>
               </label>
+              <details className="tls-options">
+                <summary>Network</summary>
+                <label>
+                  Connection timeout · seconds
+                  <input
+                    type="number"
+                    aria-label="Connection timeout in seconds"
+                    min={1}
+                    max={300}
+                    step={1}
+                    required
+                    value={connectionTimeout(form.address)}
+                    onChange={(e) => {
+                      try {
+                        field(
+                          "address",
+                          updateConnectTimeout(form.address, e.target.value),
+                        );
+                        setError("");
+                      } catch (error) {
+                        setError(String(error));
+                      }
+                    }}
+                  />
+                  <small>
+                    1–300 seconds, default 10. Applies when connecting or
+                    testing; query timeout is separate.
+                  </small>
+                </label>
+              </details>
               <details className="tls-options">
                 <summary>TLS &amp; certificates</summary>
                 <label>

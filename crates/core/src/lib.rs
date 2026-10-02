@@ -250,7 +250,8 @@ async fn open_session(
     password: Option<&str>,
     identity_password: Option<&str>,
 ) -> Result<Arc<dyn Session>> {
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    let timeout = config.connect_timeout()?;
+    tokio::time::timeout(timeout, async {
         match config.engine.as_str() {
             "sqlite" => Ok(Arc::new(
                 klyndb_sqlite::Sqlite::connect(
@@ -282,7 +283,12 @@ async fn open_session(
         }
     })
     .await
-    .map_err(|_| Error::new("Connection timed out after 10 seconds"))?
+    .map_err(|_| {
+        Error::new(format!(
+            "Connection timed out after {} seconds",
+            timeout.as_secs()
+        ))
+    })?
 }
 impl Engine {
     pub fn new(store: Store) -> Self {
@@ -363,7 +369,8 @@ impl Engine {
         // Testing opens an isolated read-only session and never creates a user database file.
         config.read_only = true;
         config.create_file = false;
-        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let timeout = config.connect_timeout()?;
+        tokio::time::timeout(timeout, async {
             let driver = open_session(
                 &config,
                 password.as_deref().map(|s| s.as_str()),
@@ -377,7 +384,12 @@ impl Engine {
             Ok(driver.capabilities())
         })
         .await
-        .map_err(|_| Error::new("Connection test timed out after 10 seconds"))?
+        .map_err(|_| {
+            Error::new(format!(
+                "Connection test timed out after {} seconds",
+                timeout.as_secs()
+            ))
+        })?
     }
     pub async fn disconnect(&self, id: &str) -> Result<()> {
         let connection = self.sessions.lock().await.remove(id);
@@ -675,24 +687,54 @@ mod tests {
                 assert_eq!(engine.store.connections().unwrap().len(), 1);
             }
         }
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let peer = tokio::spawn(async move {
-            let (_stream, _) = listener.accept().await.unwrap();
-            std::future::pending::<()>().await;
-        });
-        draft.engine = "postgres".into();
-        draft.address = format!("postgresql://test@{address}/test?sslmode=disable");
-        let began = std::time::Instant::now();
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(12),
-            engine.test_connection(draft, None, None),
-        )
-        .await
-        .unwrap();
-        peer.abort();
-        assert!(result.unwrap_err().message.contains("timed out"));
-        assert!(began.elapsed() >= std::time::Duration::from_secs(9));
+        for kind in ["postgres", "mysql"] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let peer = tokio::spawn(async move {
+                loop {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    tokio::spawn(async move {
+                        // Consume client bytes without ever sending a greeting/auth response.
+                        let _ = tokio::io::copy(&mut stream, &mut tokio::io::sink()).await;
+                    });
+                }
+            });
+            draft.id.clear();
+            draft.engine = kind.into();
+            draft.address = format!(
+                "{kind}://test@{address}/test?{}&connect_timeout=1",
+                if kind == "postgres" {
+                    "sslmode=disable"
+                } else {
+                    "tls=disabled"
+                }
+            );
+            let began = std::time::Instant::now();
+            let failure = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                engine.test_connection(draft.clone(), None, None),
+            )
+            .await
+            .unwrap()
+            .unwrap_err();
+            assert!(failure.message.contains("1 seconds"), "{}", failure.message);
+            assert!(began.elapsed() >= std::time::Duration::from_millis(900));
+            assert_eq!(engine.store.connections().unwrap().len(), 1);
+            draft.name = "Stalled handshake".into();
+            draft.validate().unwrap();
+            engine.store.save(&draft).unwrap();
+            let failure = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                engine.connect(&draft.id, Some(String::new()), None),
+            )
+            .await
+            .unwrap()
+            .unwrap_err();
+            assert!(failure.message.contains("1 seconds"), "{}", failure.message);
+            assert!(engine.driver(&draft.id).await.is_err());
+            engine.store.delete(&draft.id).unwrap();
+            peer.abort();
+        }
         assert_eq!(
             original.transaction_state().await.unwrap(),
             TransactionState::Active
