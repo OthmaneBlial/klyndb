@@ -52,7 +52,7 @@
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
+| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB in source builds](docs/DUCKDB.md); connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes, foreign keys, constraints, user triggers and available table DDL. |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
@@ -66,7 +66,7 @@
 
 Server passwords stay in the **OS keychain**. TLS verification is enabled by default, with optional [CA files and client certificates](docs/TLS.md) for private servers, plus [SSH tunnels with verified host keys](docs/SSH.md). Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 
-## 🗄️ Four databases. One workspace.
+## 🗄️ Five databases. One workspace.
 
 | Database | Queries & schema | Staged grid edits | Verified against |
 | --- | --- | --- | --- |
@@ -74,8 +74,11 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MySQL | ✓ | ✓ · InnoDB | MySQL 8.4.11 |
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
+| DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 real-file contracts |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
+
+DuckDB is available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB guide](docs/DUCKDB.md) for setup and current limits.
 
 **Development preview:** [Download Preview 1 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 

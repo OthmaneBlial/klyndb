@@ -81,6 +81,7 @@ pub fn export_for_engine(
                             }
                         }
                         Cell::Binary(b) if engine == "postgres" => format!("decode('{b}', 'hex')"),
+                        Cell::Binary(b) if engine == "duckdb" => format!("from_hex('{b}')"),
                         Cell::Binary(b) => format!("X'{b}'"),
                         _ if engine == "mysql" => {
                             // Hex UTF-8 avoids mode-dependent backslash and quote interpretation.

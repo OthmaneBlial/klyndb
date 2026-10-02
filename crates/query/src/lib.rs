@@ -2,7 +2,9 @@ use klyndb_driver_api::{Error, Result as DriverResult};
 use serde::Serialize;
 use sqlparser::{
     ast::{Query, SetExpr, Statement, Visit, Visitor},
-    dialect::{Dialect, GenericDialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect},
+    dialect::{
+        Dialect, DuckDbDialect, GenericDialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect,
+    },
     parser::Parser,
     tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace},
 };
@@ -16,6 +18,12 @@ sqlparser::derive_dialect!(
     MySqlDialect,
     preserve_type_id = true,
     overrides = { supports_multiline_comment_hints = false }
+);
+sqlparser::derive_dialect!(
+    ValidatedDuckDbDialect,
+    DuckDbDialect,
+    preserve_type_id = true,
+    overrides = { supports_nested_comments = true }
 );
 
 #[derive(Debug, Serialize)]
@@ -85,6 +93,7 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
         "sqlite" => &SQLiteDialect {},
         "postgres" => &PostgreSqlDialect {},
         "mysql" => &ValidatedMySqlDialect::new(),
+        "duckdb" => &ValidatedDuckDbDialect::new(),
         _ => &GenericDialect {},
     };
     let mut tokens = Tokenizer::new(dialect, sql)
@@ -166,6 +175,16 @@ pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
         return Err(Error::new("Enter a SQL statement."));
     }
     Ok(analyze_statements(&statements))
+}
+/// DuckDB returns a native Count result for DML without RETURNING.
+/// Classification avoids confusing an ordinary SELECT column named Count with writes.
+pub fn duckdb_count_result(sql: &str) -> DriverResult<bool> {
+    let (statements, _) = parse(sql, "duckdb")?;
+    Ok(
+        matches!(statements.as_slice(), [Statement::Insert(i)] if i.returning.is_none())
+            || matches!(statements.as_slice(), [Statement::Update(u)] if u.returning.is_none())
+            || matches!(statements.as_slice(), [Statement::Delete(d)] if d.returning.is_none()),
+    )
 }
 fn analyze_statements(statements: &[Statement]) -> Analysis {
     let mut safety = Safety {

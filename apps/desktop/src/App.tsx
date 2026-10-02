@@ -776,11 +776,13 @@ export default function App() {
       editorRef.current?.replace(
         format(editorRef.current.allText(), {
           language:
-            connection?.engine === "postgres"
-              ? "postgresql"
-              : connection?.engine === "mysql"
-                ? "mysql"
-                : "sqlite",
+            connection?.engine === "duckdb"
+              ? "duckdb"
+              : connection?.engine === "postgres"
+                ? "postgresql"
+                : connection?.engine === "mysql"
+                  ? "mysql"
+                  : "sqlite",
         }),
       );
     } catch (e) {

@@ -31,7 +31,7 @@ pub struct SqlReader<R: Read> {
 }
 impl<R: Read> SqlReader<R> {
     pub fn new(mut input: R, engine: &str) -> Result<Self> {
-        if !["sqlite", "postgres", "mysql"].contains(&engine) {
+        if !["sqlite", "postgres", "mysql", "duckdb"].contains(&engine) {
             return Err(Error::new(
                 "SQL file imports are unavailable for this engine",
             ));
@@ -119,7 +119,7 @@ impl<R: Read> SqlReader<R> {
                         if *depth == 0 {
                             state = Lexical::Normal;
                         }
-                    } else if self.engine == "postgres"
+                    } else if matches!(self.engine.as_str(), "postgres" | "duckdb")
                         && byte == b'/'
                         && self.peek()? == Some(b'*')
                     {
@@ -178,7 +178,7 @@ impl<R: Read> SqlReader<R> {
                         b'\'' | b'"' => {
                             has_sql = true;
                             let escape = self.engine == "mysql" && matches!(byte, b'\'' | b'"')
-                                || self.engine == "postgres"
+                                || matches!(self.engine.as_str(), "postgres" | "duckdb")
                                     && byte == b'\''
                                     && sql.len() >= 2
                                     && matches!(sql[sql.len() - 2], b'e' | b'E')
@@ -192,7 +192,7 @@ impl<R: Read> SqlReader<R> {
                                 escape,
                             };
                         }
-                        b'`' if self.engine != "postgres" => {
+                        b'`' if matches!(self.engine.as_str(), "sqlite" | "mysql") => {
                             has_sql = true;
                             state = Lexical::Quote {
                                 close: b'`',
@@ -206,7 +206,7 @@ impl<R: Read> SqlReader<R> {
                                 escape: false,
                             };
                         }
-                        b'$' if self.engine == "postgres"
+                        b'$' if matches!(self.engine.as_str(), "postgres" | "duckdb")
                             && (sql.len() == 1 || !identifier(sql[sql.len() - 2])) =>
                         {
                             has_sql = true;

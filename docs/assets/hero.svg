@@ -51,7 +51,7 @@
   </g>
   <path d="M52 433H1228" stroke="url(#edge)" stroke-opacity=".4"/>
   <g font-family="'IBM Plex Mono',Consolas,monospace" font-size="12" letter-spacing="1.2" fill="#b3c9c0">
-    <text x="52" y="466">POSTGRESQL</text><text x="238" y="466">MYSQL</text><text x="357" y="466">MARIADB</text><text x="502" y="466">SQLITE</text>
+    <text x="52" y="466">POSTGRESQL</text><text x="238" y="466">MYSQL</text><text x="357" y="466">MARIADB</text><text x="502" y="466">SQLITE</text><text x="625" y="466">DUCKDB</text>
     <text x="1228" y="466" text-anchor="end" fill="#e3c27e">DEVELOPMENT PREVIEW →</text>
   </g>
 </svg>

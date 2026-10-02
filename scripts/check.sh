@@ -13,39 +13,63 @@ npm --prefix apps/desktop run build
 npm --prefix apps/desktop audit
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
+# Keep the full workspace graph: selecting individual core targets recompiles
+# the bundled DuckDB C++ library with a different host dependency feature set.
+test_artifacts=$(mktemp)
+trap 'rm -f "$test_artifacts"' EXIT
+cargo test --locked --workspace --no-run --message-format=json > "$test_artifacts"
+workspace_test() {
+  python3 - "$test_artifacts" "$@" <<'PY'
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+manifest, source, *arguments = sys.argv[1:]
+source = str(Path(source).resolve())
+executables = set()
+for line in Path(manifest).read_text().splitlines():
+    artifact = json.loads(line)
+    if artifact.get("reason") == "compiler-artifact" and artifact.get("executable") and artifact["target"]["src_path"] == source:
+        executables.add(artifact["executable"])
+if len(executables) != 1:
+    raise SystemExit(f"Expected one workspace test executable for {source}, got {len(executables)}")
+raise SystemExit(subprocess.run([executables.pop(), *arguments]).returncode)
+PY
+}
 cargo test --locked --workspace
 if [[ -n "${KLYNDB_TEST_POSTGRES_URL:-}" ]]; then
-  cargo test --locked -p klyndb-postgres --test integration -- --ignored
+  workspace_test crates/drivers/postgres/tests/integration.rs --ignored
 else
   echo 'PostgreSQL integration skipped: set KLYNDB_TEST_POSTGRES_URL to a disposable test server.'
 fi
 if [[ -n "${KLYNDB_TEST_MYSQL_URL:-}" ]]; then
-  cargo test --locked -p klyndb-mysql --test integration -- --ignored
+  workspace_test crates/drivers/mysql/tests/integration.rs --ignored
 else
   echo 'MySQL/MariaDB integration skipped: set KLYNDB_TEST_MYSQL_URL to a disposable test server.'
 fi
 for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
   variable="KLYNDB_TEST_${entry%%:*}_URL"
   if [[ -n "${!variable:-}" ]]; then
-    cargo test --locked -p klyndb-core --test connect "${entry#*:}_delayed_connection" -- --ignored
+    workspace_test crates/core/tests/connect.rs "${entry#*:}_delayed_connection" --ignored
   else
     echo "Delayed-handshake integration skipped: set $variable to a disposable server."
   fi
   variable="KLYNDB_TEST_TLS_${entry%%:*}_URL"
   if [[ -n "${!variable:-}" ]]; then
     : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for TLS contracts}"
-    cargo test --locked -p klyndb-core --test tls "${entry#*:}_verified_tls" -- --ignored
+    workspace_test crates/core/tests/tls.rs "${entry#*:}_verified_tls" --ignored
   else
     echo "TLS integration skipped: set $variable and KLYNDB_TEST_TLS_CERT_DIR."
   fi
   variable="KLYNDB_TEST_MTLS_${entry%%:*}_URL"
   if [[ -n "${!variable:-}" ]]; then
     : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for mTLS contracts}"
-    cargo test --locked -p klyndb-core --test tls "${entry#*:}_mutual_tls" -- --ignored
+    workspace_test crates/core/tests/tls.rs "${entry#*:}_mutual_tls" --ignored
     if [[ -n "${KLYNDB_TEST_SSH_DIR:-}" ]]; then
       : "${KLYNDB_TEST_SSH_USER:?Set the disposable SSH fixture user}"
       : "${KLYNDB_TEST_SSH_FINGERPRINT:?Set the independently verified SSH host fingerprint}"
-      cargo test --locked -p klyndb-core --test ssh "${entry#*:}_ssh" -- --ignored
+      workspace_test crates/core/tests/ssh.rs "${entry#*:}_ssh" --ignored
     else
       echo "SSH integration skipped: set KLYNDB_TEST_SSH_DIR, KLYNDB_TEST_SSH_USER and KLYNDB_TEST_SSH_FINGERPRINT."
     fi
@@ -54,10 +78,10 @@ for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
   fi
 done
 if [[ "${KLYNDB_TEST_KEYCHAIN:-}" == 1 ]]; then
-  cargo test --locked -p klyndb-core --lib ssh_keychain_credentials -- --ignored
+  workspace_test crates/core/src/lib.rs ssh_keychain_credentials --ignored
 else
   echo 'SSH keychain scope contract skipped: set KLYNDB_TEST_KEYCHAIN=1 on a disposable development session.'
 fi
-cargo build --locked -p klyndb-desktop
+cargo build --locked --workspace --all-targets
 cargo audit
 cargo deny check licenses

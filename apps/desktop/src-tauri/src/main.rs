@@ -60,7 +60,7 @@ async fn save_connection(
             if let Some(password) = password {
                 klyndb_connections::save_password(&connection.id, &password).map_err(api)?;
             }
-        } else if previous.as_ref().is_some_and(|c| c.engine != "sqlite") {
+        } else if previous.as_ref().is_some_and(|c| !c.is_local_file()) {
             klyndb_connections::delete_password(&connection.id).map_err(api)?;
         }
         let identity_key = klyndb_connections::client_identity_key(&connection.id);
@@ -103,7 +103,7 @@ async fn delete_connection(engine: State<'_, Arc<Engine>>, id: String) -> ApiRes
     let store = engine.store.clone();
     blocking(move || {
         let c = store.connection(&id).map_err(api)?;
-        if c.engine != "sqlite" {
+        if !c.is_local_file() {
             klyndb_connections::delete_password(&id).map_err(api)?;
         }
         if c.has_client_identity() {
@@ -389,9 +389,14 @@ async fn choose_ca_file() -> ApiResult<Option<String>> {
         .map(|f| f.path().to_string_lossy().into_owned()))
 }
 #[tauri::command]
-async fn choose_database_file(create: bool) -> ApiResult<Option<String>> {
-    let dialog =
-        rfd::AsyncFileDialog::new().add_filter("SQLite database", &["sqlite", "db", "sqlite3"]);
+async fn choose_database_file(create: bool, engine: String) -> ApiResult<Option<String>> {
+    let dialog = match engine.as_str() {
+        "sqlite" => {
+            rfd::AsyncFileDialog::new().add_filter("SQLite database", &["sqlite", "db", "sqlite3"])
+        }
+        "duckdb" => rfd::AsyncFileDialog::new().add_filter("DuckDB database", &["duckdb", "db"]),
+        _ => return Err("Choose a local database engine".into()),
+    };
     let file = if create {
         dialog.save_file().await
     } else {

@@ -30,6 +30,12 @@ def collect(ecosystem, name, version, license_expression, directory):
             candidates.extend(sorted(p for p in path.iterdir() if p.is_file()))
         elif path.is_file():
             candidates.append(path)
+    if name == "libduckdb-sys":
+        if version != "1.10506.0":
+            raise SystemExit("Update the pinned native DuckDB notices before changing libduckdb-sys")
+        # The crate's generated native archive omits the original native notices.
+        # Retain the corresponding pinned upstream texts in the repository.
+        candidates.append(root / "third_party/duckdb-1.5.6/NOTICES.txt")
     for path in candidates:
         # Fail explicitly if a notice cannot be decoded; never silently drop it.
         texts.append(f"\n{'=' * 72}\n{header}\n{path.name}\n{'=' * 72}\n{path.read_text(encoding='utf-8')}\n")

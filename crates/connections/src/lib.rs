@@ -19,8 +19,11 @@ pub struct Connection {
     pub create_file: bool,
 }
 impl Connection {
+    pub fn is_local_file(&self) -> bool {
+        matches!(self.engine.as_str(), "sqlite" | "duckdb")
+    }
     pub fn ssh(&self) -> Result<Option<ssh::Config>> {
-        if self.engine == "sqlite" {
+        if self.is_local_file() {
             return Ok(None);
         }
         let url = url::Url::parse(&self.address)
@@ -28,7 +31,7 @@ impl Connection {
         ssh::parse(&url)
     }
     pub fn connect_timeout(&self) -> Result<std::time::Duration> {
-        if self.engine == "sqlite" {
+        if self.is_local_file() {
             return Ok(std::time::Duration::from_secs(10));
         }
         let url = url::Url::parse(&self.address)
@@ -58,9 +61,9 @@ impl Connection {
             return Err(Error::new("Invalid environment"));
         }
         match self.engine.as_str() {
-            "sqlite" => {
+            "sqlite" | "duckdb" => {
                 if self.address.is_empty() || self.address.contains('\0') {
-                    return Err(Error::new("Choose a SQLite file"));
+                    return Err(Error::new("Choose a local database file"));
                 }
                 Ok(None)
             }

@@ -297,7 +297,10 @@ interface Commands {
   choose_ca_file: { args: undefined; result: string | null };
   choose_client_identity_file: { args: undefined; result: string | null };
   choose_ssh_identity_file: { args: undefined; result: string | null };
-  choose_database_file: { args: { create: boolean }; result: string | null };
+  choose_database_file: {
+    args: { create: boolean; engine: string };
+    result: string | null;
+  };
   choose_import_file: {
     args: { options: ImportOptions };
     result: ImportSource | null;

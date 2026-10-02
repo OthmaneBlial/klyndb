@@ -293,6 +293,14 @@ async fn open_session(
                 )
                 .await?,
             ) as Arc<dyn Session>),
+            "duckdb" => Ok(Arc::new(
+                klyndb_duckdb::DuckDb::connect(
+                    config.address.clone(),
+                    config.read_only,
+                    config.create_file,
+                )
+                .await?,
+            ) as Arc<dyn Session>),
             "postgres" => Ok(Arc::new(
                 klyndb_postgres::Postgres::connect_via(
                     &address,
@@ -346,7 +354,7 @@ impl Engine {
         let deadline = tokio::time::Instant::now() + timeout;
         let password = if let Some(p) = password {
             Some(Zeroizing::new(p))
-        } else if config.engine != "sqlite" {
+        } else if !config.is_local_file() {
             credentials::password(id, deadline).await?
         } else {
             None
@@ -415,7 +423,7 @@ impl Engine {
         let password = password.or(embedded);
         let timeout = config.connect_timeout()?;
         let deadline = tokio::time::Instant::now() + timeout;
-        let password = if password.is_none() && saved && config.engine != "sqlite" {
+        let password = if password.is_none() && saved && !config.is_local_file() {
             credentials::password(&config.id, deadline).await?
         } else {
             password

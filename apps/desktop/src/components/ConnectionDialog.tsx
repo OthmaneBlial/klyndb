@@ -48,13 +48,18 @@ export function ConnectionDialog({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [testStatus, setTestStatus] = useState("");
+  const localFile = ["sqlite", "duckdb"].includes(form.engine);
+  const engineName = form.engine === "duckdb" ? "DuckDB" : "SQLite";
   function field<K extends keyof Connection>(key: K, value: Connection[K]) {
     setTestStatus("");
     setForm((f) => ({ ...f, [key]: value }));
   }
   async function choose(create: boolean) {
     try {
-      const path = await api("choose_database_file", { create });
+      const path = await api("choose_database_file", {
+        create,
+        engine: form.engine,
+      });
       if (path) {
         field("address", path);
         field("create_file", create);
@@ -190,13 +195,14 @@ export function ConnectionDialog({
           aria-label="Connection details"
         >
           <div className="engine-picker">
-            {["sqlite", "postgres", "mysql"].map((engine) => (
+            {["sqlite", "duckdb", "postgres", "mysql"].map((engine) => (
               <button
                 type="button"
                 key={engine}
                 className={form.engine === engine ? "selected" : ""}
                 onClick={() => {
                   setTestStatus("");
+                  setPassword("");
                   setIdentityPassword("");
                   setSshPassword("");
                   setForm((f) => ({
@@ -211,12 +217,16 @@ export function ConnectionDialog({
                 <strong>
                   {engine === "sqlite"
                     ? "SQLite"
-                    : engine === "mysql"
-                      ? "MySQL / MariaDB"
-                      : "PostgreSQL"}
+                    : engine === "duckdb"
+                      ? "DuckDB"
+                      : engine === "mysql"
+                        ? "MySQL / MariaDB"
+                        : "PostgreSQL"}
                 </strong>
                 <span>
-                  {engine === "sqlite" ? "Local file" : "Server connection"}
+                  {["sqlite", "duckdb"].includes(engine)
+                    ? "Local file"
+                    : "Server connection"}
                 </span>
               </button>
             ))}
@@ -232,14 +242,14 @@ export function ConnectionDialog({
               maxLength={200}
             />
           </label>
-          {form.engine === "sqlite" ? (
+          {localFile ? (
             <label>
               Database file
               <div className="input-action">
                 <input
                   value={form.address}
                   onChange={(e) => field("address", e.target.value)}
-                  placeholder="/path/to/database.sqlite"
+                  placeholder={`/path/to/database.${form.engine === "duckdb" ? "duckdb" : "sqlite"}`}
                   required
                 />
                 <button
@@ -260,7 +270,7 @@ export function ConnectionDialog({
               <small>
                 {form.create_file
                   ? "A new database will be created when you connect."
-                  : "Choose an existing SQLite database, or use + to create one."}
+                  : `Choose an existing ${engineName} database, or use + to create one.`}
               </small>
             </label>
           ) : (

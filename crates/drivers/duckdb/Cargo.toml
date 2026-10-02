@@ -1,0 +1,20 @@
+[package]
+name = "klyndb-duckdb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../../driver-api" }
+klyndb-import = { path = "../../import" }
+klyndb-query = { path = "../../query" }
+duckdb = { version = "=1.10506.0", features = ["bundled"] }
+tokio.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+hex = "0.4"
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
