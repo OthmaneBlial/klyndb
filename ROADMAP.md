@@ -26,7 +26,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Real native macOS staged update/insert batch, review, confirmed deletion and transaction-state indicator; production writes enforced in Rust.
 - [ ] Automated desktop E2E for the editing workflow and equivalent native Windows/Linux behavior.
 - [ ] Streaming CSV/JSON/SQL imports and server-side table filters/sort/pagination.
-- [ ] MySQL/MariaDB, pooling/reconnect, connection testing, timeouts and complete metadata.
+- [x] MySQL/MariaDB native connection/query/metadata slice, exact numeric/binary/NULL cells, multiple results, row cap, cancellation, read-only validation, native identifier quoting and actual transaction state. Real MySQL 8.4.11 / MariaDB 13.0.2 contracts and native macOS MySQL workflow passed.
+- [ ] MySQL/MariaDB safe staged editing; reconnect, connection testing, configurable network timeouts and broader metadata.
 - [ ] Verified TLS options/client certificates and SSH tunnels/bastion support.
 - [ ] SQL Server, DuckDB and ClickHouse with actual integration services.
 - [ ] Explain tree, ER diagrams with saved layouts, DDL/statistics/triggers/constraints.
@@ -36,12 +37,13 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 
 ## Product and release gates
 
+- [x] Current-statement execution waits for a complete parser tree and fails closed when unavailable; regression protects against accidental whole-file execution.
 - [ ] Editor error locations, robust alias/column completion, query favorites/recent refinements and shortcut preferences.
 - [x] Actual SQLite/PostgreSQL transaction state after queries; failed PostgreSQL transactions require ROLLBACK.
 - [ ] Refine simultaneous connection lifecycle and configurable production confirmations.
 - [ ] Cold/warm interactive startup, process-tree memory, five connections, 100k rows, large schema, 100 tabs, scroll frames, query overhead/throughput/cancellation benchmark history.
 - [ ] Address measured bottlenecks without relaxing targets; compare against other clients only with reproducible evidence.
-- [x] Local CI entry point for formatting/clippy/tests/lint/typecheck/audits/native build and configured real PostgreSQL integration.
+- [x] Local CI entry point for formatting/clippy/tests/lint/typecheck/audits/native build and configured real PostgreSQL / MySQL / MariaDB integration.
 - [ ] Extend local real-database integration and desktop E2E as new drivers are added.
 - [ ] macOS ARM/Intel, Windows x64 and Linux x64 local package verification; signed/notarized artifacts where credentials permit.
 - [x] GitHub Actions disabled; active native-package run cancelled. Remote package validation remains incomplete.

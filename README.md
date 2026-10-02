@@ -20,7 +20,7 @@ Build a native package with `npm run tauri build`. macOS distribution signing an
 
 ## Available now
 
-- SQLite files and PostgreSQL servers; native Rust drivers, verified TLS by default for PostgreSQL.
+- SQLite files and PostgreSQL / MySQL / MariaDB servers; native Rust drivers, verified TLS by default for server connections.
 - Saved connection metadata, groups, favorites, environment labels and OS keychain passwords.
 - Lazy connection activation, table/view discovery on connection, on-demand column/index/foreign-key inspection.
 - SQL highlighting, statement/selection/batch execution, schema completion, formatting, multiple tabs and multiple result sets.
@@ -38,7 +38,7 @@ Only implemented engines appear in the connection form. See the [compatibility m
 ./scripts/check.sh
 ```
 
-Install the audit tools once with `cargo install cargo-audit cargo-deny --locked`. The script installs locked frontend dependencies, runs formatting, Clippy, Rust/frontend tests, typecheck, production frontend build, native debug build and dependency/license audits. It runs the real PostgreSQL contract when `KLYNDB_TEST_POSTGRES_URL` is set. Keep GitHub Actions disabled.
+Install the audit tools once with `cargo install cargo-audit cargo-deny --locked`. The script installs locked frontend dependencies, runs formatting, Clippy, Rust/frontend tests, typecheck, production frontend build, native debug build and dependency/license audits. It runs the real PostgreSQL contract when `KLYNDB_TEST_POSTGRES_URL` is set, and MySQL/MariaDB when `KLYNDB_TEST_MYSQL_URL` is set. Keep GitHub Actions disabled.
 
 Use `cargo test -p klyndb-postgres --test integration` with `-- --ignored` and `KLYNDB_TEST_POSTGRES_URL` to run the real-server contract once installed. Never point integration tests at a production database.
 

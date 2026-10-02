@@ -79,7 +79,7 @@ export function ConnectionDialog({
         }}
       >
         <div className="engine-picker">
-          {["sqlite", "postgres"].map((engine) => (
+          {["sqlite", "postgres", "mysql"].map((engine) => (
             <button
               type="button"
               key={engine}
@@ -94,7 +94,13 @@ export function ConnectionDialog({
               }
             >
               <Database size={20} />
-              <strong>{engine === "sqlite" ? "SQLite" : "PostgreSQL"}</strong>
+              <strong>
+                {engine === "sqlite"
+                  ? "SQLite"
+                  : engine === "mysql"
+                    ? "MySQL / MariaDB"
+                    : "PostgreSQL"}
+              </strong>
               <span>
                 {engine === "sqlite" ? "Local file" : "Server connection"}
               </span>
@@ -150,13 +156,18 @@ export function ConnectionDialog({
               <input
                 value={form.address}
                 onChange={(e) => field("address", e.target.value)}
-                placeholder="postgresql://user@localhost:5432/database"
+                placeholder={
+                  form.engine === "mysql"
+                    ? "mysql://user@localhost:3306/database"
+                    : "postgresql://user@localhost:5432/database"
+                }
                 required
                 autoComplete="off"
               />
               <small>
-                TLS verification is enabled by default. Add sslmode=disable only
-                for a trusted local server.
+                TLS verification is enabled by default. Add{" "}
+                {form.engine === "mysql" ? "tls=disabled" : "sslmode=disable"}{" "}
+                only for a trusted local server.
               </small>
             </label>
             <label>

@@ -10,6 +10,7 @@ klyndb-connections = { path = "../connections" }
 klyndb-query = { path = "../query" }
 klyndb-sqlite = { path = "../drivers/sqlite" }
 klyndb-postgres = { path = "../drivers/postgres" }
+klyndb-mysql = { path = "../drivers/mysql" }
 rusqlite.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

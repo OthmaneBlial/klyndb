@@ -2,7 +2,7 @@ use klyndb_driver_api::{Error, Result};
 use serde::Serialize;
 use sqlparser::{
     ast::{Query, SetExpr, Statement, Visit, Visitor},
-    dialect::{Dialect, GenericDialect, PostgreSqlDialect, SQLiteDialect},
+    dialect::{Dialect, GenericDialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect},
     parser::Parser,
 };
 use std::ops::ControlFlow;
@@ -63,6 +63,7 @@ pub fn analyze(sql: &str, engine: &str) -> Result<Analysis> {
     let dialect: &dyn Dialect = match engine {
         "sqlite" => &SQLiteDialect {},
         "postgres" => &PostgreSqlDialect {},
+        "mysql" => &MySqlDialect {},
         _ => &GenericDialect {},
     };
     let statements = Parser::parse_sql(dialect, sql)

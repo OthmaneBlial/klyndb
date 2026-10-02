@@ -12,6 +12,22 @@ describe("execute current statement", () => {
     });
     expect(currentStatement(state).trim()).toBe("SELECT $$a;b$$;");
   });
+  it("runs only the final statement with the cursor at the end", () => {
+    for (const doc of ["SELECT 1; SELECT 2;", "SELECT 1; SELECT 2; \n"]) {
+      const state = EditorState.create({
+        doc,
+        selection: { anchor: doc.length },
+        extensions: [sql({ dialect: PostgreSQL })],
+      });
+      expect(currentStatement(state).trim()).toBe("SELECT 2;");
+    }
+  });
+  it("does not execute a whole file when statement parsing is unavailable", () => {
+    const state = EditorState.create({
+      doc: "SELECT 1; DELETE FROM important_table;",
+    });
+    expect(currentStatement(state)).toBe("");
+  });
   it("executes the selected text", () => {
     const state = EditorState.create({
       doc: "SELECT 1; SELECT 2;",

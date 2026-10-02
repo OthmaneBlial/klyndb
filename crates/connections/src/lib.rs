@@ -36,14 +36,33 @@ impl Connection {
                 }
                 Ok(None)
             }
-            "postgres" => {
+            "postgres" | "mysql" => {
                 let mut url = url::Url::parse(&self.address)
                     .map_err(|_| Error::new("Enter a valid PostgreSQL URL"))?;
-                if !["postgres", "postgresql"].contains(&url.scheme()) || url.host_str().is_none() {
-                    return Err(Error::new("Expected postgresql://user@host/database"));
+                let mysql = self.engine == "mysql";
+                let schemes: &[&str] = if mysql {
+                    &["mysql"]
+                } else {
+                    &["postgres", "postgresql"]
+                };
+                if !schemes.contains(&url.scheme()) || url.host_str().is_none() {
+                    return Err(Error::new(if mysql {
+                        "Expected mysql://user@host/database"
+                    } else {
+                        "Expected postgresql://user@host/database"
+                    }));
                 }
-                for (key, _) in url.query_pairs() {
-                    if !["sslmode", "connect_timeout", "application_name"].contains(&key.as_ref()) {
+                let options: &[&str] = if mysql {
+                    &["tls"]
+                } else {
+                    &["sslmode", "connect_timeout", "application_name"]
+                };
+                for (key, value) in url.query_pairs() {
+                    if mysql && key == "tls" && !["required", "disabled"].contains(&value.as_ref())
+                    {
+                        return Err(Error::new("MySQL tls must be required or disabled"));
+                    }
+                    if !options.contains(&key.as_ref()) {
                         return Err(Error::new(format!(
                             "Unsupported URL parameter: {key}. Use the password field for credentials."
                         )));
@@ -52,8 +71,10 @@ impl Connection {
                 let password = url.password().map(|p| Zeroizing::new(percent_decode(p)));
                 url.set_password(None)
                     .map_err(|_| Error::new("Invalid URL credentials"))?;
-                if !url.query_pairs().any(|(k, _)| k == "sslmode") {
-                    url.query_pairs_mut().append_pair("sslmode", "require");
+                let tls_key = if mysql { "tls" } else { "sslmode" };
+                if !url.query_pairs().any(|(k, _)| k == tls_key) {
+                    url.query_pairs_mut()
+                        .append_pair(tls_key, if mysql { "required" } else { "require" });
                 }
                 self.address = url.to_string();
                 Ok(password)
@@ -214,6 +235,19 @@ mod tests {
         assert_eq!(c.validate().unwrap().unwrap().as_str(), "p@ss+word");
         assert!(!c.address.contains("word"));
         assert!(c.address.contains("sslmode=require"));
+        c.engine = "mysql".into();
+        c.address = "mysql://alice:p%40ss+word@localhost/db".into();
+        assert_eq!(c.validate().unwrap().unwrap().as_str(), "p@ss+word");
+        assert!(!c.address.contains("word"));
+        assert!(c.address.contains("tls=required"));
+        for address in [
+            "mysql://alice@localhost/db?tls=invalid",
+            "mysql://alice@localhost/db?password=leak",
+        ] {
+            let mut invalid = c.clone();
+            invalid.address = address.into();
+            assert!(invalid.validate().is_err());
+        }
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("state.db")).unwrap();
         store.save(&c).unwrap();

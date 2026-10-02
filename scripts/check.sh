@@ -17,6 +17,11 @@ if [[ -n "${KLYNDB_TEST_POSTGRES_URL:-}" ]]; then
 else
   echo 'PostgreSQL integration skipped: set KLYNDB_TEST_POSTGRES_URL to a disposable test server.'
 fi
+if [[ -n "${KLYNDB_TEST_MYSQL_URL:-}" ]]; then
+  cargo test --locked -p klyndb-mysql --test integration -- --ignored
+else
+  echo 'MySQL/MariaDB integration skipped: set KLYNDB_TEST_MYSQL_URL to a disposable test server.'
+fi
 cargo build --locked -p klyndb-desktop
 cargo audit
 cargo deny check licenses

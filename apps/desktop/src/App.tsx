@@ -497,12 +497,12 @@ export default function App() {
           [`${table.schema}.${table.name}`]: info.columns.map((c) => c.name),
         },
       }));
-      const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
-      const tab = newTab(
-        c.id,
-        `SELECT * FROM ${quote(table.schema)}.${quote(table.name)} LIMIT ${preferences.rowLimit};`,
-        table.name,
-      );
+      const query = await api("table_select_sql", {
+        id: c.id,
+        table,
+        limit: preferences.rowLimit,
+      });
+      const tab = newTab(c.id, query, table.name);
       if (tab) {
         const inspected = { table, info, query: tab.sql };
         setInspectors((s) => ({ ...s, [tab.id]: inspected }));
@@ -578,7 +578,12 @@ export default function App() {
       const { format } = await import("sql-formatter");
       editorRef.current?.replace(
         format(editorRef.current.allText(), {
-          language: connection?.engine === "postgres" ? "postgresql" : "sqlite",
+          language:
+            connection?.engine === "postgres"
+              ? "postgresql"
+              : connection?.engine === "mysql"
+                ? "mysql"
+                : "sqlite",
         }),
       );
     } catch (e) {

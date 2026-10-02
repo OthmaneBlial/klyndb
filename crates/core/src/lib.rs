@@ -201,6 +201,14 @@ impl Engine {
                 )
                 .await?,
             ),
+            "mysql" => Arc::new(
+                klyndb_mysql::Mysql::connect(
+                    &config.address,
+                    password.as_deref().map(|s| s.as_str()),
+                    config.read_only,
+                )
+                .await?,
+            ),
             _ => return Err(Error::new("Database driver is not installed")),
         };
         let capabilities = driver.capabilities();

@@ -94,6 +94,20 @@ async fn inspect_table(
         .map_err(api)
 }
 #[tauri::command]
+async fn table_select_sql(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    table: Table,
+    limit: usize,
+) -> ApiResult<String> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .table_select_sql(&table, limit)
+        .map_err(api)
+}
+#[tauri::command]
 async fn apply_changes(
     engine: State<'_, Arc<Engine>>,
     id: String,
@@ -271,6 +285,7 @@ fn main() {
             disconnect,
             tables,
             inspect_table,
+            table_select_sql,
             apply_changes,
             analyze_query,
             start_query,

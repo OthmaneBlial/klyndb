@@ -2,7 +2,7 @@
 
 Credentials use macOS Keychain, Windows Credential Manager or Linux Secret Service. If secure storage fails, saving fails; users can choose a session-only password. Connection URLs are parsed and stripped of embedded passwords before local persistence. Only supported URL parameters are accepted.
 
-PostgreSQL uses certificate and hostname verification with OS trust roots. TLS is required by default. `sslmode=disable` is an explicit opt-out for trusted local development. Custom certificates and SSH have not yet been implemented.
+PostgreSQL and MySQL/MariaDB use certificate and hostname verification with OS trust roots. TLS is required by default; no plaintext fallback is allowed. `sslmode=disable` (PostgreSQL) or `tls=disabled` (MySQL/MariaDB) is an explicit opt-out for trusted local development. Custom certificates and SSH have not yet been implemented.
 
 The frontend has no shell or general filesystem permissions. Database paths are explicit user inputs. Export paths come from Rust native dialogs. Export writes a temporary file and replaces the destination only after success. The production CSP restricts scripts and connections to packaged UI and IPC; there is no remote content, CDN, telemetry or schema upload.
 

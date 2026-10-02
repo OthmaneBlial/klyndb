@@ -98,6 +98,10 @@ interface Commands {
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
   inspect_table: { args: { id: string; table: Table }; result: TableInfo };
+  table_select_sql: {
+    args: { id: string; table: Table; limit: number };
+    result: string;
+  };
   apply_changes: {
     args: { id: string; table: Table; changes: Change[]; confirmed: boolean };
     result: MutationResult;

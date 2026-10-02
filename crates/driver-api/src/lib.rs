@@ -185,6 +185,19 @@ pub enum Batch {
 #[async_trait]
 pub trait Session: Send + Sync {
     fn capabilities(&self) -> Capabilities;
+    fn quote_identifier(&self, name: &str) -> String {
+        quote_identifier(name)
+    }
+    fn table_select_sql(&self, table: &Table, limit: usize) -> Result<String> {
+        if !(1..=10_000_000).contains(&limit) {
+            return Err(Error::new("Row limit must be 1–10,000,000"));
+        }
+        Ok(format!(
+            "SELECT * FROM {}.{} LIMIT {limit};",
+            self.quote_identifier(&table.schema),
+            self.quote_identifier(&table.name)
+        ))
+    }
     async fn execute(
         &self,
         sql: String,

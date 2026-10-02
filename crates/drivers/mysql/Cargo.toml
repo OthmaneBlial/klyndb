@@ -1,0 +1,17 @@
+[package]
+name = "klyndb-mysql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-query = { path = "../../query" }
+klyndb-driver-api = { path = "../../driver-api" }
+tokio.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+futures-util.workspace = true
+serde_json.workspace = true
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
+url = "2"
+hex = "0.4"

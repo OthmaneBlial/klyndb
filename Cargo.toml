@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres", "apps/desktop/src-tauri"]
-default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres"]
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "apps/desktop/src-tauri"]
+default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql"]
 
 [workspace.package]
 version = "0.1.0"

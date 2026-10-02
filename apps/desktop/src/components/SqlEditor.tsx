@@ -20,7 +20,7 @@ import {
   closeBracketsKeymap,
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { sql, SQLite, PostgreSQL } from "@codemirror/lang-sql";
+import { sql, SQLite, PostgreSQL, MySQL } from "@codemirror/lang-sql";
 import { currentStatement } from "../sql";
 export interface EditorHandle {
   runText: () => string;
@@ -60,7 +60,15 @@ export function SqlEditor({
         highlightSelectionMatches(),
         syntaxHighlighting(defaultHighlightStyle),
         autocompletion(),
-        sql({ dialect: engine === "sqlite" ? SQLite : PostgreSQL, schema }),
+        sql({
+          dialect:
+            engine === "sqlite"
+              ? SQLite
+              : engine === "mysql"
+                ? MySQL
+                : PostgreSQL,
+          schema,
+        }),
         keymap.of([
           {
             key: "Mod-Enter",

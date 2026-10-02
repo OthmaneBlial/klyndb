@@ -14,6 +14,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | android_system_properties | 0.1.6 | MIT OR Apache-2.0 |
 | Cargo | anyhow | 1.0.104 | MIT OR Apache-2.0 |
 | Cargo | ar_archive_writer | 0.5.3 | Apache-2.0 WITH LLVM-exception |
+| Cargo | arc-swap | 1.9.2 | MIT OR Apache-2.0 |
 | Cargo | async-broadcast | 0.7.2 | MIT OR Apache-2.0 |
 | Cargo | async-channel | 2.5.0 | Apache-2.0 OR MIT |
 | Cargo | async-io | 2.6.0 | Apache-2.0 OR MIT |
@@ -42,6 +43,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | brotli | 9.0.0 | BSD-3-Clause AND MIT |
 | Cargo | brotli-decompressor | 6.0.1 | BSD-3-Clause/MIT |
 | Cargo | bs58 | 0.5.1 | MIT/Apache-2.0 |
+| Cargo | btoi | 0.5.0 | MIT OR Apache-2.0 |
 | Cargo | bumpalo | 3.20.3 | MIT OR Apache-2.0 |
 | Cargo | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
 | Cargo | byteorder | 1.5.0 | Unlicense OR MIT |
@@ -76,6 +78,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | cpufeatures | 0.3.1 | MIT OR Apache-2.0 |
 | Cargo | crc32fast | 1.5.2 | MIT OR Apache-2.0 |
 | Cargo | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 |
+| Cargo | crossbeam-queue | 0.3.14 | MIT OR Apache-2.0 |
 | Cargo | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 |
 | Cargo | crypto-common | 0.1.7 | MIT OR Apache-2.0 |
 | Cargo | crypto-common | 0.2.2 | MIT OR Apache-2.0 |
@@ -219,6 +222,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | json-patch | 4.2.0 | MIT/Apache-2.0 |
 | Cargo | jsonptr | 0.7.1 | MIT OR Apache-2.0 |
 | Cargo | keyboard-types | 0.8.3 | MIT OR Apache-2.0 |
+| Cargo | keyed_priority_queue | 0.4.2 | MIT |
 | Cargo | keyring | 3.6.3 | MIT OR Apache-2.0 |
 | Cargo | lazy_static | 1.5.1 | MIT OR Apache-2.0 |
 | Cargo | libappindicator | 0.9.0 | Apache-2.0 OR MIT |
@@ -233,6 +237,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | litemap | 0.8.3 | Unicode-3.0 |
 | Cargo | lock_api | 0.4.14 | MIT OR Apache-2.0 |
 | Cargo | log | 0.4.34 | MIT OR Apache-2.0 |
+| Cargo | lru | 0.18.5 | MIT |
 | Cargo | markup5ever | 0.39.0 | MIT OR Apache-2.0 |
 | Cargo | matchers | 0.2.0 | MIT |
 | Cargo | md-5 | 0.11.0 | MIT OR Apache-2.0 |
@@ -243,6 +248,8 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 |
 | Cargo | mio | 1.2.3 | MIT |
 | Cargo | muda | 0.20.0 | Apache-2.0 OR MIT |
+| Cargo | mysql_async | 0.37.1 | MIT OR Apache-2.0 |
+| Cargo | mysql_common | 0.37.3 | MIT OR Apache-2.0 |
 | Cargo | native-tls | 0.2.18 | MIT OR Apache-2.0 |
 | Cargo | ndk | 0.9.0 | MIT OR Apache-2.0 |
 | Cargo | ndk-context | 0.1.1 | MIT OR Apache-2.0 |
@@ -291,6 +298,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | parking | 2.2.1 | Apache-2.0 OR MIT |
 | Cargo | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | Cargo | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 |
+| Cargo | pem | 3.0.6 | MIT |
 | Cargo | percent-encoding | 2.3.2 | MIT OR Apache-2.0 |
 | Cargo | phf | 0.13.1 | MIT |
 | Cargo | phf_codegen | 0.13.1 | MIT |
@@ -350,6 +358,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | rustversion | 1.0.23 | MIT OR Apache-2.0 |
 | Cargo | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | Cargo | same-file | 1.0.6 | Unlicense/MIT |
+| Cargo | saturating | 0.1.0 | MIT |
 | Cargo | schannel | 0.1.29 | MIT |
 | Cargo | schemars | 0.8.22 | MIT |
 | Cargo | schemars | 0.9.0 | MIT |
@@ -456,6 +465,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | tracing-subscriber | 0.3.23 | MIT |
 | Cargo | tray-icon | 0.25.1 | MIT OR Apache-2.0 |
 | Cargo | try-lock | 0.2.5 | MIT |
+| Cargo | twox-hash | 2.1.4 | MIT |
 | Cargo | typeid | 1.0.3 | MIT OR Apache-2.0 |
 | Cargo | typenum | 1.20.1 | MIT OR Apache-2.0 |
 | Cargo | uds_windows | 1.2.1 | MIT |
