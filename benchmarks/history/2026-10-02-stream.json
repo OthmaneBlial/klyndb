@@ -1,0 +1,128 @@
+{
+  "recorded_at": "2026-10-02T10:51:42.714502+00:00",
+  "commit": "0277fa8fb80cdc377d6d6e5c763e6fcf4bf37500",
+  "cargo_lock_sha256": "3382e54db273872db3760bd037575cd00be1e47ff5d6a9fe749573dfffcbbe27",
+  "os": "macOS-26.6-arm64-arm-64bit-Mach-O",
+  "architecture": "arm64",
+  "rust": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "scope": "Release SQLite recursive cursor -> bounded channel -> disk spool -> last 500-row page; includes temp database setup in peak process RSS. No desktop/WebView or comparative client measurements.",
+  "samples": [
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 283,
+      "first_row_ms": 13,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 292,
+      "rows": 100000,
+      "rows_per_second": 352578.53907319444,
+      "peak_rss_bytes": 14123008
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 290,
+      "first_row_ms": 103,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 279,
+      "rows": 100000,
+      "rows_per_second": 344100.0317786702,
+      "peak_rss_bytes": 14139392
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 280,
+      "first_row_ms": 3,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 277,
+      "rows": 100000,
+      "rows_per_second": 356009.1903772496,
+      "peak_rss_bytes": 14024704
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 317,
+      "first_row_ms": 34,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 299,
+      "rows": 100000,
+      "rows_per_second": 314914.92113629717,
+      "peak_rss_bytes": 14041088
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 279,
+      "first_row_ms": 8,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 278,
+      "rows": 100000,
+      "rows_per_second": 358021.2341105074,
+      "peak_rss_bytes": 14073856
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 2822,
+      "first_row_ms": 32,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 293,
+      "rows": 1000000,
+      "rows_per_second": 354300.52333089017,
+      "peak_rss_bytes": 14139392
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 2837,
+      "first_row_ms": 5,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 291,
+      "rows": 1000000,
+      "rows_per_second": 352392.99810998637,
+      "peak_rss_bytes": 14204928
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 2842,
+      "first_row_ms": 16,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 294,
+      "rows": 1000000,
+      "rows_per_second": 351823.95952849655,
+      "peak_rss_bytes": 14270464
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 2852,
+      "first_row_ms": 67,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 292,
+      "rows": 1000000,
+      "rows_per_second": 350515.3115047958,
+      "peak_rss_bytes": 14139392
+    },
+    {
+      "channel_batches": 4,
+      "elapsed_ms": 2821,
+      "first_row_ms": 10,
+      "frontend_rows_per_page": 500,
+      "last_page_us": 308,
+      "rows": 1000000,
+      "rows_per_second": 354382.6906027367,
+      "peak_rss_bytes": 14155776
+    }
+  ],
+  "medians": {
+    "100000": {
+      "elapsed_ms": 283,
+      "rows_per_second": 352578.53907319444,
+      "first_row_ms": 13,
+      "last_page_us": 279,
+      "peak_rss_bytes": 14073856
+    },
+    "1000000": {
+      "elapsed_ms": 2837,
+      "rows_per_second": 352392.99810998637,
+      "first_row_ms": 16,
+      "last_page_us": 293,
+      "peak_rss_bytes": 14155776
+    }
+  },
+  "cpu": "Apple M2"
+}

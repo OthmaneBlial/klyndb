@@ -37,3 +37,7 @@ This proves the described workflows on the local macOS debug bundle, not all pro
 By explicit owner request, GitHub Actions was disabled at repository level (`enabled: false`). Both workflow definitions were removed; active native-package run 36997559834 was cancelled. CI run 36997475264 for 0277fa8 had already completed successfully on all three OSes before this instruction. These historical results do not authorize future GitHub execution. Current validation uses `scripts/check.sh` locally; remote package verification is incomplete.
 
 `./scripts/check.sh` passed locally with the disposable PostgreSQL URL: locked dependency install, frontend checks/build/audit, workspace Rust checks/tests, real PostgreSQL integration, native build and license audit. The two previously documented upstream Rust warnings remain visible. The package run is terminal `cancelled`; no queued or active GitHub runs remained at verification.
+
+## Backend streaming baseline — 2026-10-02
+
+`cargo build --release -p klyndb-core --example stream_bench` succeeded. `scripts/bench_stream.py` ran ten real samples (five each at 100k / 1m rows), with correct retained counts and readable final pages. The median 1m-row run took 2,837 ms at 352,393 rows/sec and 13.50 MiB peak process RSS. This covers the backend result flow only. Machine/toolchain/commit/lock hash and every raw sample are retained under benchmarks/history; desktop memory/startup/scrolling and comparisons remain unmeasured.

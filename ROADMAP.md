@@ -17,7 +17,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Cross-platform CI: macOS, Windows and Linux builds/tests; PostgreSQL and audit jobs (run 36995057710).
 - [x] PostgreSQL 16 real-server contract validated locally and in CI.
 - [x] Workspace save ordering/close flush, per-tab table inspector, automatic table query and bounded IPC pages.
-- [ ] Backend benchmark history and release package validation.
+- [x] Reproducible release backend streaming baseline: five runs each at 100k / 1m rows, disk pages, throughput, first-row timing and native peak RSS.
+- [ ] Release package validation locally on each platform.
 
 ## Next working slices
 
