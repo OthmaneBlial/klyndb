@@ -10,7 +10,7 @@ Original Klyndb implementation and icon are MIT licensed. Beekeeper Studio is a 
 | Tokio / tokio-util | MIT | Async scheduling and cancellation |
 | rusqlite | MIT | Native SQLite and local state/result storage |
 | SQLite | Public domain | Bundled database engine |
-| tokio-postgres / postgres-native-tls / native-tls | MIT OR Apache-2.0 | PostgreSQL protocol/TLS |
+| tokio-postgres / postgres-native-tls / native-tls | MIT OR Apache-2.0 | PostgreSQL protocol; verified server TLS and client identities |
 | serde / serde_json / uuid / async-trait / thiserror / futures-util | MIT OR Apache-2.0 | Serialization and Rust foundations |
 | sqlparser | Apache-2.0 | SQL validation and safety checks |
 | keyring | MIT OR Apache-2.0 | OS credentials |

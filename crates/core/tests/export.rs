@@ -20,7 +20,7 @@ async fn wide_results_export_beyond_the_ipc_page_limit() {
     };
     connection.validate().unwrap();
     engine.store.save(&connection).unwrap();
-    engine.connect(&connection.id, None).await.unwrap();
+    engine.connect(&connection.id, None, None).await.unwrap();
     let id = engine.start(connection.id.clone(), "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<40) SELECT x AS id, printf('%0*d',300000,x) AS payload FROM n; SELECT 42 AS another_set".into(), 100, 5, false).await.unwrap();
     let job = engine.job(&id).unwrap();
     while !job.status().unwrap().done {

@@ -31,6 +31,13 @@ for entry in POSTGRES:postgres MYSQL:mysql MARIADB:mariadb; do
   else
     echo "TLS integration skipped: set $variable and KLYNDB_TEST_TLS_CERT_DIR."
   fi
+  variable="KLYNDB_TEST_MTLS_${entry%%:*}_URL"
+  if [[ -n "${!variable:-}" ]]; then
+    : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for mTLS contracts}"
+    cargo test --locked -p klyndb-core --test tls "${entry#*:}_mutual_tls" -- --ignored
+  else
+    echo "Mutual TLS integration skipped: set $variable and KLYNDB_TEST_TLS_CERT_DIR."
+  fi
 done
 cargo build --locked -p klyndb-desktop
 cargo audit

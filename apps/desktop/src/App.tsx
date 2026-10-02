@@ -421,11 +421,19 @@ export default function App() {
       report(String(e));
     }
   }
-  async function connect(c: Connection, password: string | null = null) {
+  async function connect(
+    c: Connection,
+    password: string | null = null,
+    identityPassword: string | null = null,
+  ) {
     if (connecting.includes(c.id)) return;
     setConnecting((ids) => [...ids, c.id]);
     try {
-      const capabilities = await api("connect", { id: c.id, password });
+      const capabilities = await api("connect", {
+        id: c.id,
+        password,
+        identityPassword,
+      });
       setConnected((s) => ({ ...s, [c.id]: capabilities }));
       setExpanded((s) => ({ ...s, [c.id]: true }));
       await refresh(c.id);
@@ -1406,14 +1414,14 @@ export default function App() {
         <ConnectionDialog
           initial={dialog === true ? undefined : dialog}
           onClose={() => setDialog(null)}
-          onSaved={(c, password, shouldConnect) => {
+          onSaved={(c, password, shouldConnect, identityPassword) => {
             setConnections((s) => [...s.filter((item) => item.id !== c.id), c]);
             setConnected((s) => {
               const next = { ...s };
               delete next[c.id];
               return next;
             });
-            if (shouldConnect) void connect(c, password);
+            if (shouldConnect) void connect(c, password, identityPassword);
           }}
         />
       )}

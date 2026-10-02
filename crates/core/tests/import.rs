@@ -121,7 +121,7 @@ async fn reconnect_if_closed(
 ) {
     if message.to_lowercase().contains("connection closed") {
         engine.disconnect(&config.id).await.unwrap();
-        engine.connect(&config.id, None).await.unwrap();
+        engine.connect(&config.id, None, None).await.unwrap();
         *driver = engine.driver(&config.id).await.unwrap();
     }
 }
@@ -161,7 +161,7 @@ async fn core_import_jobs_confirmation_deadline_and_cleanup() {
         };
         config.validate().unwrap();
         engine.store.save(&config).unwrap();
-        engine.connect(&config.id, None).await.unwrap();
+        engine.connect(&config.id, None, None).await.unwrap();
         let mut driver = engine.driver(&config.id).await.unwrap();
         let table = Table {
             schema: match name {
@@ -295,7 +295,7 @@ async fn core_import_jobs_confirmation_deadline_and_cleanup() {
         blocker.id.clear();
         blocker.validate().unwrap();
         engine.store.save(&blocker).unwrap();
-        engine.connect(&blocker.id, None).await.unwrap();
+        engine.connect(&blocker.id, None, None).await.unwrap();
         let locking = engine.driver(&blocker.id).await.unwrap();
         sql(
             locking.as_ref(),
@@ -418,7 +418,7 @@ async fn core_import_jobs_confirmation_deadline_and_cleanup() {
             let failure = status.error.unwrap();
             assert!(status.result.is_none());
             if disconnect {
-                engine.connect(&config.id, None).await.unwrap();
+                engine.connect(&config.id, None, None).await.unwrap();
                 driver = engine.driver(&config.id).await.unwrap();
             } else {
                 reconnect_if_closed(&engine, &config, &mut driver, &failure).await;
@@ -432,7 +432,7 @@ async fn core_import_jobs_confirmation_deadline_and_cleanup() {
         read_only.create_file = false;
         read_only.validate().unwrap();
         engine.store.save(&read_only).unwrap();
-        engine.connect(&read_only.id, None).await.unwrap();
+        engine.connect(&read_only.id, None, None).await.unwrap();
         let source = engine
             .imports
             .prepare(file.clone(), options.clone())
@@ -531,7 +531,7 @@ async fn atomic_stream_import_contract() {
         };
         config.validate().unwrap();
         engine.store.save(&config).unwrap();
-        engine.connect(&config.id, None).await.unwrap();
+        engine.connect(&config.id, None, None).await.unwrap();
         let driver = engine.driver(&config.id).await.unwrap();
         assert!(driver.capabilities().import_rows);
         let table = Table {
@@ -754,7 +754,7 @@ async fn atomic_stream_import_contract() {
             blocker.id.clear();
             blocker.validate().unwrap();
             engine.store.save(&blocker).unwrap();
-            engine.connect(&blocker.id, None).await.unwrap();
+            engine.connect(&blocker.id, None, None).await.unwrap();
             let locking = engine.driver(&blocker.id).await.unwrap();
             sql(
                 locking.as_ref(),
@@ -851,7 +851,7 @@ async fn atomic_stream_import_contract() {
         read_only.create_file = false;
         read_only.validate().unwrap();
         engine.store.save(&read_only).unwrap();
-        engine.connect(&read_only.id, None).await.unwrap();
+        engine.connect(&read_only.id, None, None).await.unwrap();
         let ro = engine.driver(&read_only.id).await.unwrap();
         assert!(!ro.capabilities().import_rows);
         assert!(
@@ -901,7 +901,7 @@ async fn atomic_stream_import_contract() {
             observer.id.clear();
             observer.validate().unwrap();
             engine.store.save(&observer).unwrap();
-            engine.connect(&observer.id, None).await.unwrap();
+            engine.connect(&observer.id, None, None).await.unwrap();
             let observing = engine.driver(&observer.id).await.unwrap();
             assert_eq!(count(observing.as_ref(), &qualified).await, 1201);
             assert_eq!(count(observing.as_ref(), &audit).await, 1);

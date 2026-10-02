@@ -52,7 +52,7 @@ async fn real_constraint_and_trigger_inspection() {
         };
         c.validate().unwrap();
         engine.store.save(&c).unwrap();
-        engine.connect(&c.id, None).await.unwrap();
+        engine.connect(&c.id, None, None).await.unwrap();
         let driver = engine.driver(&c.id).await.unwrap();
         let base = format!("structure_{}", uuid::Uuid::new_v4().simple());
         let child = format!("{base}_child");

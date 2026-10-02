@@ -21,10 +21,22 @@ Certificate and hostname checks cannot be disabled. In Klyndb, PostgreSQL `sslmo
 
 Use `sslmode=disable` (PostgreSQL) or `tls=disabled` (MySQL/MariaDB) only for a trusted local server. PostgreSQL also accepts `sslmode=prefer`, which can fall back to plaintext; it is an explicit opt-out from the default TLS requirement. Remove the custom CA before selecting either option. A successful connection test alone does not prove encryption when a fallback/plaintext mode was selected.
 
-Client certificate authentication (mTLS), SSH tunnels/bastions and proxy configuration remain pending. A CA file is not a client identity or private key.
+## Client certificates (mutual TLS)
+
+When a server requires client authentication, choose a **Client identity** in TLS & certificates. Use a PKCS#12 `.p12` / `.pfx` archive containing your client certificate, private key and intermediate chain. Enter its separate **Certificate password**, test, then save and connect. PostgreSQL, MySQL and MariaDB support this flow.
+
+You can store the certificate password in the OS keychain, independently of the database password, or use it only for the immediate connection. A saved identity with a stored password reconnects without entering it again. To use a protected archive without remembering its password, reopen Edit connection, enter the password and choose Save & connect when reconnecting. Leaving the password blank uses an existing keychain entry, or an empty password if none exists. Removing the identity or deleting its saved connection removes the associated stored certificate password. Duplicating a connection copies the identity path, without copying passwords.
+
+The identity path is stored as the URL option `sslidentity`. Passwords are separate IPC arguments and keychain entries; they are rejected as URL parameters. Identity files have the same 1 MiB regular-file bound as CA files. Rust validates the archive using the platform TLS implementation. Klyndb-managed file buffers and transient passwords are zeroized when dropped; platform TLS/native driver libraries retain the identity and connection options needed by the live session. The private key never crosses IPC or enters local connection/workspace/history storage. Protect the identity file as a credential; Klyndb does not copy it into application state.
+
+A client identity requires verified TLS without plaintext fallback, even when using system trust roots instead of a custom CA. The server must trust the client issuer and authorize the certificate identity. PostgreSQL certificate authentication also checks the certificate name or configured mapping. Certificate format/encryption support follows the native TLS provider; standalone PEM client keys and identity-file creation/conversion remain follow-ups.
+
+SSH tunnels/bastions and proxy configuration remain pending. A CA file provides server trust; it is separate from your client identity.
 
 ## Local validation
 
 `crates/core/tests/tls.rs` tests disposable TLS-enabled PostgreSQL, MySQL and MariaDB servers. It verifies encrypted sessions, queries, metadata, cancellation and session reuse; it rejects unknown CAs, wrong hostnames, invalid/missing certificate files and custom-CA plaintext configurations. The test uses a PEM bundle with an unrelated CA preceding the correct CA, and verifies the correct root in DER form. An ordinary local test covers empty, oversized, malformed and relative CA files.
 
 Set `KLYNDB_TEST_TLS_CERT_DIR` to an absolute fixture directory containing `ca.pem`, `other-ca.pem`, `bundle.pem` and `invalid.pem` (leave `missing.pem` absent). The server certificate must have DNS SAN `localhost` without an IP SAN for the wrong-hostname check. Set any of `KLYNDB_TEST_TLS_POSTGRES_URL`, `KLYNDB_TEST_TLS_MYSQL_URL` and `KLYNDB_TEST_TLS_MARIADB_URL` to disposable local services using that certificate. The contract creates and removes its own UUID table. `scripts/check.sh` runs configured TLS contracts and explicitly reports skipped ones. Never point these tests at production databases.
+
+Mutual TLS contracts additionally use `KLYNDB_TEST_MTLS_POSTGRES_URL`, `KLYNDB_TEST_MTLS_MYSQL_URL` and `KLYNDB_TEST_MTLS_MARIADB_URL`. The fixture user must require a client certificate: PostgreSQL cert authentication for CN `klyndb_mtls`, and MySQL/MariaDB REQUIRE X509. The certificate directory must contain `client.p12` (trusted clientAuth chain), `wrong-client.p12` (untrusted issuer), with the synthetic fixture password `klyndb-fixture-only`. These disposable test credentials are not application secrets. Contracts reject missing/wrong identities and incorrect archive passwords, verify authenticated encryption and exercise metadata, cancellation, session reuse and reconnect.

@@ -39,7 +39,8 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [x] Isolated connection tests before saving; no metadata/credential writes or SQLite file creation, existing sessions/transactions preserved. A 10-second end-to-end deadline covers stalled handshakes; invalid SQLite files fail on connect.
 - [ ] Reconnect, configurable network timeouts and broader metadata.
 - [x] Verified TLS transport controls and native PEM/DER custom CA picker for PostgreSQL/MySQL/MariaDB; real encrypted-session, chain/hostname rejection, metadata, cancellation and reuse contracts pass. The packaged macOS PostgreSQL picker/test/save/reconnect workflow and encryption query are verified; backend and local CI evidence is recorded in docs/VALIDATION.md.
-- [ ] TLS client certificates and SSH tunnels/bastion support.
+- [x] PKCS#12 TLS client identities for PostgreSQL/MySQL/MariaDB with bounded native file loading, separate OS keychain passwords and real certificate-required query/metadata/cancel/reconnect contracts. Packaged desktop verification is pending.
+- [ ] SSH tunnels/bastion support and further TLS formats.
 - [ ] SQL Server, DuckDB and ClickHouse with actual integration services.
 - [x] Native estimated plans and confirmed runtime analysis: PostgreSQL JSON, MySQL JSON/TREE, MariaDB JSON and SQLite QUERY PLAN; bounded Rust tree decoding, raw output, native metrics and server warnings. Real-engine cancellation/timeouts and explicit transaction behavior verified.
 - [x] Native macOS MySQL estimated/runtime tree, raw output/copy, confirmation, server messages, cancellation and session reuse; SQLite QUERY PLAN without invented runtime metrics.

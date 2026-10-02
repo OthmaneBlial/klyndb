@@ -121,7 +121,12 @@ impl Postgres {
             .await
         }
     }
-    pub async fn connect(url: &str, password: Option<&str>, read_only: bool) -> Result<Self> {
+    pub async fn connect(
+        url: &str,
+        password: Option<&str>,
+        read_only: bool,
+        identity_password: Option<&str>,
+    ) -> Result<Self> {
         let mut address =
             url::Url::parse(url).map_err(|_| Error::new("Invalid PostgreSQL connection URL"))?;
         let roots: Vec<_> = address
@@ -132,9 +137,17 @@ impl Postgres {
         if roots.len() > 1 {
             return Err(Error::new("Choose one CA certificate file"));
         }
+        let identities: Vec<_> = address
+            .query_pairs()
+            .filter(|(k, _)| k == "sslidentity")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        if identities.len() > 1 {
+            return Err(Error::new("Choose one client identity file"));
+        }
         let remaining: Vec<_> = address
             .query_pairs()
-            .filter(|(k, _)| k != "sslrootcert")
+            .filter(|(k, _)| !["sslrootcert", "sslidentity"].contains(&k.as_ref()))
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect();
         address.set_query(None);
@@ -163,6 +176,14 @@ impl Postgres {
                         .map_err(|_| Error::new("Could not decode the CA certificate"))?,
                 );
             }
+        }
+        if let Some(path) = identities.first() {
+            if config.get_ssl_mode() != tokio_postgres::config::SslMode::Require {
+                return Err(Error::new("A client identity requires sslmode=require"));
+            }
+            let (_, identity) =
+                klyndb_driver_api::tls::load_client_identity(path, identity_password).await?;
+            builder.identity(identity);
         }
         let tls = MakeTlsConnector::new(
             builder

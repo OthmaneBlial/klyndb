@@ -245,7 +245,11 @@ pub struct Engine {
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     pub imports: Arc<import::Imports>,
 }
-async fn open_session(config: &Connection, password: Option<&str>) -> Result<Arc<dyn Session>> {
+async fn open_session(
+    config: &Connection,
+    password: Option<&str>,
+    identity_password: Option<&str>,
+) -> Result<Arc<dyn Session>> {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         match config.engine.as_str() {
             "sqlite" => Ok(Arc::new(
@@ -257,11 +261,22 @@ async fn open_session(config: &Connection, password: Option<&str>) -> Result<Arc
                 .await?,
             ) as Arc<dyn Session>),
             "postgres" => Ok(Arc::new(
-                klyndb_postgres::Postgres::connect(&config.address, password, config.read_only)
-                    .await?,
+                klyndb_postgres::Postgres::connect(
+                    &config.address,
+                    password,
+                    config.read_only,
+                    identity_password,
+                )
+                .await?,
             ) as Arc<dyn Session>),
             "mysql" => Ok(Arc::new(
-                klyndb_mysql::Mysql::connect(&config.address, password, config.read_only).await?,
+                klyndb_mysql::Mysql::connect(
+                    &config.address,
+                    password,
+                    config.read_only,
+                    identity_password,
+                )
+                .await?,
             ) as Arc<dyn Session>),
             _ => Err(Error::new("Database driver is not installed")),
         }
@@ -278,7 +293,12 @@ impl Engine {
             imports: Arc::new(import::Imports::default()),
         }
     }
-    pub async fn connect(&self, id: &str, password: Option<String>) -> Result<Capabilities> {
+    pub async fn connect(
+        &self,
+        id: &str,
+        password: Option<String>,
+        identity_password: Option<String>,
+    ) -> Result<Capabilities> {
         let config = self.store.connection(id)?;
         let password = if let Some(p) = password {
             Some(Zeroizing::new(p))
@@ -287,12 +307,25 @@ impl Engine {
         } else {
             None
         };
+        let identity_password = if config.has_client_identity() {
+            match identity_password {
+                Some(p) => Some(Zeroizing::new(p)),
+                None => klyndb_connections::password(&klyndb_connections::client_identity_key(id))?,
+            }
+        } else {
+            None
+        };
         // ponytail: serialize session creation; use per-connection gates if overlapping opens become a bottleneck.
         let mut sessions = self.sessions.lock().await;
         if let Some(existing) = sessions.get(id) {
             return Ok(existing.driver.capabilities());
         }
-        let driver = open_session(&config, password.as_deref().map(|s| s.as_str())).await?;
+        let driver = open_session(
+            &config,
+            password.as_deref().map(|s| s.as_str()),
+            identity_password.as_deref().map(|s| s.as_str()),
+        )
+        .await?;
         let capabilities = driver.capabilities();
         sessions.insert(id.into(), OpenConnection { driver, config });
         tracing::info!(engine = %self.store.connection(id)?.engine, "connection opened");
@@ -302,6 +335,7 @@ impl Engine {
         &self,
         mut config: Connection,
         password: Option<String>,
+        identity_password: Option<String>,
     ) -> Result<Capabilities> {
         let saved = !config.id.is_empty();
         let password = password.map(Zeroizing::new);
@@ -315,11 +349,27 @@ impl Engine {
         } else {
             password
         };
+        let identity_password = if config.has_client_identity() {
+            match identity_password {
+                Some(p) => Some(Zeroizing::new(p)),
+                None if saved => klyndb_connections::password(
+                    &klyndb_connections::client_identity_key(&config.id),
+                )?,
+                None => None,
+            }
+        } else {
+            None
+        };
         // Testing opens an isolated read-only session and never creates a user database file.
         config.read_only = true;
         config.create_file = false;
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            let driver = open_session(&config, password.as_deref().map(|s| s.as_str())).await?;
+            let driver = open_session(
+                &config,
+                password.as_deref().map(|s| s.as_str()),
+                identity_password.as_deref().map(|s| s.as_str()),
+            )
+            .await?;
             let probe = driver.transaction_state().await;
             let closed = driver.disconnect().await;
             probe?;
@@ -564,7 +614,7 @@ mod tests {
         };
         config.validate().unwrap();
         engine.store.save(&config).unwrap();
-        engine.connect(&config.id, None).await.unwrap();
+        engine.connect(&config.id, None, None).await.unwrap();
         let original = engine.driver(&config.id).await.unwrap();
         let (tx, _rx) = mpsc::channel(4);
         original
@@ -576,7 +626,7 @@ mod tests {
         draft.name.clear();
         assert!(
             engine
-                .test_connection(draft.clone(), None)
+                .test_connection(draft.clone(), None, None)
                 .await
                 .unwrap()
                 .transactions
@@ -592,10 +642,20 @@ mod tests {
         );
         let missing = dir.path().join("not-created.db");
         draft.address = missing.to_string_lossy().into();
-        assert!(engine.test_connection(draft.clone(), None).await.is_err());
+        assert!(
+            engine
+                .test_connection(draft.clone(), None, None)
+                .await
+                .is_err()
+        );
         assert!(!missing.exists());
         std::fs::write(&missing, b"not a SQLite database").unwrap();
-        assert!(engine.test_connection(draft.clone(), None).await.is_err());
+        assert!(
+            engine
+                .test_connection(draft.clone(), None, None)
+                .await
+                .is_err()
+        );
         assert_eq!(std::fs::read(&missing).unwrap(), b"not a SQLite database");
         for (name, engine_name) in [
             ("KLYNDB_TEST_POSTGRES_URL", "postgres"),
@@ -607,7 +667,7 @@ mod tests {
                 // No keychain entry or saved connection is created for successful server tests.
                 assert!(
                     engine
-                        .test_connection(draft.clone(), None)
+                        .test_connection(draft.clone(), None, None)
                         .await
                         .unwrap()
                         .transactions
@@ -626,7 +686,7 @@ mod tests {
         let began = std::time::Instant::now();
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(12),
-            engine.test_connection(draft, None),
+            engine.test_connection(draft, None, None),
         )
         .await
         .unwrap();
@@ -658,7 +718,7 @@ mod tests {
         connection.validate().unwrap();
         store.save(&connection).unwrap();
         let engine = Engine::new(store);
-        engine.connect(&connection.id, None).await.unwrap();
+        engine.connect(&connection.id, None, None).await.unwrap();
         assert!(
             engine
                 .start(connection.id.clone(), "DROP TABLE t".into(), 100, 5, false)

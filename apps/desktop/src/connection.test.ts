@@ -8,7 +8,11 @@ it("round-trips TLS certificate paths without dropping connection options", () =
     "require",
     ca,
   );
-  expect(tlsSettings("postgres", address)).toEqual({ mode: "require", ca });
+  expect(tlsSettings("postgres", address)).toEqual({
+    mode: "require",
+    ca,
+    identity: "",
+  });
   expect(new URL(address).searchParams.get("application_name")).toBe("Klyndb");
   expect(
     new URL(updateTls("postgres", address, "require", "")).searchParams.has(
@@ -20,6 +24,26 @@ it("round-trips TLS certificate paths without dropping connection options", () =
       "mysql",
       updateTls("mysql", "mysql://alice@localhost/db", "required", ca),
     ),
-  ).toEqual({ mode: "required", ca });
+  ).toEqual({ mode: "required", ca, identity: "" });
+  const withIdentity = updateTls(
+    "postgres",
+    address,
+    "require",
+    ca,
+    "/tmp/identity.p12",
+  );
+  expect(tlsSettings("postgres", withIdentity).identity).toBe(
+    "/tmp/identity.p12",
+  );
+  expect(
+    tlsSettings("postgres", updateTls("postgres", withIdentity, "require", ""))
+      .identity,
+  ).toBe("/tmp/identity.p12");
+  expect(
+    tlsSettings(
+      "postgres",
+      updateTls("postgres", withIdentity, "require", ca, ""),
+    ).identity,
+  ).toBe("");
   expect(() => updateTls("postgres", "not a URL", "require", ca)).toThrow();
 });

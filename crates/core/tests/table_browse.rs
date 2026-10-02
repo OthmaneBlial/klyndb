@@ -60,7 +60,7 @@ async fn real_server_filters_sort_and_pages() {
         engine.store.save(&connection).unwrap();
         assert!(
             engine
-                .connect(&connection.id, None)
+                .connect(&connection.id, None, None)
                 .await
                 .unwrap()
                 .table_browse

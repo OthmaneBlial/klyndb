@@ -21,7 +21,7 @@ async fn query(db: Arc<Postgres>, sql: &str) -> Vec<Batch> {
 async fn backpressure_cancellation_and_consumer_close() {
     let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();
     for case in 0..3 {
-        let db = Arc::new(Postgres::connect(&url, None, false).await.unwrap());
+        let db = Arc::new(Postgres::connect(&url, None, false, None).await.unwrap());
         let (tx, mut rx) = mpsc::channel(1);
         let token = CancellationToken::new();
         let cancel = token.clone();
@@ -74,7 +74,7 @@ async fn backpressure_cancellation_and_consumer_close() {
 #[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
 async fn failed_read_only_cleanup_reports_closed_session() {
     let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();
-    let db = Postgres::connect(&url, None, true).await.unwrap();
+    let db = Postgres::connect(&url, None, true, None).await.unwrap();
     let (tx, _rx) = mpsc::channel(16);
     // End only this disposable test connection, making protective ROLLBACK fail.
     let failure = tokio::time::timeout(
@@ -101,7 +101,7 @@ async fn failed_read_only_cleanup_reports_closed_session() {
 #[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
 async fn real_postgres_workflow_and_cancellation() {
     let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").expect("set a disposable test server URL");
-    let db = Arc::new(Postgres::connect(&url, None, false).await.unwrap());
+    let db = Arc::new(Postgres::connect(&url, None, false, None).await.unwrap());
     query(db.clone(),"CREATE SCHEMA IF NOT EXISTS klyndb_test; DROP TABLE IF EXISTS klyndb_test.items; CREATE TABLE klyndb_test.items(id BIGINT PRIMARY KEY, value TEXT); INSERT INTO klyndb_test.items VALUES(9223372036854775807,NULL)").await;
     let tables = db.tables().await.unwrap();
     let table = tables
@@ -239,7 +239,7 @@ async fn real_postgres_workflow_and_cancellation() {
         TransactionState::Failed
     );
     query(db.clone(), "ROLLBACK").await;
-    let ro = Postgres::connect(&url, None, true).await.unwrap();
+    let ro = Postgres::connect(&url, None, true, None).await.unwrap();
     assert!(
         ro.apply_changes(
             table.clone(),

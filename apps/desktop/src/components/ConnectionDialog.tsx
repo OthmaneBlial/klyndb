@@ -22,11 +22,18 @@ export function ConnectionDialog({
 }: {
   initial?: Connection;
   onClose: () => void;
-  onSaved: (c: Connection, password: string | null, connect: boolean) => void;
+  onSaved: (
+    c: Connection,
+    password: string | null,
+    connect: boolean,
+    identityPassword: string | null,
+  ) => void;
 }) {
   const [form, setForm] = useState(initial ?? fresh),
     [password, setPassword] = useState(""),
     [remember, setRemember] = useState(true),
+    [identityPassword, setIdentityPassword] = useState(""),
+    [rememberIdentity, setRememberIdentity] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [testStatus, setTestStatus] = useState("");
@@ -48,9 +55,12 @@ export function ConnectionDialog({
     }
   }
   const tls = tlsSettings(form.engine, form.address);
-  function changeTls(mode: string, ca: string) {
+  function changeTls(mode: string, ca: string, identity?: string) {
     try {
-      field("address", updateTls(form.engine, form.address, mode, ca));
+      field(
+        "address",
+        updateTls(form.engine, form.address, mode, ca, identity),
+      );
       setError("");
     } catch (e) {
       setError(String(e));
@@ -65,6 +75,21 @@ export function ConnectionDialog({
       setError(String(e));
     }
   }
+  async function chooseIdentity() {
+    try {
+      const path = await api("choose_client_identity_file");
+      if (path) {
+        changeTls(
+          form.engine === "mysql" ? "required" : "require",
+          tls.ca,
+          path,
+        );
+        setIdentityPassword("");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
   async function test() {
     setBusy(true);
     setError("");
@@ -73,6 +98,7 @@ export function ConnectionDialog({
       await api("test_connection", {
         connection: form,
         password: password || null,
+        identityPassword: tls.identity ? identityPassword || null : null,
       });
       setTestStatus("Connection verified. The test session has been closed.");
     } catch (e) {
@@ -96,8 +122,15 @@ export function ConnectionDialog({
         connection: form,
         password: secret || null,
         remember,
+        identityPassword: tls.identity ? identityPassword || null : null,
+        rememberIdentity,
       });
-      onSaved(connection, secret || null, connect);
+      onSaved(
+        connection,
+        secret || null,
+        connect,
+        tls.identity ? identityPassword || null : null,
+      );
       onClose();
     } catch (e) {
       setError(String(e));
@@ -129,6 +162,7 @@ export function ConnectionDialog({
                 className={form.engine === engine ? "selected" : ""}
                 onClick={() => {
                   setTestStatus("");
+                  setIdentityPassword("");
                   setForm((f) => ({
                     ...f,
                     engine,
@@ -229,13 +263,16 @@ export function ConnectionDialog({
                       Verified TLS (default)
                     </option>
                     {form.engine === "postgres" && (
-                      <option value="prefer" disabled={!!tls.ca}>
+                      <option
+                        value="prefer"
+                        disabled={!!(tls.ca || tls.identity)}
+                      >
                         Try TLS, allow plaintext fallback
                       </option>
                     )}
                     <option
                       value={form.engine === "mysql" ? "disabled" : "disable"}
-                      disabled={!!tls.ca}
+                      disabled={!!(tls.ca || tls.identity)}
                     >
                       Plaintext · trusted local server only
                     </option>
@@ -274,9 +311,80 @@ export function ConnectionDialog({
                   <small>
                     PEM bundle or DER file, up to 1 MiB. Saved as a file path.
                     Certificate and hostname checks stay enabled; a custom CA
-                    requires TLS. Client certificates are not yet supported.
+                    requires TLS.
                   </small>
                 </label>
+                <label>
+                  Client identity · optional
+                  <div className="input-action">
+                    <input
+                      aria-label="Client identity file"
+                      value={tls.identity}
+                      placeholder="PKCS#12 (.p12 / .pfx)"
+                      onChange={(e) => {
+                        changeTls(
+                          form.engine === "mysql" ? "required" : "require",
+                          tls.ca,
+                          e.target.value,
+                        );
+                        setIdentityPassword("");
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Choose client identity file"
+                      onClick={() => void chooseIdentity()}
+                    >
+                      <FolderOpen size={17} />
+                    </button>
+                    {tls.identity && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          changeTls(tls.mode, tls.ca, "");
+                          setIdentityPassword("");
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <small>
+                    Certificate chain and private key in one PKCS#12 file, up to
+                    1 MiB. Rust reads the file; keys stay outside the interface.
+                  </small>
+                </label>
+                {tls.identity && (
+                  <>
+                    <label>
+                      Certificate password
+                      <input
+                        type="password"
+                        aria-label="Client certificate password"
+                        autoComplete="off"
+                        maxLength={16384}
+                        value={identityPassword}
+                        placeholder={
+                          initial
+                            ? "Leave empty to use the stored certificate password"
+                            : "Password for the PKCS#12 file · optional"
+                        }
+                        onChange={(e) => {
+                          setIdentityPassword(e.target.value);
+                          setTestStatus("");
+                        }}
+                      />
+                    </label>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={rememberIdentity}
+                        onChange={(e) => setRememberIdentity(e.target.checked)}
+                      />{" "}
+                      Store certificate password in the OS keychain
+                    </label>
+                  </>
+                )}
               </details>
               <label>
                 Password

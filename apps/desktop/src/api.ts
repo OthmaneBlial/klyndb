@@ -188,16 +188,26 @@ interface Commands {
       connection: Connection;
       password: string | null;
       remember: boolean;
+      identityPassword?: string | null;
+      rememberIdentity?: boolean;
     };
     result: Connection;
   };
   delete_connection: { args: { id: string }; result: void };
   connect: {
-    args: { id: string; password: string | null };
+    args: {
+      id: string;
+      password: string | null;
+      identityPassword?: string | null;
+    };
     result: Capabilities;
   };
   test_connection: {
-    args: { connection: Connection; password: string | null };
+    args: {
+      connection: Connection;
+      password: string | null;
+      identityPassword?: string | null;
+    };
     result: Capabilities;
   };
   disconnect: { args: { id: string }; result: void };
@@ -261,6 +271,7 @@ interface Commands {
   history: { args: undefined; result: History[] };
   clear_history: { args: undefined; result: void };
   choose_ca_file: { args: undefined; result: string | null };
+  choose_client_identity_file: { args: undefined; result: string | null };
   choose_database_file: { args: { create: boolean }; result: string | null };
   choose_import_file: {
     args: { options: CsvOptions };

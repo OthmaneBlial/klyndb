@@ -75,7 +75,7 @@ async fn verified_tls(variable: &str, kind: &str) {
     ] {
         assert!(
             engine
-                .test_connection(draft, Some(String::new()))
+                .test_connection(draft, Some(String::new()), None)
                 .await
                 .is_err()
         );
@@ -87,12 +87,20 @@ async fn verified_tls(variable: &str, kind: &str) {
     };
     assert!(
         engine
-            .test_connection(make(None, Some("ca.pem"), disabled), Some(String::new()))
+            .test_connection(
+                make(None, Some("ca.pem"), disabled),
+                Some(String::new()),
+                None
+            )
             .await
             .is_err()
     );
     engine
-        .test_connection(make(None, Some("bundle.pem"), secure), Some(String::new()))
+        .test_connection(
+            make(None, Some("bundle.pem"), secure),
+            Some(String::new()),
+            None,
+        )
         .await
         .unwrap();
     let certs =
@@ -105,6 +113,7 @@ async fn verified_tls(variable: &str, kind: &str) {
         .test_connection(
             make(None, Some(der.to_str().unwrap()), secure),
             Some(String::new()),
+            None,
         )
         .await
         .unwrap();
@@ -112,7 +121,10 @@ async fn verified_tls(variable: &str, kind: &str) {
     let mut c = make(None, Some("bundle.pem"), secure);
     c.validate().unwrap();
     engine.store.save(&c).unwrap();
-    engine.connect(&c.id, Some(String::new())).await.unwrap();
+    engine
+        .connect(&c.id, Some(String::new()), None)
+        .await
+        .unwrap();
     let rows = query(
         &engine,
         &c.id,
@@ -212,10 +224,198 @@ async fn ca_files_are_bounded_and_validated() {
                 .await
                 .is_err()
         );
+        let error = klyndb_driver_api::tls::load_client_identity(
+            file.to_str().unwrap(),
+            Some("private-fixture-password"),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(!error.to_string().contains("private-fixture-password"));
     }
     assert!(
         klyndb_driver_api::tls::load_ca_certificates("relative.pem")
             .await
             .is_err()
     );
+}
+
+async fn mutual_tls(variable: &str, kind: &str) {
+    let base = std::env::var(variable).expect("Set the disposable certificate-required server URL");
+    let dir = PathBuf::from(
+        std::env::var("KLYNDB_TEST_TLS_CERT_DIR").expect("Set TLS fixture directory"),
+    );
+    let state = tempfile::tempdir().unwrap();
+    let engine = Engine::new(Store::open(&state.path().join("state.db")).unwrap());
+    let make = |identity: Option<&str>| {
+        let mut address = url::Url::parse(&base).unwrap();
+        address
+            .query_pairs_mut()
+            .clear()
+            .append_pair(
+                if kind == "postgres" { "sslmode" } else { "tls" },
+                if kind == "postgres" {
+                    "require"
+                } else {
+                    "required"
+                },
+            )
+            .append_pair("sslrootcert", &dir.join("ca.pem").to_string_lossy());
+        if let Some(identity) = identity {
+            address
+                .query_pairs_mut()
+                .append_pair("sslidentity", &dir.join(identity).to_string_lossy());
+        }
+        Connection {
+            id: String::new(),
+            name: "Mutual TLS contract".into(),
+            engine: kind.into(),
+            address: address.to_string(),
+            environment: "development".into(),
+            group: String::new(),
+            color: "#93d4b5".into(),
+            favorite: false,
+            read_only: false,
+            create_file: false,
+        }
+    };
+    const SECRET: &str = "klyndb-fixture-only";
+    for (identity, password) in [
+        (None, SECRET),
+        (Some("client.p12"), "wrong-password"),
+        (Some("wrong-client.p12"), SECRET),
+        (Some("missing.p12"), SECRET),
+        (Some("invalid.pem"), SECRET),
+    ] {
+        let error = engine
+            .test_connection(make(identity), Some(String::new()), Some(password.into()))
+            .await
+            .unwrap_err();
+        assert!(!error.to_string().contains(password));
+    }
+    engine
+        .test_connection(
+            make(Some("client.p12")),
+            Some(String::new()),
+            Some(SECRET.into()),
+        )
+        .await
+        .unwrap();
+    assert!(engine.store.connections().unwrap().is_empty());
+    let mut connection = make(Some("client.p12"));
+    connection.validate().unwrap();
+    engine.store.save(&connection).unwrap();
+    assert!(
+        !serde_json::to_string(&engine.store.connections().unwrap())
+            .unwrap()
+            .contains(SECRET)
+    );
+    engine
+        .connect(&connection.id, Some(String::new()), Some(SECRET.into()))
+        .await
+        .unwrap();
+    if kind == "postgres" {
+        let rows = query(
+            &engine,
+            &connection.id,
+            "SELECT ssl::text, client_dn FROM pg_stat_ssl WHERE pid=pg_backend_pid();",
+        )
+        .await;
+        assert_eq!(rows[0][0].text(), "true");
+        assert!(rows[0][1].text().contains("CN=klyndb_mtls"));
+    } else {
+        assert!(
+            !query(
+                &engine,
+                &connection.id,
+                "SHOW SESSION STATUS LIKE 'Ssl_cipher';"
+            )
+            .await[0][1]
+                .text()
+                .is_empty()
+        );
+        assert!(
+            query(&engine, &connection.id, "SELECT CURRENT_USER();").await[0][0]
+                .text()
+                .contains("klyndb_mtls")
+        );
+    }
+    let table = format!("klyndb_mtls_{}", uuid::Uuid::new_v4().simple());
+    query(
+        &engine,
+        &connection.id,
+        &format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY);"),
+    )
+    .await;
+    assert!(
+        engine
+            .driver(&connection.id)
+            .await
+            .unwrap()
+            .tables()
+            .await
+            .unwrap()
+            .iter()
+            .any(|t| t.name == table)
+    );
+    query(&engine, &connection.id, &format!("DROP TABLE {table};")).await;
+    let job = engine
+        .start(
+            connection.id.clone(),
+            if kind == "postgres" {
+                "SELECT pg_sleep(20);"
+            } else {
+                "SELECT SLEEP(20);"
+            }
+            .into(),
+            50,
+            30,
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    engine.cancel(&job).unwrap();
+    wait(&engine, &job).await;
+    assert!(
+        engine
+            .job(&job)
+            .unwrap()
+            .status()
+            .unwrap()
+            .error
+            .unwrap()
+            .to_lowercase()
+            .contains("cancel")
+    );
+    engine.release(&job).unwrap();
+    assert_eq!(
+        query(&engine, &connection.id, "SELECT 44;").await[0][0].text(),
+        "44"
+    );
+    engine.disconnect(&connection.id).await.unwrap();
+    engine
+        .connect(&connection.id, Some(String::new()), Some(SECRET.into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        query(&engine, &connection.id, "SELECT 45;").await[0][0].text(),
+        "45"
+    );
+    engine.disconnect(&connection.id).await.unwrap();
+}
+#[tokio::test]
+#[ignore = "Requires a disposable PostgreSQL server requiring client certificates"]
+async fn postgres_mutual_tls() {
+    mutual_tls("KLYNDB_TEST_MTLS_POSTGRES_URL", "postgres").await;
+}
+#[tokio::test]
+#[ignore = "Requires a disposable MySQL server requiring client certificates"]
+async fn mysql_mutual_tls() {
+    mutual_tls("KLYNDB_TEST_MTLS_MYSQL_URL", "mysql").await;
+}
+#[tokio::test]
+#[ignore = "Requires a disposable MariaDB server requiring client certificates"]
+async fn mariadb_mutual_tls() {
+    mutual_tls("KLYNDB_TEST_MTLS_MARIADB_URL", "mysql").await;
 }

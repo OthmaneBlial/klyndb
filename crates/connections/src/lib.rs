@@ -18,6 +18,13 @@ pub struct Connection {
     pub create_file: bool,
 }
 impl Connection {
+    pub fn has_client_identity(&self) -> bool {
+        if !["postgres", "mysql"].contains(&self.engine.as_str()) {
+            return false;
+        }
+        url::Url::parse(&self.address)
+            .is_ok_and(|u| u.query_pairs().any(|(k, _)| k == "sslidentity"))
+    }
     pub fn validate(&mut self) -> Result<Option<Zeroizing<String>>> {
         if self.id.is_empty() {
             self.id = uuid::Uuid::new_v4().to_string();
@@ -53,13 +60,14 @@ impl Connection {
                     }));
                 }
                 let options: &[&str] = if mysql {
-                    &["tls", "sslrootcert"]
+                    &["tls", "sslrootcert", "sslidentity"]
                 } else {
                     &[
                         "sslmode",
                         "connect_timeout",
                         "application_name",
                         "sslrootcert",
+                        "sslidentity",
                     ]
                 };
                 let mut seen = std::collections::HashSet::new();
@@ -69,12 +77,12 @@ impl Connection {
                             "Repeated connection URL parameters are not supported",
                         ));
                     }
-                    if key == "sslrootcert"
+                    if ["sslrootcert", "sslidentity"].contains(&key.as_ref())
                         && (!std::path::Path::new(value.as_ref()).is_absolute()
                             || value.len() > 16384
                             || value.contains('\0'))
                     {
-                        return Err(Error::new("Choose an absolute CA certificate file path"));
+                        return Err(Error::new("Choose an absolute certificate file path"));
                     }
                     if mysql && key == "tls" && !["required", "disabled"].contains(&value.as_ref())
                     {
@@ -94,13 +102,15 @@ impl Connection {
                     url.query_pairs_mut()
                         .append_pair(tls_key, if mysql { "required" } else { "require" });
                 }
-                if url.query_pairs().any(|(k, _)| k == "sslrootcert")
+                if url
+                    .query_pairs()
+                    .any(|(k, _)| ["sslrootcert", "sslidentity"].contains(&k.as_ref()))
                     && url.query_pairs().any(|(k, v)| {
                         k == tls_key && v != if mysql { "required" } else { "require" }
                     })
                 {
                     return Err(Error::new(
-                        "A custom CA certificate requires verified TLS without plaintext fallback",
+                        "Certificate files require verified TLS without plaintext fallback",
                     ));
                 }
                 self.address = url.to_string();
@@ -225,6 +235,10 @@ impl Store {
         Ok(())
     }
 }
+pub fn client_identity_key(id: &str) -> String {
+    format!("tls-{id}")
+}
+
 pub fn save_password(id: &str, secret: &str) -> Result<()> {
     keyring::Entry::new("io.klyndb.desktop", id).and_then(|e| e.set_password(secret)).map_err(|_| Error::new("OS credential storage is unavailable. Unlock your keychain, or use a session-only password."))
 }
@@ -274,11 +288,20 @@ mod tests {
             "mysql://alice@localhost/db?tls=disabled&sslrootcert=%2Ftmp%2Fca.pem",
             "mysql://alice@localhost/db?sslrootcert=relative.pem",
             "mysql://alice@localhost/db?sslrootcert=%2Ftmp%2Fca%00.pem",
+            "mysql://alice@localhost/db?tls=disabled&sslidentity=%2Ftmp%2Fclient.p12",
+            "mysql://alice@localhost/db?sslidentity=relative.p12",
+            "mysql://alice@localhost/db?sslidentity=%2Ftmp%2Fclient.p12&identity_password=never-store-this",
         ] {
             let mut invalid = c.clone();
             invalid.address = address.into();
             assert!(invalid.validate().is_err());
         }
+        assert_ne!(client_identity_key(&c.id), c.id);
+        let mut identity = c.clone();
+        identity.address = "mysql://alice@localhost/db?sslidentity=%2Ftmp%2Fclient.p12".into();
+        identity.validate().unwrap();
+        assert!(identity.has_client_identity());
+        assert!(identity.address.contains("tls=required"));
         let mut ca = c.clone();
         ca.address = "mysql://alice@localhost/db?sslrootcert=%2Ftmp%2Fca+bundle.pem".into();
         ca.validate().unwrap();

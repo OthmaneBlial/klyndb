@@ -32,7 +32,12 @@ fn err(e: mysql_async::Error) -> Error {
     }
 }
 impl Mysql {
-    pub async fn connect(address: &str, password: Option<&str>, read_only: bool) -> Result<Self> {
+    pub async fn connect(
+        address: &str,
+        password: Option<&str>,
+        read_only: bool,
+        identity_password: Option<&str>,
+    ) -> Result<Self> {
         let mut url = url::Url::parse(address).map_err(|_| Error::new("Invalid MySQL URL"))?;
         if url.scheme() != "mysql" {
             return Err(Error::new("Expected mysql://user@host/database"));
@@ -47,7 +52,8 @@ impl Mysql {
         }
         let mut seen = std::collections::HashSet::new();
         if url.query_pairs().any(|(k, _)| {
-            !["tls", "sslrootcert"].contains(&k.as_ref()) || !seen.insert(k.into_owned())
+            !["tls", "sslrootcert", "sslidentity"].contains(&k.as_ref())
+                || !seen.insert(k.into_owned())
         }) {
             return Err(Error::new("Unsupported MySQL URL option"));
         }
@@ -55,8 +61,12 @@ impl Mysql {
             .query_pairs()
             .find(|(k, _)| k == "sslrootcert")
             .map(|(_, v)| v.into_owned());
-        if root.is_some() && tls != "required" {
-            return Err(Error::new("A custom CA certificate requires tls=required"));
+        let identity = url
+            .query_pairs()
+            .find(|(k, _)| k == "sslidentity")
+            .map(|(_, v)| v.into_owned());
+        if (root.is_some() || identity.is_some()) && tls != "required" {
+            return Err(Error::new("Certificate files require tls=required"));
         }
         let mut ssl = SslOpts::default();
         if let Some(path) = root {
@@ -67,6 +77,14 @@ impl Mysql {
                     .map(Into::into)
                     .collect(),
             );
+        }
+        if let Some(path) = identity {
+            let (archive, _) =
+                klyndb_driver_api::tls::load_client_identity(&path, identity_password).await?;
+            ssl = ssl.with_client_identity(Some(
+                mysql_async::ClientIdentity::new(archive.to_vec().into())
+                    .with_password(identity_password.unwrap_or_default().to_owned()),
+            ));
         }
         url.set_query(None);
         let opts =

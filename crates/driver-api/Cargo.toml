@@ -12,3 +12,4 @@ tokio-util.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 native-tls = "0.2"
+zeroize = "1"

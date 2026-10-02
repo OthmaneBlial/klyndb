@@ -20,7 +20,7 @@ async fn query(db: Arc<Mysql>, sql: &str, limit: usize) -> Vec<Batch> {
 #[ignore = "requires a disposable MySQL or MariaDB server and KLYNDB_TEST_MYSQL_URL"]
 async fn real_mysql_workflow_and_cancellation() {
     let url = std::env::var("KLYNDB_TEST_MYSQL_URL").expect("set a disposable test server URL");
-    let db = Arc::new(Mysql::connect(&url, None, false).await.unwrap());
+    let db = Arc::new(Mysql::connect(&url, None, false, None).await.unwrap());
     query(db.clone(),"DROP TABLE IF EXISTS klyndb_child; DROP TABLE IF EXISTS klyndb_items; CREATE TABLE klyndb_items(id BIGINT UNSIGNED PRIMARY KEY, value TEXT, amount DECIMAL(30,8), payload BLOB, doubled DECIMAL(40,8) GENERATED ALWAYS AS (amount*2) STORED); INSERT INTO klyndb_items(id,value,amount,payload) VALUES(18446744073709551615,NULL,1234567890123456789012.12345678,X'00FF')",100).await;
     let tables = db.tables().await.unwrap();
     let table = tables.iter().find(|t| t.name == "klyndb_items").unwrap();
@@ -176,7 +176,7 @@ async fn real_mysql_workflow_and_cancellation() {
             .iter()
             .any(|b| matches!(b, Batch::Rows(_)))
     );
-    let ro = Arc::new(Mysql::connect(&url, None, true).await.unwrap());
+    let ro = Arc::new(Mysql::connect(&url, None, true, None).await.unwrap());
     query(ro.clone(), "SELECT * FROM klyndb_items", 100).await;
     for sql in [
         "UPDATE klyndb_items SET value='bad'",
@@ -201,7 +201,7 @@ async fn real_mysql_workflow_and_cancellation() {
     // Default TLS must fail against this explicitly plaintext-only local fixture.
     if url.ends_with("?tls=disabled") {
         assert!(
-            Mysql::connect(url.trim_end_matches("?tls=disabled"), None, false)
+            Mysql::connect(url.trim_end_matches("?tls=disabled"), None, false, None)
                 .await
                 .is_err()
         );
@@ -243,7 +243,7 @@ fn number(v: &str) -> Cell {
 async fn real_atomic_editing() {
     use klyndb_driver_api::Change;
     let url = std::env::var("KLYNDB_TEST_MYSQL_URL").unwrap();
-    let db = Arc::new(Mysql::connect(&url, None, false).await.unwrap());
+    let db = Arc::new(Mysql::connect(&url, None, false, None).await.unwrap());
     query(db.clone(), "DROP TABLE IF EXISTS klyndb_edits; CREATE TABLE klyndb_edits(id BIGINT UNSIGNED PRIMARY KEY, value VARCHAR(100) COLLATE utf8mb4_general_ci DEFAULT 'default', amount DECIMAL(30,8), payload BLOB, doc JSON, legacy VARCHAR(100) CHARACTER SET latin1, happened DATETIME(6), ratio DOUBLE, doubled DECIMAL(40,8) GENERATED ALWAYS AS (amount*2) STORED) ENGINE=InnoDB",100).await;
     let table = db
         .tables()
@@ -351,7 +351,7 @@ async fn real_atomic_editing() {
     )
     .await
     .remove(0);
-    let other = Arc::new(Mysql::connect(&url, None, false).await.unwrap());
+    let other = Arc::new(Mysql::connect(&url, None, false, None).await.unwrap());
     query(
         other.clone(),
         "UPDATE klyndb_edits SET value='case ' WHERE id=18446744073709551615",
@@ -539,7 +539,7 @@ async fn real_atomic_editing() {
     )
     .await
     .unwrap();
-    let ro = Mysql::connect(&url, None, true).await.unwrap();
+    let ro = Mysql::connect(&url, None, true, None).await.unwrap();
     assert!(
         ro.apply_changes(
             table,
@@ -561,8 +561,8 @@ async fn real_atomic_editing() {
 async fn real_edit_timeout_and_incomplete_rollback() {
     use klyndb_driver_api::Change;
     let url = std::env::var("KLYNDB_TEST_MYSQL_URL").unwrap();
-    let db = Arc::new(Mysql::connect(&url, None, false).await.unwrap());
-    let blocker = Arc::new(Mysql::connect(&url, None, false).await.unwrap());
+    let db = Arc::new(Mysql::connect(&url, None, false, None).await.unwrap());
+    let blocker = Arc::new(Mysql::connect(&url, None, false, None).await.unwrap());
     query(db.clone(),"DROP TABLE IF EXISTS klyndb_edit_deadline; CREATE TABLE klyndb_edit_deadline(id INT PRIMARY KEY, value TEXT) ENGINE=InnoDB; INSERT INTO klyndb_edit_deadline VALUES(1,'original'); SET SESSION innodb_lock_wait_timeout=120",100).await;
     let table = db
         .tables()

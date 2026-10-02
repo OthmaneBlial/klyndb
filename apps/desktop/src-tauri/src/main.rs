@@ -29,18 +29,40 @@ async fn save_connection(
     mut connection: Connection,
     password: Option<String>,
     remember: bool,
+    identity_password: Option<String>,
+    remember_identity: Option<bool>,
 ) -> ApiResult<Connection> {
     let secret = connection.validate().map_err(api)?;
     let password = password.map(zeroize::Zeroizing::new).or(secret);
+    let identity_password = identity_password.map(zeroize::Zeroizing::new);
+    if let Some(password) = &identity_password {
+        klyndb_driver_api::tls::validate_identity_password(password).map_err(api)?;
+    }
     engine.disconnect(&connection.id).await.map_err(api)?;
     let store = engine.store.clone();
     blocking(move || {
+        let previous = store
+            .connections()
+            .map_err(api)?
+            .into_iter()
+            .find(|c| c.id == connection.id);
         if remember {
             if let Some(password) = password {
                 klyndb_connections::save_password(&connection.id, &password).map_err(api)?;
             }
-        } else if connection.engine != "sqlite" {
+        } else if previous.as_ref().is_some_and(|c| c.engine != "sqlite") {
             klyndb_connections::delete_password(&connection.id).map_err(api)?;
+        }
+        let identity_key = klyndb_connections::client_identity_key(&connection.id);
+        if connection.has_client_identity() && remember_identity.unwrap_or(false) {
+            if let Some(password) = identity_password {
+                klyndb_connections::save_password(&identity_key, &password).map_err(api)?;
+            }
+        } else if previous
+            .as_ref()
+            .is_some_and(Connection::has_client_identity)
+        {
+            klyndb_connections::delete_password(&identity_key).map_err(api)?;
         }
         store.save(&connection).map_err(api)?;
         Ok(connection)
@@ -56,6 +78,10 @@ async fn delete_connection(engine: State<'_, Arc<Engine>>, id: String) -> ApiRes
         if c.engine != "sqlite" {
             klyndb_connections::delete_password(&id).map_err(api)?;
         }
+        if c.has_client_identity() {
+            klyndb_connections::delete_password(&klyndb_connections::client_identity_key(&id))
+                .map_err(api)?;
+        }
         store.delete(&id).map_err(api)
     })
     .await
@@ -65,17 +91,22 @@ async fn connect(
     engine: State<'_, Arc<Engine>>,
     id: String,
     password: Option<String>,
+    identity_password: Option<String>,
 ) -> ApiResult<Capabilities> {
-    engine.connect(&id, password).await.map_err(api)
+    engine
+        .connect(&id, password, identity_password)
+        .await
+        .map_err(api)
 }
 #[tauri::command]
 async fn test_connection(
     engine: State<'_, Arc<Engine>>,
     connection: Connection,
     password: Option<String>,
+    identity_password: Option<String>,
 ) -> ApiResult<Capabilities> {
     engine
-        .test_connection(connection, password)
+        .test_connection(connection, password, identity_password)
         .await
         .map_err(api)
 }
@@ -284,6 +315,15 @@ async fn clear_history(engine: State<'_, Arc<Engine>>) -> ApiResult<()> {
     blocking(move || store.clear_history().map_err(api)).await
 }
 #[tauri::command]
+async fn choose_client_identity_file() -> ApiResult<Option<String>> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_title("Choose client identity")
+        .add_filter("PKCS#12 client identity", &["p12", "pfx"])
+        .pick_file()
+        .await
+        .map(|f| f.path().to_string_lossy().into_owned()))
+}
+#[tauri::command]
 async fn choose_ca_file() -> ApiResult<Option<String>> {
     Ok(rfd::AsyncFileDialog::new()
         .set_title("Choose CA certificates")
@@ -430,6 +470,7 @@ fn main() {
             clear_history,
             choose_database_file,
             choose_ca_file,
+            choose_client_identity_file,
             choose_import_file,
             preview_import,
             start_import,
