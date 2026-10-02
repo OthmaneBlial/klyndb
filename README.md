@@ -16,7 +16,7 @@ npm ci
 npm run tauri dev
 ```
 
-Build a native package with `npm run tauri build`. macOS distribution signing and notarization require your own Apple credentials. Platform build status is reported by CI; a local macOS build does not prove Windows or Linux behavior.
+Build a native package with `npm run tauri build`. macOS distribution signing and notarization require your own Apple credentials. GitHub Actions is disabled by owner instruction; all current checks run locally. A local macOS build does not prove Windows or Linux behavior.
 
 ## Available now
 
@@ -35,17 +35,10 @@ Only implemented engines appear in the connection form. See the [compatibility m
 ## Checks
 
 ```sh
-cargo test
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo audit
-cd apps/desktop
-npm run typecheck
-npm run lint
-npm test
-npm run build
-npm audit
+./scripts/check.sh
 ```
+
+Install the audit tools once with `cargo install cargo-audit cargo-deny --locked`. The script installs locked frontend dependencies, runs formatting, Clippy, Rust/frontend tests, typecheck, production frontend build, native debug build and dependency/license audits. It runs the real PostgreSQL contract when `KLYNDB_TEST_POSTGRES_URL` is set. Keep GitHub Actions disabled.
 
 Use `cargo test -p klyndb-postgres --test integration` with `-- --ignored` and `KLYNDB_TEST_POSTGRES_URL` to run the real-server contract once installed. Never point integration tests at a production database.
 

@@ -11,3 +11,5 @@ Do not inspect, copy, translate or derive code from Beekeeper's commercially lic
 See ARCHITECTURE.md for the driver contract. Add a real-server test and update docs/COMPATIBILITY.md for new database engines. Do not expose a driver as supported because it only connects.
 
 Update `ROADMAP.md` in every meaningful implementation commit with completed behavior, validation and the next unfinished milestone. Keep its evidence consistent with `docs/VALIDATION.md`.
+
+GitHub Actions is disabled by owner instruction. Run `./scripts/check.sh` locally before each working commit. Do not re-enable Actions or add automated workflow triggers without a new explicit owner instruction. Configure real integration test URLs only for disposable databases.

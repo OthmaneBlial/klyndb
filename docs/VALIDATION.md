@@ -31,3 +31,9 @@ This proves the described workflows on the local macOS debug bundle, not all pro
 - Real native UI: opened a table, staged an update and an insert, reviewed their concrete old/new values, applied both in one batch and saw the re-read values. Staged deletion of the inserted test row required confirmation and was applied successfully.
 - Executing BEGIN showed an active-transaction indicator. Executing ROLLBACK removed it. Keyboard navigation opened the row editor.
 - Filesystem verification independently checked 10,000 records, absence of the deleted test row and the persisted updated value. Automated desktop E2E and Windows/Linux native editing remain pending.
+
+## Validation policy change — 2026-10-02
+
+By explicit owner request, GitHub Actions was disabled at repository level (`enabled: false`). Both workflow definitions were removed; active native-package run 36997559834 was cancelled. CI run 36997475264 for 0277fa8 had already completed successfully on all three OSes before this instruction. These historical results do not authorize future GitHub execution. Current validation uses `scripts/check.sh` locally; remote package verification is incomplete.
+
+`./scripts/check.sh` passed locally with the disposable PostgreSQL URL: locked dependency install, frontend checks/build/audit, workspace Rust checks/tests, real PostgreSQL integration, native build and license audit. The two previously documented upstream Rust warnings remain visible. The package run is terminal `cancelled`; no queued or active GitHub runs remained at verification.

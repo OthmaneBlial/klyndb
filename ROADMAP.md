@@ -2,6 +2,8 @@
 
 This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implementation entries are not public release claims. Keep coding through the backlog after each tested, committed slice.
 
+**Current validation policy:** GitHub Actions is disabled at the owner's request (2026-10-02). Run `./scripts/check.sh` locally for every working milestone. Keep remote Actions disabled and do not add workflow triggers without a new explicit instruction. Historical CI results below describe completed runs before this policy change.
+
 ## First vertical slice — implemented and locally validated
 
 - [x] Rust workspace and Tauri 2 / React desktop.
@@ -38,8 +40,10 @@ This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implement
 - [ ] Refine simultaneous connection lifecycle and configurable production confirmations.
 - [ ] Cold/warm interactive startup, process-tree memory, five connections, 100k rows, large schema, 100 tabs, scroll frames, query overhead/throughput/cancellation benchmark history.
 - [ ] Address measured bottlenecks without relaxing targets; compare against other clients only with reproducible evidence.
-- [ ] GitHub formatting/clippy/tests/lint/typecheck/audits, real database integration and desktop E2E.
-- [ ] macOS ARM/Intel, Windows x64 and Linux x64 CI/package verification; signed/notarized artifacts where credentials permit.
+- [x] Local CI entry point for formatting/clippy/tests/lint/typecheck/audits/native build and configured real PostgreSQL integration.
+- [ ] Extend local real-database integration and desktop E2E as new drivers are added.
+- [ ] macOS ARM/Intel, Windows x64 and Linux x64 local package verification; signed/notarized artifacts where credentials permit.
+- [x] GitHub Actions disabled; active native-package run cancelled. Remote package validation remains incomplete.
 - [ ] License inventory and audit, real screenshots, public release notes and downloadable packages.
 - [ ] Signed updater configuration when a release distribution/key infrastructure exists.
 - [ ] Driver loading/package isolation after measuring multi-driver footprint; safe extension model after core stability.
