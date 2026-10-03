@@ -18,6 +18,7 @@ import {
 } from "../api";
 import { Modal } from "./Modal";
 import { documentResultBytes } from "../transientWorkspace";
+import type { DocumentDraft } from "../workspace";
 
 function JsonTree({
   value,
@@ -101,6 +102,7 @@ export function DocumentWorkspace({
   onBusy,
   workspaceRef,
   initialState,
+  initialDraft,
   onRemember,
   onBackground,
   blocked = false,
@@ -110,6 +112,7 @@ export function DocumentWorkspace({
   onBusy: (value: boolean) => void;
   workspaceRef?: Ref<DocumentWorkspaceHandle>;
   initialState?: DocumentWorkspaceState;
+  initialDraft?: DocumentDraft;
   onRemember?: (
     state: DocumentWorkspaceState,
     bytes: number,
@@ -130,19 +133,25 @@ export function DocumentWorkspace({
     }
     return {
       kind: "document",
-      database,
+      database: initialDraft?.database ?? database,
       databases: [],
       collections: [],
-      search: "",
-      collection: null,
-      text: "{}",
-      sort: "{}",
-      aggregate: false,
+      search: initialDraft?.search ?? "",
+      collection: initialDraft?.collection
+        ? {
+            schema: initialDraft.database,
+            name: initialDraft.collection,
+            kind: "collection",
+          }
+        : null,
+      text: initialDraft?.text ?? "{}",
+      sort: initialDraft?.sort ?? "{}",
+      aggregate: initialDraft?.aggregate ?? false,
       page: null,
       applied: null,
       selected: null,
       indexes: null,
-      tree: false,
+      tree: initialDraft?.tree ?? false,
       error: "",
       message: "",
     };
@@ -492,7 +501,8 @@ export function DocumentWorkspace({
           <p className="muted">
             Extended JSON preserves ObjectId, dates, binary, decimals and 64-bit
             integers. Read-only pipelines; no $out, $merge or server-side
-            JavaScript. Drafts stay in memory.
+            JavaScript. Drafts stay in memory unless restart restoration is
+            enabled in Workspace settings.
           </p>
         </section>
         <section className="key-inspection" aria-label="Documents and indexes">

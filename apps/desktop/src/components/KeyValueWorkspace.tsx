@@ -19,6 +19,7 @@ import {
 import { formatKeyValue, keyLabel, ttlLabel } from "../keyValue";
 import { Modal } from "./Modal";
 import { keyResultBytes } from "../transientWorkspace";
+import type { KeyDraft } from "../workspace";
 
 export function KeyReply({ value }: { value: KeyValue }) {
   return (
@@ -66,6 +67,7 @@ export function KeyValueWorkspace({
   onBusy,
   workspaceRef,
   initialState,
+  initialDraft,
   onRemember,
   onBackground,
   blocked = false,
@@ -77,6 +79,7 @@ export function KeyValueWorkspace({
   onBusy: (busy: boolean) => void;
   workspaceRef?: Ref<KeyWorkspaceHandle>;
   initialState?: KeyWorkspaceState;
+  initialDraft?: KeyDraft;
   onRemember?: (
     state: KeyWorkspaceState,
     bytes: number,
@@ -89,7 +92,7 @@ export function KeyValueWorkspace({
     () =>
       initialState ?? {
         kind: "key_value",
-        pattern: "*",
+        pattern: initialDraft?.pattern ?? "*",
         page: null,
         applied: "*",
         selected: null,
@@ -408,7 +411,8 @@ export function KeyValueWorkspace({
           <p className="muted">
             Examples: ["GET", "cache:key"] · ["HSET", "profile:42", "name",
             "Ada"]. Data commands only. No scripts, blocking calls or session
-            changes. Drafts remain in memory.
+            changes. Drafts remain in memory unless restart restoration is
+            enabled in Workspace settings.
           </p>
           {busy && (
             <p role="status">

@@ -90,7 +90,7 @@ A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and a
 | **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export on SQLite/PostgreSQL/MySQL/MariaDB, DuckDB and SQL Server source builds. [Diagram guide](docs/DIAGRAMS.md). |
 | **📥 Import CSV / JSON / SQL** | Native file pickers, mapped CSV/JSON inserts on six relational engines (DuckDB/SQL Server in source builds), and SQL scripts on the same engines with review, transaction visibility and progress/cancel; SQL Server preserves native GO batches. [Import guide](docs/IMPORTS.md). |
 | **📤 Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
-| **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
+| **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. Source builds add opt-in MongoDB/Redis draft restoration after restart, without automatic execution. |
 
 Server passwords stay in the **OS keychain**. TLS verification is enabled by default, with optional [CA files and client certificates](docs/TLS.md) for private servers, plus [SSH tunnels with verified host keys](docs/SSH.md). Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 

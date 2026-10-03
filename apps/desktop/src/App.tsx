@@ -104,9 +104,12 @@ const RoutineBrowser = lazy(() =>
 import {
   defaults,
   restoreWorkspace,
+  serializeWorkspace,
+  withNativeDraft,
   workspaceKind,
   type Preferences,
   type Tab,
+  type NativeDraft,
 } from "./workspace";
 
 interface SavedQuery {
@@ -191,7 +194,6 @@ export default function App() {
   const [nativeVersions, setNativeVersions] = useState<Record<string, number>>(
     {},
   );
-  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const applyingRef = useRef(applying);
   applyingRef.current = applying;
   const importDialogRef = useRef(importDialog);
@@ -261,6 +263,17 @@ export default function App() {
       ),
     [],
   );
+  const rememberDraft = useCallback((id: string, draft: NativeDraft) => {
+    setTabs((previous) => {
+      let changed = false;
+      const next = previous.map((tab) => {
+        const updated = tab.id === id ? withNativeDraft(tab, draft) : tab;
+        changed ||= updated !== tab;
+        return updated;
+      });
+      return changed ? next : previous;
+    });
+  }, []);
   const schema = useMemo(
     () => ({
       tables: tables[current?.connection ?? ""] ?? [],
@@ -306,8 +319,8 @@ export default function App() {
       })
       .catch((e) => report(`Could not load local state: ${e}`));
   }, [report]);
-  const workspaceRef = useRef({ version: 1, tabs, active, preferences });
-  workspaceRef.current = { version: 1, tabs, active, preferences };
+  const workspaceRef = useRef({ tabs, active, preferences });
+  workspaceRef.current = { tabs, active, preferences };
   const loadedRef = useRef(loaded);
   loadedRef.current = loaded;
   const saveQueue = useRef(Promise.resolve());
@@ -315,7 +328,14 @@ export default function App() {
     saveQueue.current = saveQueue.current
       .catch(() => {})
       .then(() =>
-        api("save_document", { id: "workspace", data: workspaceRef.current }),
+        api("save_document", {
+          id: "workspace",
+          data: serializeWorkspace(
+            workspaceRef.current.tabs,
+            workspaceRef.current.active,
+            workspaceRef.current.preferences,
+          ),
+        }),
       );
     return saveQueue.current;
   }, []);
@@ -468,11 +488,6 @@ export default function App() {
       delete next[id];
       return next;
     });
-    setKeyDrafts((previous) => {
-      const next = { ...previous };
-      delete next[id];
-      return next;
-    });
     const result = statuses[id];
     delete queryOrigins.current[id];
     if (result) await api("release_result", { id: result.id });
@@ -516,17 +531,13 @@ export default function App() {
     });
     documentStates.current.forget(id);
     keyStates.current.forget(id);
-    setKeyDrafts((previous) => {
-      const next = { ...previous };
-      delete next[id];
-      return next;
-    });
     updateTab(id, {
       connection,
       kind: workspaceKind(
         connected[connection],
         connections.find((c) => c.id === connection)?.engine,
       ),
+      draft: undefined,
     });
     setView("results");
   }
@@ -1617,6 +1628,11 @@ export default function App() {
                   ready={!!connected[current.connection]?.document_queries}
                   workspaceRef={documentWorkspaceRef}
                   initialState={documentStates.current.restore(current.id)}
+                  initialDraft={
+                    current.draft?.kind === "document"
+                      ? current.draft
+                      : undefined
+                  }
                   onBackground={documentStates.current.background(
                     current.id,
                     documentResultBytes,
@@ -1626,14 +1642,24 @@ export default function App() {
                         [current.id]: (previous[current.id] ?? 0) + 1,
                       })),
                   )}
-                  onRemember={(state, bytes, clear) =>
+                  onRemember={(state, bytes, clear) => {
                     documentStates.current.remember(
                       current.id,
                       state,
                       bytes,
                       clear,
-                    )
-                  }
+                    );
+                    rememberDraft(current.id, {
+                      kind: "document",
+                      database: state.database,
+                      collection: state.collection?.name ?? "",
+                      search: state.search,
+                      text: state.text,
+                      sort: state.sort,
+                      aggregate: state.aggregate,
+                      tree: state.tree,
+                    });
+                  }}
                   blocked={!!applying[current.id]}
                   onBusy={(value) => {
                     applyingRef.current = {
@@ -1658,6 +1684,11 @@ export default function App() {
                   connection={connection}
                   workspaceRef={keyWorkspaceRef}
                   initialState={keyStates.current.restore(current.id)}
+                  initialDraft={
+                    current.draft?.kind === "key_value"
+                      ? current.draft
+                      : undefined
+                  }
                   onBackground={keyStates.current.background(
                     current.id,
                     keyResultBytes,
@@ -1667,17 +1698,33 @@ export default function App() {
                         [current.id]: (previous[current.id] ?? 0) + 1,
                       })),
                   )}
-                  onRemember={(state, bytes, clear) =>
-                    keyStates.current.remember(current.id, state, bytes, clear)
-                  }
+                  onRemember={(state, bytes, clear) => {
+                    keyStates.current.remember(current.id, state, bytes, clear);
+                    rememberDraft(current.id, {
+                      kind: "key_value",
+                      pattern: state.pattern,
+                      command:
+                        current.draft?.kind === "key_value"
+                          ? current.draft.command
+                          : '["PING"]',
+                    });
+                  }}
                   blocked={!!applying[current.id]}
                   ready={!!connected[current.connection]?.key_value}
-                  draft={keyDrafts[current.id] ?? '["PING"]'}
+                  draft={
+                    current.draft?.kind === "key_value"
+                      ? current.draft.command
+                      : '["PING"]'
+                  }
                   onDraft={(text) =>
-                    setKeyDrafts((previous) => ({
-                      ...previous,
-                      [current.id]: text,
-                    }))
+                    rememberDraft(current.id, {
+                      kind: "key_value",
+                      pattern:
+                        current.draft?.kind === "key_value"
+                          ? current.draft.pattern
+                          : "*",
+                      command: text,
+                    })
                   }
                   onBusy={(value) => {
                     applyingRef.current = {

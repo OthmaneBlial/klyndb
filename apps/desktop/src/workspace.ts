@@ -1,10 +1,27 @@
 import type { Capabilities } from "./api";
+export interface DocumentDraft {
+  kind: "document";
+  database: string;
+  collection: string;
+  search: string;
+  text: string;
+  sort: string;
+  aggregate: boolean;
+  tree: boolean;
+}
+export interface KeyDraft {
+  kind: "key_value";
+  pattern: string;
+  command: string;
+}
+export type NativeDraft = DocumentDraft | KeyDraft;
 export interface Tab {
   id: string;
   name: string;
   connection: string;
   sql: string;
   kind?: "sql" | "key_value" | "document";
+  draft?: NativeDraft;
 }
 export interface Preferences {
   theme: "dark" | "light";
@@ -12,6 +29,7 @@ export interface Preferences {
   timeout: number;
   fontSize: number;
   sidebar: boolean;
+  restoreNativeDrafts: boolean;
 }
 export const defaults: Preferences = {
   theme: "dark",
@@ -19,7 +37,86 @@ export const defaults: Preferences = {
   timeout: 60,
   fontSize: 13,
   sidebar: true,
+  restoreNativeDrafts: false,
 };
+function restoreDraft(
+  value: unknown,
+  kind: Tab["kind"],
+): NativeDraft | undefined {
+  if (typeof value !== "object" || value === null) return;
+  const d = value as Record<string, unknown>;
+  const strings = (keys: string[]) =>
+    keys.every(
+      (key) =>
+        typeof d[key] === "string" &&
+        new TextEncoder().encode(d[key]).byteLength <= 1024 * 1024,
+    );
+  if (
+    kind === "document" &&
+    d.kind === kind &&
+    strings(["database", "collection", "search", "text", "sort"]) &&
+    typeof d.aggregate === "boolean" &&
+    typeof d.tree === "boolean"
+  )
+    return {
+      kind,
+      database: d.database as string,
+      collection: d.collection as string,
+      search: d.search as string,
+      text: d.text as string,
+      sort: d.sort as string,
+      aggregate: d.aggregate,
+      tree: d.tree,
+    };
+  if (
+    kind === "key_value" &&
+    d.kind === kind &&
+    strings(["pattern", "command"])
+  )
+    return { kind, pattern: d.pattern as string, command: d.command as string };
+}
+
+export function withNativeDraft(tab: Tab, draft: NativeDraft): Tab {
+  if (tab.kind !== draft.kind) return tab;
+  if (
+    tab.draft &&
+    Object.entries(draft).every(
+      ([key, value]) =>
+        (tab.draft as unknown as Record<string, unknown>)[key] === value,
+    )
+  )
+    return tab;
+  return { ...tab, draft };
+}
+
+export function serializeWorkspace(
+  tabs: Tab[],
+  active: string,
+  preferences: Preferences,
+) {
+  if (
+    preferences.restoreNativeDrafts &&
+    tabs.some((tab) => tab.draft && !restoreDraft(tab.draft, tab.kind))
+  )
+    throw new Error(
+      "A MongoDB or Redis draft exceeds 1 MiB per text field or has an invalid shape. Shorten it or turn off draft restoration before saving.",
+    );
+  return {
+    version: 2,
+    tabs: tabs.map(({ id, name, connection, sql, kind, draft }) => ({
+      id,
+      name,
+      connection,
+      sql,
+      kind,
+      ...(preferences.restoreNativeDrafts
+        ? { draft: restoreDraft(draft, kind) }
+        : {}),
+    })),
+    active,
+    preferences,
+  };
+}
 export function restoreWorkspace(value: unknown): {
   tabs: Tab[];
   active: string;
@@ -45,6 +142,16 @@ export function restoreWorkspace(value: unknown): {
               t.kind === "document"),
         )
         .slice(0, 100)
+        .map(({ id, name, connection, sql, kind, draft }) => ({
+          id,
+          name,
+          connection,
+          sql,
+          kind,
+          ...(data?.preferences?.restoreNativeDrafts === true
+            ? { draft: restoreDraft(draft, kind) }
+            : {}),
+        }))
     : [];
   const p = data?.preferences;
   return {
@@ -70,6 +177,7 @@ export function restoreWorkspace(value: unknown): {
           ? p.fontSize
           : defaults.fontSize,
       sidebar: p?.sidebar !== false,
+      restoreNativeDrafts: p?.restoreNativeDrafts === true,
     },
   };
 }

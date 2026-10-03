@@ -83,6 +83,28 @@ export function SettingsDialog({
             }
           />
         </label>
+        <label>
+          <span className="check">
+            <input
+              type="checkbox"
+              checked={preferences.restoreNativeDrafts}
+              onChange={(e) =>
+                setPreferences((p) => ({
+                  ...p,
+                  restoreNativeDrafts: e.target.checked,
+                }))
+              }
+            />
+            Restore MongoDB and Redis drafts after restart
+          </span>
+          <small>
+            Off by default. Saves query text, target collections, key patterns
+            and command arguments locally without encryption; literals may be
+            sensitive. Results and document-edit drafts are excluded. Turning
+            this off removes saved drafts on the next workspace save and keeps
+            current drafts in memory. Restored requests never run automatically.
+          </small>
+        </label>
         <div className="privacy-note">
           <Shield size={18} />
           <p>
