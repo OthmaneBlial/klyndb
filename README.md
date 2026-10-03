@@ -56,11 +56,11 @@
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes and available table DDL, with foreign keys, constraints and triggers where supported. [Engine matrix](docs/COMPATIBILITY.md). |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
-| **✍️ Edit data** | Staged SQLite/PostgreSQL, MySQL/MariaDB InnoDB and SQL Server source-build inserts, updates and deletes; review, bound values and optimistic conflicts. |
+| **✍️ Edit data** | Staged inserts, updates and deletes on SQLite/PostgreSQL, MySQL/MariaDB InnoDB, DuckDB scalar base tables and SQL Server disk-based tables (DuckDB/SQL Server in source builds); review, bound values and optimistic conflicts. |
 | **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis, including SQL Server source-build rows/execution counts. [Plan guide](docs/EXPLAIN.md). |
 | **🛡️ Stay in control** | Cancellation, configurable connection/query timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
-| **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export on SQLite/PostgreSQL/MySQL/MariaDB and SQL Server source builds. [Diagram guide](docs/DIAGRAMS.md). |
-| **📥 Import CSV / JSON / SQL** | Native file pickers, mapped CSV/JSON inserts on five relational engines (SQL Server in source builds), and SQL scripts on the same engines with review, transaction visibility and progress/cancel; SQL Server preserves native GO batches. [Import guide](docs/IMPORTS.md). |
+| **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export on SQLite/PostgreSQL/MySQL/MariaDB, DuckDB and SQL Server source builds. [Diagram guide](docs/DIAGRAMS.md). |
+| **📥 Import CSV / JSON / SQL** | Native file pickers, mapped CSV/JSON inserts on six relational engines (DuckDB/SQL Server in source builds), and SQL scripts on the same engines with review, transaction visibility and progress/cancel; SQL Server preserves native GO batches. [Import guide](docs/IMPORTS.md). |
 | **📤 Export** | CSV, typed JSON/JSONL, SQL INSERT and Markdown through native save dialogs. |
 | **💾 Keep your workspace** | Restored workspace, SQL history, saved/favorite queries, theme settings and a command palette. |
 
@@ -74,7 +74,7 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MySQL | ✓ | ✓ · InnoDB | MySQL 8.4.11 |
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
-| DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 · native macOS query workflow; source ER diagrams/SQL import |
+| DuckDB · source builds | ✓ | ✓ · scalar base tables; finish SQL transactions first | Embedded DuckDB 1.5.6 · native macOS query workflow; source editing/imports/ER diagrams |
 | ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
 | SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts; native UI acceptance pending |
 

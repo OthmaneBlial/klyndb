@@ -28,31 +28,6 @@ fn bind(query: &mut Query<'static>, value: &Cell) -> Result<()> {
     }
     Ok(())
 }
-fn normalized_number(s: &str) -> Result<(String, i64)> {
-    let invalid = || Error::new("Enter a valid numeric literal");
-    let s = serde_json::from_str::<serde_json::Number>(s)
-        .map_err(|_| invalid())?
-        .to_string();
-    let (mantissa, exponent) = s.split_once(['e', 'E']).unwrap_or((&s, "0"));
-    let exponent = exponent.parse::<i64>().map_err(|_| invalid())?;
-    let negative = mantissa.starts_with('-');
-    let mantissa = mantissa.trim_start_matches('-');
-    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
-    let digits = format!("{whole}{fraction}");
-    let digits = digits.trim_start_matches('0');
-    if digits.is_empty() {
-        return Ok(("0".into(), 0));
-    }
-    let significant = digits.trim_end_matches('0');
-    let scale = (fraction.len() as i64)
-        .checked_sub(exponent)
-        .and_then(|n| n.checked_sub((digits.len() - significant.len()) as i64))
-        .ok_or_else(invalid)?;
-    Ok((
-        format!("{}{significant}", if negative { "-" } else { "" }),
-        scale,
-    ))
-}
 async fn run(
     client: &mut NativeClient,
     query: Query<'static>,

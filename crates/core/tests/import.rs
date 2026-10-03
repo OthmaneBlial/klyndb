@@ -101,7 +101,7 @@ async fn csv_stream(
     written
 }
 async fn finished(engine: &Engine, id: &str) -> ImportStatus {
-    tokio::time::timeout(Duration::from_secs(12), async {
+    tokio::time::timeout(Duration::from_secs(65), async {
         loop {
             let status = engine.imports.status(id).unwrap();
             if status.done {
@@ -112,6 +112,326 @@ async fn finished(engine: &Engine, id: &str) -> ImportStatus {
     })
     .await
     .unwrap()
+}
+
+#[tokio::test]
+async fn duckdb_csv_json_jobs_exact_roundtrips_confirmation_and_atomic_failures() {
+    use klyndb_import::ImportFormat;
+    let directory = tempfile::tempdir().unwrap();
+    let engine = Engine::new(Store::open(&directory.path().join("state.db")).unwrap());
+    let mut config = Connection {
+        id: String::new(),
+        name: "DuckDB import".into(),
+        engine: "duckdb".into(),
+        address: directory
+            .path()
+            .join("native.duckdb")
+            .to_string_lossy()
+            .into_owned(),
+        environment: "production".into(),
+        group: String::new(),
+        color: "#93d4b5".into(),
+        favorite: false,
+        read_only: false,
+        create_file: true,
+    };
+    config.validate().unwrap();
+    engine.store.save(&config).unwrap();
+    engine.connect(&config.id, None, None, None).await.unwrap();
+    let driver = engine.driver(&config.id).await.unwrap();
+    let table = Table {
+        schema: "main".into(),
+        name: "imports".into(),
+        kind: "table".into(),
+    };
+    sql(driver.as_ref(), "CREATE TABLE imports(id UBIGINT PRIMARY KEY,label VARCHAR,precise DECIMAL(38,18),derived BIGINT GENERATED ALWAYS AS(length(label)))".into()).await.unwrap();
+    let mapping = [ValueKind::Number, ValueKind::Text, ValueKind::Number]
+        .into_iter()
+        .zip(["id", "label", "precise"])
+        .map(|(kind, column)| Mapping {
+            column: Some(column.into()),
+            kind,
+        })
+        .collect::<Vec<_>>();
+    let file = directory.path().join("rows.data");
+    let label = "  é, \"quoted\"\nnext  ";
+    let precise = "12345678901234567890.123456789012345678";
+    let expected = (1..=1201)
+        .map(|id| {
+            vec![
+                Cell::Number(id.to_string()),
+                if id == 1 {
+                    Cell::Null
+                } else {
+                    Cell::Text(label.into())
+                },
+                Cell::Number(precise.into()),
+            ]
+        })
+        .collect::<Vec<_>>();
+    for format in [
+        ImportFormat::Csv,
+        ImportFormat::Json,
+        ImportFormat::KlyndbJson,
+    ] {
+        let options = ImportOptions {
+            format,
+            null_value: Some("\\N".into()),
+            ..Default::default()
+        };
+        let good = match format {
+            ImportFormat::Csv => format!(
+                "id,label,precise\n{}",
+                (1..=1201)
+                    .map(|id| format!(
+                        "{id},{},{precise}\n",
+                        if id == 1 {
+                            "\\N".into()
+                        } else {
+                            format!("\"{}\"", label.replace('"', "\"\""))
+                        }
+                    ))
+                    .collect::<String>()
+            )
+            .into_bytes(),
+            ImportFormat::Json => format!(
+                "[{}]",
+                (1..=1201)
+                    .map(|id| format!(
+                        "{{\"id\":{id},\"label\":{},\"precise\":{precise}}}",
+                        if id == 1 {
+                            "null".into()
+                        } else {
+                            serde_json::to_string(label).unwrap()
+                        }
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+            .into_bytes(),
+            ImportFormat::KlyndbJson => {
+                let mut bytes = vec![];
+                klyndb_export::export(
+                    &mut bytes,
+                    &["id".into(), "label".into(), "precise".into()],
+                    expected.clone().into_iter().map(Ok),
+                    "json",
+                    "",
+                )
+                .unwrap();
+                bytes
+            }
+        };
+        std::fs::write(&file, &good).unwrap();
+        let source = engine
+            .imports
+            .prepare(file.clone(), options.clone())
+            .await
+            .unwrap();
+        assert_eq!(source.preview.rows[0][2].as_deref(), Some(precise));
+        let request = |source: String, confirmed: bool| ImportRequest {
+            source,
+            connection: config.id.clone(),
+            table: table.clone(),
+            options: options.clone(),
+            mapping: mapping.clone(),
+            timeout_seconds: 60,
+            confirmed,
+        };
+        assert!(
+            engine
+                .start_import(request(source.id.clone(), false))
+                .await
+                .unwrap_err()
+                .message
+                .contains("Confirmation")
+        );
+        let mut generated = request(source.id.clone(), true);
+        generated.mapping[0].column = Some("derived".into());
+        assert!(engine.start_import(generated).await.is_err());
+        std::fs::write(&file, b"changed after selection").unwrap();
+        let id = engine
+            .start_import(request(source.id.clone(), true))
+            .await
+            .unwrap();
+        let status = finished(&engine, &id).await;
+        engine.imports.release(&id).unwrap();
+        assert!(status.error.is_none(), "{:?}: {:?}", format, status.error);
+        assert_eq!(status.read_rows, 1201);
+        let result = status.result.unwrap();
+        assert_eq!(result.affected, 1201);
+        assert!(!result.pending_transaction);
+        assert_eq!(status.transaction, Some(TransactionState::Idle));
+        assert_eq!(
+            sql(
+                driver.as_ref(),
+                "SELECT id,label,precise FROM imports ORDER BY id".into()
+            )
+            .await
+            .unwrap(),
+            expected
+        );
+        // Export the stored native values through the real core result spool.
+        let job_id = engine
+            .start(
+                config.id.clone(),
+                "SELECT id,label,precise FROM imports ORDER BY id".into(),
+                2000,
+                30,
+                true,
+            )
+            .await
+            .unwrap();
+        let job = engine.job(&job_id).unwrap();
+        while !job.status().unwrap().done {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(job.status().unwrap().error.is_none());
+        let mut exported = vec![];
+        assert_eq!(job.export(&mut exported, 0, "json", "").unwrap(), 1201);
+        sql(driver.as_ref(), "DELETE FROM imports".into())
+            .await
+            .unwrap();
+        std::fs::write(&file, &exported).unwrap();
+        let typed = ImportOptions {
+            format: ImportFormat::KlyndbJson,
+            ..Default::default()
+        };
+        let source = engine
+            .imports
+            .prepare(file.clone(), typed.clone())
+            .await
+            .unwrap();
+        let mut request = request(source.id.clone(), true);
+        request.options = typed;
+        let id = engine.start_import(request).await.unwrap();
+        assert!(finished(&engine, &id).await.error.is_none());
+        engine.imports.release(&id).unwrap();
+        assert_eq!(
+            sql(
+                driver.as_ref(),
+                "SELECT id,label,precise FROM imports ORDER BY id".into()
+            )
+            .await
+            .unwrap(),
+            expected
+        );
+        sql(driver.as_ref(), "DELETE FROM imports".into())
+            .await
+            .unwrap();
+    }
+    let options = ImportOptions::default();
+    let request = |source: String| ImportRequest {
+        source,
+        connection: config.id.clone(),
+        table: table.clone(),
+        options: options.clone(),
+        mapping: mapping.clone(),
+        timeout_seconds: 60,
+        confirmed: true,
+    };
+    // A failure beyond multiple native batches must roll back every prefix row.
+    let prefix = format!(
+        "id,label,precise\n{}",
+        (1..=1201)
+            .map(|id| format!("{id},prefix,{precise}\n"))
+            .collect::<String>()
+    );
+    for suffix in [
+        format!("1,duplicate,{precise}\n"),
+        "1202,broken,not-a-number\n".into(),
+    ] {
+        std::fs::write(&file, format!("{prefix}{suffix}")).unwrap();
+        let source = engine
+            .imports
+            .prepare(file.clone(), options.clone())
+            .await
+            .unwrap();
+        let id = engine.start_import(request(source.id)).await.unwrap();
+        let status = finished(&engine, &id).await;
+        engine.imports.release(&id).unwrap();
+        assert!(status.error.is_some());
+        assert_eq!(status.transaction, Some(TransactionState::Idle));
+        assert_eq!(count(driver.as_ref(), "imports").await, 0);
+    }
+    std::fs::write(&file, format!("id,label,precise\n2,new,{precise}\n")).unwrap();
+    let source = engine
+        .imports
+        .prepare(file.clone(), options.clone())
+        .await
+        .unwrap();
+    sql(
+        driver.as_ref(),
+        "BEGIN; INSERT INTO imports(id,label,precise) VALUES(1,'caller',1)".into(),
+    )
+    .await
+    .unwrap();
+    let id = engine.start_import(request(source.id)).await.unwrap();
+    let status = finished(&engine, &id).await;
+    engine.imports.release(&id).unwrap();
+    assert!(status.error.unwrap().contains("no savepoints"));
+    assert_eq!(status.transaction, Some(TransactionState::Active));
+    assert_eq!(count(driver.as_ref(), "imports").await, 1);
+    sql(driver.as_ref(), "ROLLBACK".into()).await.unwrap();
+    let change = Change::Insert {
+        values: BTreeMap::from([("id".into(), Cell::Number("3".into()))]),
+    };
+    assert!(
+        engine
+            .apply_changes(&config.id, table.clone(), vec![change.clone()], false)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        engine
+            .apply_changes(&config.id, table.clone(), vec![change.clone()], true)
+            .await
+            .unwrap()
+            .affected,
+        1
+    );
+    // The production job deadline interrupts native default evaluation, then rolls back.
+    sql(driver.as_ref(), "CREATE TABLE slow(id BIGINT PRIMARY KEY,label VARCHAR,precise DECIMAL(38,18),expensive VARCHAR DEFAULT sha256(repeat(uuid()::VARCHAR,1000000)))".into()).await.unwrap();
+    std::fs::write(&file, &prefix).unwrap();
+    let source = engine
+        .imports
+        .prepare(file.clone(), options.clone())
+        .await
+        .unwrap();
+    let mut timed = request(source.id);
+    timed.table.name = "slow".into();
+    timed.timeout_seconds = 1;
+    let id = engine.start_import(timed).await.unwrap();
+    let status = finished(&engine, &id).await;
+    engine.imports.release(&id).unwrap();
+    assert!(status.error.unwrap().contains("timed out"));
+    assert_eq!(status.transaction, Some(TransactionState::Idle));
+    assert_eq!(count(driver.as_ref(), "slow").await, 0);
+    assert_eq!(
+        sql(driver.as_ref(), "SELECT 42".into()).await.unwrap()[0][0].text(),
+        "42"
+    );
+    engine.disconnect(&config.id).await.unwrap();
+    config.read_only = true;
+    engine.store.save(&config).unwrap();
+    let caps = engine.connect(&config.id, None, None, None).await.unwrap();
+    assert!(!caps.edit_rows && !caps.import_rows);
+    let readonly = engine.driver(&config.id).await.unwrap();
+    assert!(!readonly.inspect(&table).await.unwrap().editable);
+    assert!(
+        readonly
+            .apply_changes(table.clone(), vec![change])
+            .await
+            .is_err()
+    );
+    let (_, rx) = mpsc::channel(1);
+    assert!(
+        readonly
+            .insert_stream(table, rx, CancellationToken::new())
+            .await
+            .is_err()
+    );
+    engine.disconnect(&config.id).await.unwrap();
 }
 async fn reconnect_if_closed(
     engine: &Engine,

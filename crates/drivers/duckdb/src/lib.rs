@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+mod edit;
 use duckdb::arrow::{
     array::{
         Array, BinaryArray, BooleanArray, Decimal128Array, FixedSizeBinaryArray, LargeBinaryArray,
@@ -107,6 +108,33 @@ impl DuckDb {
             read_only,
         })
     }
+    async fn write(
+        &self,
+        table: Table,
+        source: edit::Source,
+        cancel: CancellationToken,
+        timeout: std::time::Duration,
+    ) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let connection = self.connection.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut guard = connection.lock().map_err(err)?;
+            let conn = guard
+                .as_ref()
+                .and_then(|file| file.connection.as_ref())
+                .ok_or_else(|| Error::new("Connection is closed"))?;
+            let (result, poison) = edit::write(conn, &table, source, cancel, timeout);
+            if poison {
+                guard.take();
+            }
+            result
+        })
+        .await
+        .map_err(err)?
+    }
+
     async fn with<T: Send + 'static>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T> + Send + 'static,
@@ -156,6 +184,76 @@ fn foreign_keys(conn: &Connection, table: &Table) -> Result<Vec<ForeignKey>> {
         .collect::<duckdb::Result<Vec<_>>>()
         .map_err(err)?;
     Ok(group_foreign_keys(rows))
+}
+
+fn inspect(conn: &Connection, table: &Table, read_only: bool) -> Result<TableInfo> {
+    let args = [&table.schema, &table.name];
+    let mut stmt = conn.prepare("SELECT column_name,data_type,is_nullable,column_default, EXISTS(SELECT 1 FROM duckdb_constraints() k WHERE k.database_name=c.database_name AND k.schema_name=c.schema_name AND k.table_name=c.table_name AND constraint_type='PRIMARY KEY' AND list_contains(constraint_column_names,c.column_name)) FROM duckdb_columns() c WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY column_index").map_err(err)?;
+    let mut columns = stmt
+        .query_map(args, |r| {
+            Ok(Column {
+                name: r.get(0)?,
+                data_type: r.get(1)?,
+                nullable: r.get(2)?,
+                default: r.get(3)?,
+                primary_key: r.get(4)?,
+                generated: false,
+            })
+        })
+        .map_err(err)?
+        .collect::<duckdb::Result<Vec<_>>>()
+        .map_err(err)?;
+    if columns.is_empty() {
+        return Err(Error::new("Table no longer exists. Refresh the schema."));
+    }
+    let ddl: Option<String> = conn.query_row("SELECT sql FROM duckdb_tables() WHERE database_name=current_database() AND schema_name=? AND table_name=? UNION ALL SELECT sql FROM duckdb_views() WHERE database_name=current_database() AND schema_name=? AND view_name=?", [&table.schema, &table.name, &table.schema, &table.name], |r| r.get(0)).map_err(err)?;
+    let mut stmt = conn.prepare("SELECT index_name,is_unique,sql FROM duckdb_indexes() WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY index_name").map_err(err)?;
+    let indexes = stmt.query_map(args, |r| Ok(serde_json::json!({"name":r.get::<_, String>(0)?, "unique":r.get::<_, bool>(1)?, "definition":r.get::<_, String>(2)?}))).map_err(err)?.collect::<duckdb::Result<Vec<_>>>().map_err(err)?;
+    let mut stmt = conn.prepare("SELECT constraint_name,constraint_type,constraint_text FROM duckdb_constraints() WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY constraint_index").map_err(err)?;
+    let constraints = stmt
+        .query_map(args, |r| {
+            Ok(Constraint {
+                name: r.get(0)?,
+                kind: r.get(1)?,
+                definition: r.get(2)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<duckdb::Result<Vec<_>>>()
+        .map_err(err)?;
+    let foreign_keys = foreign_keys(conn, table)?
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<serde_json::Result<Vec<_>>>()
+        .map_err(err)?;
+    let generated = ddl
+        .as_deref()
+        .and_then(|sql| klyndb_query::duckdb_generated_columns(sql).ok());
+    let known_columns = generated.as_ref().is_some_and(|fields| {
+        fields.len() == columns.len() && columns.iter().all(|c| fields.contains_key(&c.name))
+    });
+    if let Some(fields) = generated.as_ref().filter(|_| known_columns) {
+        for column in &mut columns {
+            column.generated = fields[&column.name];
+            if column.generated {
+                column.default = None;
+            }
+        }
+    }
+    let base: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM duckdb_tables() WHERE database_name=current_database() AND schema_name=? AND table_name=? AND NOT internal)", args, |r| r.get(0)).map_err(err)?;
+    let editable = !read_only
+        && base
+        && known_columns
+        && columns.iter().all(|c| edit::supported_type(&c.data_type));
+    Ok(TableInfo {
+        editable,
+        columns,
+        ddl,
+        indexes,
+        foreign_keys,
+        constraints: Some(constraints),
+        triggers: vec![],
+    })
 }
 
 fn cell(array: &dyn Array, row: usize, logical: LogicalTypeId) -> Result<Cell> {
@@ -397,8 +495,8 @@ impl Session for DuckDb {
             schemas: true,
             explain: true,
             explain_analyze: !self.read_only,
-            edit_rows: false,
-            import_rows: false,
+            edit_rows: !self.read_only,
+            import_rows: !self.read_only,
             import_sql: !self.read_only,
             cancel: true,
             tls: false,
@@ -459,28 +557,38 @@ impl Session for DuckDb {
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
         let table = table.clone();
-        self.with(move |conn| {
-            let args = [&table.schema, &table.name];
-            let mut stmt = conn.prepare("SELECT column_name,data_type,is_nullable,column_default, EXISTS(SELECT 1 FROM duckdb_constraints() k WHERE k.database_name=c.database_name AND k.schema_name=c.schema_name AND k.table_name=c.table_name AND constraint_type='PRIMARY KEY' AND list_contains(constraint_column_names,c.column_name)) FROM duckdb_columns() c WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY column_index").map_err(err)?;
-            let columns = stmt.query_map(args, |r| Ok(Column { name: r.get(0)?, data_type: r.get(1)?, nullable: r.get(2)?, default: r.get(3)?, primary_key: r.get(4)?, generated: false })).map_err(err)?.collect::<duckdb::Result<Vec<_>>>().map_err(err)?;
-            if columns.is_empty() { return Err(Error::new("Table no longer exists. Refresh the schema.")); }
-            let ddl = conn.query_row("SELECT sql FROM duckdb_tables() WHERE database_name=current_database() AND schema_name=? AND table_name=? UNION ALL SELECT sql FROM duckdb_views() WHERE database_name=current_database() AND schema_name=? AND view_name=?", [&table.schema, &table.name, &table.schema, &table.name], |r| r.get(0)).map_err(err)?;
-            let mut stmt = conn.prepare("SELECT index_name,is_unique,sql FROM duckdb_indexes() WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY index_name").map_err(err)?;
-            let indexes = stmt.query_map(args, |r| Ok(serde_json::json!({"name":r.get::<_, String>(0)?, "unique":r.get::<_, bool>(1)?, "definition":r.get::<_, String>(2)?}))).map_err(err)?.collect::<duckdb::Result<Vec<_>>>().map_err(err)?;
-            let mut stmt = conn.prepare("SELECT constraint_name,constraint_type,constraint_text FROM duckdb_constraints() WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY constraint_index").map_err(err)?;
-            let constraints = stmt.query_map(args, |r| Ok(Constraint { name: r.get(0)?, kind: r.get(1)?, definition: r.get(2)? })).map_err(err)?.collect::<duckdb::Result<Vec<_>>>().map_err(err)?;
-            let foreign_keys = foreign_keys(conn, &table)?.into_iter().map(serde_json::to_value).collect::<serde_json::Result<Vec<_>>>().map_err(err)?;
-            Ok(TableInfo { editable: false, columns, ddl, indexes, foreign_keys, constraints: Some(constraints), triggers: vec![] })
-        }).await
+        let read_only = self.read_only;
+        self.with(move |conn| inspect(conn, &table, read_only))
+            .await
     }
     async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {
         let table = table.clone();
         self.with(move |conn| foreign_keys(conn, &table)).await
     }
-    async fn apply_changes(&self, _table: Table, _changes: Vec<Change>) -> Result<MutationResult> {
-        Err(Error::new(
-            "Reviewed grid editing is not yet available for DuckDB. Use SQL with an explicit transaction.",
-        ))
+
+    async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult> {
+        validate_change_batch(&changes)?;
+        self.write(
+            table,
+            edit::Source::Edits(Some(changes)),
+            CancellationToken::new(),
+            std::time::Duration::from_secs(60),
+        )
+        .await
+    }
+    async fn insert_stream(
+        &self,
+        table: Table,
+        input: mpsc::Receiver<Result<InsertBatch>>,
+        cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        self.write(
+            table,
+            edit::Source::Import(input),
+            cancel,
+            std::time::Duration::from_secs(3600),
+        )
+        .await
     }
     async fn disconnect(&self) -> Result<()> {
         let connection = self.connection.clone();
@@ -627,7 +735,7 @@ mod contract {
         readonly.disconnect().await.unwrap();
     }
 
-    async fn query(db: &Arc<DuckDb>, sql: &str, limit: usize) -> Result<Vec<Batch>> {
+    pub(super) async fn query(db: &Arc<DuckDb>, sql: &str, limit: usize) -> Result<Vec<Batch>> {
         let (tx, mut rx) = mpsc::channel(2);
         let driver = db.clone();
         let sql = sql.to_owned();
@@ -643,7 +751,7 @@ mod contract {
         task.await.map_err(err)??;
         Ok(batches)
     }
-    fn rows(batches: &[Batch]) -> Vec<Row> {
+    pub(super) fn rows(batches: &[Batch]) -> Vec<Row> {
         batches
             .iter()
             .flat_map(|b| {
@@ -702,7 +810,7 @@ mod contract {
         assert_eq!(tables.len(), 2);
         let table = tables.iter().find(|t| t.kind == "table").unwrap();
         let info = db.inspect(table).await.unwrap();
-        assert!(!info.editable);
+        assert!(info.editable);
         assert!(info.columns[0].primary_key);
         assert!(!info.columns[0].nullable);
         assert!(info.ddl.unwrap().contains("CREATE TABLE"));

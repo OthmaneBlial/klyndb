@@ -220,6 +220,31 @@ pub fn duckdb_count_result(sql: &str) -> DriverResult<bool> {
             || matches!(statements.as_slice(), [Statement::Delete(d)] if d.returning.is_none()),
     )
 }
+/// Native DuckDB column defaults also contain generated expressions. Resolve them from its DDL.
+pub fn duckdb_generated_columns(
+    sql: &str,
+) -> DriverResult<std::collections::BTreeMap<String, bool>> {
+    let (statements, _) = parse(sql, "duckdb")?;
+    let [Statement::CreateTable(table)] = statements.as_slice() else {
+        return Err(Error::new("Expected native DuckDB table DDL"));
+    };
+    Ok(table
+        .columns
+        .iter()
+        .map(|column| {
+            (
+                column.name.value.clone(),
+                column.options.iter().any(|option| {
+                    matches!(
+                        option.option,
+                        sqlparser::ast::ColumnOption::Generated { .. }
+                            | sqlparser::ast::ColumnOption::Identity(_)
+                    )
+                }),
+            )
+        })
+        .collect())
+}
 fn analyze_statements(statements: &[Statement]) -> Analysis {
     let mut safety = Safety {
         warnings: vec![],
