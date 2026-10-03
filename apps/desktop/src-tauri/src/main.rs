@@ -273,8 +273,11 @@ async fn apply_changes(
         .map_err(api)
 }
 #[tauri::command]
-async fn analyze_query(sql: String, engine: String) -> ApiResult<klyndb_query::Analysis> {
-    klyndb_query::analyze(&sql, &engine).map_err(api)
+async fn analyze_query(
+    sql: String,
+    engine: String,
+) -> klyndb_driver_api::Result<klyndb_query::Analysis> {
+    klyndb_query::analyze(&sql, &engine)
 }
 #[tauri::command]
 async fn start_query(
@@ -284,11 +287,10 @@ async fn start_query(
     limit: usize,
     timeout_seconds: u64,
     confirmed: bool,
-) -> ApiResult<String> {
+) -> klyndb_driver_api::Result<String> {
     engine
         .start(connection, sql, limit, timeout_seconds, confirmed)
         .await
-        .map_err(api)
 }
 #[tauri::command]
 async fn query_status(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<QueryStatus> {

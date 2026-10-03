@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { EditorState, type TransactionSpec } from "@codemirror/state";
 import { sql, PostgreSQL, MSSQL } from "@codemirror/lang-sql";
-import { ClickHouseSQL, currentStatement, replaceDocument } from "./sql";
+import {
+  ClickHouseSQL,
+  currentStatement,
+  replaceDocument,
+  captureSubmission,
+  sqlErrorPosition,
+} from "./sql";
 describe("execute current statement", () => {
   it("uses the SQL parser for semicolons inside strings and dollar quotes", () => {
     const doc = "SELECT ';'; SELECT $$a;b$$; SELECT 3;";
@@ -77,4 +83,59 @@ it("keeps T-SQL bracket identifiers and Unicode strings inside the current state
   expect(currentStatement(state).trim()).toBe(
     "SELECT TOP (1) N'é;雪' AS [semi;colon];",
   );
+});
+
+it("maps selected/current/all SQL errors into the exact document, including duplicate statements", () => {
+  const doc = "SELECT 'é😀';\nSELECT missing;\nSELECT missing;";
+  const start = doc.lastIndexOf("SELECT missing;");
+  for (const selection of [
+    { anchor: start + 7 },
+    { anchor: start, head: doc.length },
+  ]) {
+    const state = EditorState.create({
+      doc,
+      selection,
+      extensions: [sql({ dialect: PostgreSQL })],
+    });
+    const submitted = currentStatement(state);
+    const source = captureSubmission(state, submitted)!;
+    expect(source.from).toBe(start);
+    expect(sqlErrorPosition(state, source, submitted.indexOf("missing"))).toBe(
+      start + 7,
+    );
+    expect(captureSubmission(state, "SELECT unrelated;")).toBeNull();
+  }
+  const state = EditorState.create({ doc, extensions: [sql()] });
+  expect(
+    sqlErrorPosition(
+      state,
+      captureSubmission(state, doc)!,
+      doc.indexOf("missing"),
+    ),
+  ).toBe(doc.indexOf("missing"));
+});
+
+it("suppresses stale, invalid and split-surrogate error locations without changing SQL", () => {
+  const state = EditorState.create({
+    doc: "SELECT '😀';",
+    extensions: [sql()],
+  });
+  const source = captureSubmission(state, state.doc.toString())!;
+  expect(sqlErrorPosition(state, source, 0)).toBe(0);
+  expect(sqlErrorPosition(state, source, source.sql.length)).toBe(
+    source.sql.length,
+  );
+  for (const offset of [
+    -1,
+    0.5,
+    Infinity,
+    source.sql.length + 1,
+    source.sql.indexOf("😀") + 1,
+  ])
+    expect(sqlErrorPosition(state, source, offset)).toBeNull();
+  const changed = state.update({
+    changes: { from: 0, insert: "-- changed\n" },
+  }).state;
+  expect(sqlErrorPosition(changed, source, 0)).toBeNull();
+  expect(state.doc.toString()).toBe(source.document);
 });

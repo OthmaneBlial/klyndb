@@ -1,4 +1,4 @@
-use klyndb_driver_api::{Error, Result as DriverResult};
+use klyndb_driver_api::{Error, Result as DriverResult, sql_utf16_offset};
 use serde::Serialize;
 use sqlparser::{
     ast::{Query, SetExpr, Statement, Visit, Visitor},
@@ -103,7 +103,7 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
     };
     let mut tokens = Tokenizer::new(dialect, sql)
         .tokenize_with_location()
-        .map_err(|e| Error::new(format!("SQL could not be validated: {e}")))?;
+        .map_err(|e| validation_error(sql, e.to_string(), Some(e.location)))?;
     if engine == "mysql"
         && tokens.iter().any(|t| {
             matches!(
@@ -162,14 +162,36 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
     let statements = Parser::new(dialect)
         .with_tokens_with_locations(tokens)
         .parse_statements()
-        .map_err(|e| Error::new(format!("SQL could not be validated: {e}")))?;
+        .map_err(|e| {
+            let message = e.to_string();
+            // ponytail: pinned sqlparser exposes parser locations only as a
+            // terminal message field; use typed spans when upstream offers them.
+            let location = message.rsplit_once(" at Line: ").and_then(|(_, value)| {
+                let (line, column) = value.split_once(", Column: ")?;
+                Some(Location {
+                    line: line.parse().ok()?,
+                    column: column.parse().ok()?,
+                })
+            });
+            validation_error(sql, message, location)
+        })?;
     Ok((statements, end))
 }
 fn byte_offset(sql: &str, target: Location) -> usize {
+    location_byte(sql, target).unwrap_or(sql.len())
+}
+fn validation_error(sql: &str, message: String, location: Option<Location>) -> Error {
+    let mut error = Error::new(format!("SQL could not be validated: {message}"));
+    error.sql_offset = location
+        .and_then(|location| location_byte(sql, location))
+        .and_then(|byte| sql_utf16_offset(sql, byte));
+    error
+}
+fn location_byte(sql: &str, target: Location) -> Option<usize> {
     let (mut line, mut column) = (1, 1);
     for (offset, c) in sql.char_indices() {
         if line == target.line && column == target.column {
-            return offset;
+            return Some(offset);
         }
         if c == '\n' {
             line += 1;
@@ -178,7 +200,7 @@ fn byte_offset(sql: &str, target: Location) -> usize {
             column += 1;
         }
     }
-    sql.len()
+    (line == target.line && column == target.column).then_some(sql.len())
 }
 /// Preserve vendor syntax while excluding trailing delimiters/comments before adding plan SQL.
 pub fn explain_target<'a>(sql: &'a str, engine: &str) -> DriverResult<&'a str> {
@@ -229,7 +251,18 @@ pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
         let mut reader = MssqlReader::new(sql.as_bytes());
         let mut statements = vec![];
         while let Some(batch) = reader.next_batch(|| false)? {
-            statements.extend(parse(&batch, engine)?.0);
+            statements.extend(
+                parse(&batch, engine)
+                    .map_err(|mut error| {
+                        // GO framing changes the source. Until the reader exposes spans,
+                        // only locations from an unchanged whole batch are authoritative.
+                        if batch != sql {
+                            error.sql_offset = None;
+                        }
+                        error
+                    })?
+                    .0,
+            );
         }
         statements
     } else {
@@ -339,6 +372,47 @@ pub fn analyze_script(sql: &str, engine: &str) -> DriverResult<Option<Analysis>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn validation_locations_are_utf16_and_do_not_guess_batch_or_unknown_positions() {
+        let sql = "SELECT 'é😀';\r\nSELECT (1 + );";
+        let expected = sql_utf16_offset(sql, sql.find(')').unwrap());
+        for dialect in [
+            "sqlite",
+            "postgres",
+            "mysql",
+            "duckdb",
+            "clickhouse",
+            "mssql",
+        ] {
+            let error = analyze(sql, dialect).unwrap_err();
+            assert_eq!(error.sql_offset, expected, "{dialect}: {}", error.message);
+        }
+        let lexical = "SELECT 'é😀';\nSELECT 'unterminated";
+        assert_eq!(
+            analyze(lexical, "postgres").unwrap_err().sql_offset,
+            sql_utf16_offset(lexical, lexical.rfind('\'').unwrap())
+        );
+        assert!(
+            analyze("SELECT 1\nGO\nSELECT (1 + );", "mssql")
+                .unwrap_err()
+                .sql_offset
+                .is_none()
+        );
+        assert!(
+            validation_error("SELECT 1", "unknown location".into(), None)
+                .sql_offset
+                .is_none()
+        );
+        assert!(
+            validation_error(
+                "SELECT 1",
+                "invalid span".into(),
+                Some(Location { line: 9, column: 1 })
+            )
+            .sql_offset
+            .is_none()
+        );
+    }
     #[test]
     fn clickhouse_native_plan_prefix_validates_the_complete_query() {
         let native = "/* before */ EXPLAIN PLAN json=1, indexes=1 WITH x AS (SELECT 1 AS id) SELECT * FROM x; -- after";

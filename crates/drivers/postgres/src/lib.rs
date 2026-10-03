@@ -17,6 +17,7 @@ pub struct Postgres {
     serial: Mutex<()>,
     tls: MakeTlsConnector,
     read_only: bool,
+    server_sql_ascii: bool,
 }
 // Server error text can contain SQL literals. Never include submitted URLs/passwords in client errors.
 fn err(e: tokio_postgres::Error) -> Error {
@@ -27,6 +28,30 @@ fn err(e: tokio_postgres::Error) -> Error {
             "PostgreSQL connection or protocol failed. Check host, credentials and TLS configuration.",
         )
     }
+}
+fn query_error(e: tokio_postgres::Error, sql: &str, server_sql_ascii: bool) -> Error {
+    let offset = e.as_db_error().and_then(|db| match db.position() {
+        Some(tokio_postgres::error::ErrorPosition::Original(position)) => {
+            original_error_offset(sql, *position, server_sql_ascii)
+        }
+        _ => None, // Internal queries have a different source; do not point into the editor.
+    });
+    let mut error = err(e);
+    error.sql_offset = offset;
+    error
+}
+fn original_error_offset(sql: &str, position: u32, server_sql_ascii: bool) -> Option<usize> {
+    let original = position.checked_sub(1)? as usize;
+    // SQL_ASCII treats each input byte as a character, even for UTF-8 client SQL.
+    let byte = if server_sql_ascii {
+        original
+    } else {
+        sql.char_indices()
+            .map(|(i, _)| i)
+            .chain(std::iter::once(sql.len()))
+            .nth(original)?
+    };
+    sql_utf16_offset(sql, byte)
 }
 impl Postgres {
     async fn request_cancel(&self) -> Result<()> {
@@ -219,6 +244,7 @@ impl Postgres {
         );
         tokio::time::timeout(timeout, async {
             let (client, connection) = config.connect(tls.clone()).await.map_err(err)?;
+            let server_sql_ascii = connection.parameter("server_encoding") == Some("SQL_ASCII");
             let worker = tokio::spawn(async move {
                 let _ = connection.await;
             });
@@ -228,6 +254,7 @@ impl Postgres {
                 serial: Mutex::new(()),
                 tls,
                 read_only,
+                server_sql_ascii,
             };
             if read_only {
                 session
@@ -253,7 +280,11 @@ impl Postgres {
         cancel: CancellationToken,
         limit: usize,
     ) -> Result<()> {
-        let stream = self.client.simple_query_raw(&sql).await.map_err(err)?;
+        let stream = self
+            .client
+            .simple_query_raw(&sql)
+            .await
+            .map_err(|e| query_error(e, &sql, self.server_sql_ascii))?;
         pin_mut!(stream);
         let mut count = 0;
         let mut has_columns = false;
@@ -273,7 +304,7 @@ impl Postgres {
             let Some(item) = item else {
                 break;
             };
-            match item.map_err(err)? {
+            match item.map_err(|e| query_error(e, &sql, self.server_sql_ascii))? {
                 SimpleQueryMessage::RowDescription(columns) => {
                     count = 0;
                     has_columns = true;
@@ -577,5 +608,23 @@ impl Session for Postgres {
 impl Drop for Postgres {
     fn drop(&mut self) {
         self.worker.abort();
+    }
+}
+#[cfg(test)]
+mod error_position_tests {
+    use super::*;
+    #[test]
+    fn original_positions_use_database_encoding_and_utf16_editor_units() {
+        let sql = "SELECT 'é😀'; SELECT missing";
+        let byte = sql.find("missing").unwrap();
+        let character = sql[..byte].chars().count();
+        let expected = sql_utf16_offset(sql, byte);
+        assert_eq!(
+            original_error_offset(sql, character as u32 + 1, false),
+            expected
+        );
+        assert_eq!(original_error_offset(sql, byte as u32 + 1, true), expected);
+        assert_eq!(original_error_offset(sql, 0, false), None);
+        assert_eq!(original_error_offset(sql, sql.len() as u32 + 2, true), None);
     }
 }

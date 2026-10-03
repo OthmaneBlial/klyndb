@@ -21,13 +21,22 @@ import {
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { sql, SQLite, PostgreSQL, MySQL, MSSQL } from "@codemirror/lang-sql";
-import { ClickHouseSQL, currentStatement, replaceDocument } from "../sql";
+import {
+  ClickHouseSQL,
+  currentStatement,
+  replaceDocument,
+  captureSubmission,
+  sqlErrorPosition,
+  type SqlSubmission,
+} from "../sql";
 import { tableCompletion, type CompletionSchema } from "../completion";
 import type { Table } from "../api";
 export interface EditorHandle {
   runText: () => string;
   allText: () => string;
   replace: (sql: string) => void;
+  sourceFor: (sql: string) => SqlSubmission | null;
+  locateError: (source: SqlSubmission, offset: number) => boolean;
 }
 export function SqlEditor({
   value,
@@ -145,6 +154,17 @@ export function SqlEditor({
       runText: () => currentStatement(editor.state),
       allText: () => editor.state.doc.toString(),
       replace: (text) => replaceDocument(editor, text),
+      sourceFor: (text) => captureSubmission(editor.state, text),
+      locateError: (source, offset) => {
+        const position = sqlErrorPosition(editor.state, source, offset);
+        if (position === null) return false;
+        editor.dispatch({
+          selection: { anchor: position },
+          effects: EditorView.scrollIntoView(position, { y: "center" }),
+        });
+        editor.focus();
+        return true;
+      },
     };
     return () => {
       editor.destroy();

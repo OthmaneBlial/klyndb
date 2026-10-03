@@ -24,6 +24,7 @@ export function ResultPanel({
   busy,
   onError,
   onExport,
+  onLocateError,
   onEdit,
   onDelete,
   editing,
@@ -39,6 +40,7 @@ export function ResultPanel({
   busy: boolean;
   onError: (message: string) => void;
   onExport: () => void;
+  onLocateError?: () => void;
   onEdit?: (row: Row) => void;
   onDelete?: (row: Row) => void;
   editing?: React.ReactNode;
@@ -209,7 +211,12 @@ export function ResultPanel({
       ) : view === "messages" ? (
         <div className="messages">
           {status?.error ? (
-            <p className="error">{status.error}</p>
+            <>
+              <p className="error">{status.error}</p>
+              {onLocateError && (
+                <button onClick={onLocateError}>Go to SQL error</button>
+              )}
+            </>
           ) : status ? (
             <>
               <p>{status.done ? "Query completed." : "Query running…"}</p>
@@ -248,6 +255,9 @@ export function ResultPanel({
             <>
               <h3>Query failed</h3>
               <p className="error">{status.error}</p>
+              {onLocateError && (
+                <button onClick={onLocateError}>Go to SQL error</button>
+              )}
             </>
           ) : status ? (
             <>

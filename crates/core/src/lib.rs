@@ -27,6 +27,7 @@ pub struct QueryStatus {
     pub sets: Vec<ResultSet>,
     pub done: bool,
     pub error: Option<String>,
+    pub error_offset: Option<usize>,
     pub elapsed_ms: u64,
     pub connection_id: String,
     pub transaction: Option<TransactionState>,
@@ -57,6 +58,7 @@ impl Job {
                 sets: vec![],
                 done: false,
                 error: None,
+                error_offset: None,
                 elapsed_ms: 0,
                 connection_id: connection_id.clone(),
                 transaction: None,
@@ -739,6 +741,14 @@ impl Engine {
             };
             let elapsed = began.elapsed().as_millis() as u64;
             let transaction = driver.transaction_state().await.ok();
+            let error_offset = if plan.is_none()
+                && !timed_out.load(std::sync::atomic::Ordering::Relaxed)
+                && !job.cancel.is_cancelled()
+            {
+                outcome.as_ref().err().and_then(|error| error.sql_offset)
+            } else {
+                None
+            };
             let message = outcome.err().map(|e| {
                 if timed_out.load(std::sync::atomic::Ordering::Relaxed)
                     && !e.message.contains("connection closed")
@@ -755,6 +765,7 @@ impl Engine {
             if let Ok(mut status) = job.status.lock() {
                 status.done = true;
                 status.error = message.clone();
+                status.error_offset = error_offset;
                 status.elapsed_ms = elapsed;
                 status.transaction = transaction;
             }

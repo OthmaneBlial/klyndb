@@ -4,17 +4,24 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Serialize, thiserror::Error)]
 #[error("{message}")]
 pub struct Error {
     pub message: String,
+    /// Zero-based UTF-16 offset into the submitted SQL, when its source is known.
+    pub sql_offset: Option<usize>,
 }
 impl Error {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            sql_offset: None,
         }
     }
+}
+pub fn sql_utf16_offset(sql: &str, byte_offset: usize) -> Option<usize> {
+    sql.get(..byte_offset)
+        .map(|prefix| prefix.encode_utf16().count())
 }
 pub type Result<T> = std::result::Result<T, Error>;
 

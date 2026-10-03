@@ -38,6 +38,7 @@ import {
 
 import {
   api,
+  SqlError,
   type Connection,
   type Table,
   type QueryStatus,
@@ -50,6 +51,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import type { EditorHandle } from "./components/SqlEditor";
+import type { SqlSubmission } from "./sql";
 import { tableKey } from "./diagram";
 const SqlEditor = lazy(() =>
   import("./components/SqlEditor").then((m) => ({ default: m.SqlEditor })),
@@ -110,6 +112,14 @@ export default function App() {
     [resultSets, setResultSets] = useState<Record<string, number>>({}),
     [view, setView] = useState<ResultView>("results"),
     [inspectors, setInspectors] = useState<Record<string, Inspector>>({});
+  const queryOrigins = useRef<
+    Record<string, { id: string; source: SqlSubmission }>
+  >({});
+  const [noticeLocation, setNoticeLocation] = useState<{
+    tab: string;
+    source: SqlSubmission;
+    offset: number;
+  } | null>(null);
   const [history, setHistory] = useState<History[] | null>(null),
     [saved, setSaved] = useState<SavedQuery[]>([]),
     [savedOpen, setSavedOpen] = useState(false),
@@ -187,7 +197,16 @@ export default function App() {
     set === 0
   );
   const keyed = !!inspector?.info.columns.some((c) => c.primary_key);
-  const report = useCallback((message: string) => setNotice(message), []);
+  const report = useCallback((message: string) => {
+    setNotice(message);
+    setNoticeLocation(null);
+  }, []);
+  function locateError(source: SqlSubmission, offset: number) {
+    if (!editorRef.current?.locateError(source, offset))
+      report(
+        "The SQL has changed since this error. Run it again to locate the current error.",
+      );
+  }
   const updateTab = useCallback(
     (id: string, patch: Partial<Tab>) =>
       setTabs((t) =>
@@ -396,6 +415,7 @@ export default function App() {
       return next;
     });
     const result = statuses[id];
+    delete queryOrigins.current[id];
     if (result) await api("release_result", { id: result.id });
     setStatuses((s) => {
       const next = { ...s };
@@ -417,6 +437,7 @@ export default function App() {
       return;
     }
     if (statuses[id]) await api("release_result", { id: statuses[id].id });
+    delete queryOrigins.current[id];
     setStatuses((s) => {
       const next = { ...s };
       delete next[id];
@@ -571,7 +592,14 @@ export default function App() {
     confirmed = false,
     inspected = inspectors[tab.id],
     plan?: "estimate" | "analyze",
+    origin?: SqlSubmission | null,
   ) {
+    const source =
+      origin === undefined
+        ? active === tab.id
+          ? (editorRef.current?.sourceFor(sql) ?? null)
+          : null
+        : origin;
     const c = connections.find((c) => c.id === tab.connection),
       previous = statuses[tab.id];
     if (!c || starting.current.has(tab.id) || (previous && !previous.done))
@@ -582,6 +610,7 @@ export default function App() {
     }
     starting.current.add(tab.id);
     setNotice("");
+    setNoticeLocation(null);
     try {
       if (!connected[c.id]) {
         report("Connect to this database before running SQL.");
@@ -601,7 +630,7 @@ export default function App() {
           message: `${c.name} · ${c.environment}\n${warnings.join("\n")}`,
           sql,
           action: () => {
-            void executeTab(tab, sql, true, inspected, plan);
+            void executeTab(tab, sql, true, inspected, plan, source);
           },
         });
         return;
@@ -625,6 +654,8 @@ export default function App() {
             confirmed,
           });
       const initial = await api("query_status", { id });
+      if (source) queryOrigins.current[tab.id] = { id, source };
+      else delete queryOrigins.current[tab.id];
       if (previous) await api("release_result", { id: previous.id });
       setStatuses((s) => ({
         ...s,
@@ -641,6 +672,8 @@ export default function App() {
       return true;
     } catch (e) {
       report(String(e));
+      if (e instanceof SqlError && e.sql_offset !== null && source)
+        setNoticeLocation({ tab: tab.id, source, offset: e.sql_offset });
     } finally {
       starting.current.delete(tab.id);
     }
@@ -1253,6 +1286,17 @@ export default function App() {
         {notice && (
           <div className="notice" role="alert">
             <span>{notice}</span>
+            {noticeLocation &&
+              noticeLocation.tab === current?.id &&
+              noticeLocation.source.document === current?.sql && (
+                <button
+                  onClick={() =>
+                    locateError(noticeLocation.source, noticeLocation.offset)
+                  }
+                >
+                  Go to SQL error
+                </button>
+              )}
             <button
               className="icon"
               aria-label="Dismiss message"
@@ -1384,6 +1428,18 @@ export default function App() {
             </section>
             <ResultPanel
               status={status}
+              onLocateError={
+                status?.error_offset != null &&
+                status.error &&
+                queryOrigins.current[current.id]?.id === status.id &&
+                queryOrigins.current[current.id].source.document === current.sql
+                  ? () =>
+                      locateError(
+                        queryOrigins.current[current.id].source,
+                        status.error_offset!,
+                      )
+                  : undefined
+              }
               set={set}
               onSelectSet={(i) => setResultSets((p) => ({ ...p, [active]: i }))}
               view={view}

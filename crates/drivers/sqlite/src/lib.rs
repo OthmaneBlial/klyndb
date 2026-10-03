@@ -14,6 +14,22 @@ pub struct Sqlite {
 fn err(e: impl std::fmt::Display) -> Error {
     Error::new(e.to_string())
 }
+fn query_error(e: rusqlite::Error, submitted: &str) -> Error {
+    let offset = match &e {
+        rusqlite::Error::SqlInputError { sql, offset, .. } if submitted.ends_with(sql) => {
+            usize::try_from(*offset).ok().and_then(|offset| {
+                if offset > sql.len() {
+                    return None;
+                }
+                sql_utf16_offset(submitted, submitted.len() - sql.len() + offset)
+            })
+        }
+        _ => None,
+    };
+    let mut error = err(e);
+    error.sql_offset = offset;
+    error
+}
 impl Sqlite {
     pub async fn connect(path: String, read_only: bool, create: bool) -> Result<Self> {
         let connection = tokio::task::spawn_blocking(move || {
@@ -71,7 +87,7 @@ fn stream(
         .map_err(err)?;
     let result = (|| {
         let mut statements = rusqlite::Batch::new(conn, &sql);
-        while let Some(mut statement) = statements.next().map_err(err)? {
+        while let Some(mut statement) = statements.next().map_err(|e| query_error(e, &sql))? {
             let before = conn.total_changes();
             if cancel.is_cancelled() {
                 return Err(Error::new("Query cancelled"));

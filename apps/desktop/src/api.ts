@@ -147,7 +147,12 @@ export interface SqlSource {
   id: string;
   name: string;
   bytes: number;
-  preview: { statements: number; unit: "statements" | "batches"; sample: string[]; warnings: string[] };
+  preview: {
+    statements: number;
+    unit: "statements" | "batches";
+    sample: string[];
+    warnings: string[];
+  };
 }
 export interface ResultSet {
   columns: string[];
@@ -160,6 +165,7 @@ export interface QueryStatus {
   sets: ResultSet[];
   done: boolean;
   error: string | null;
+  error_offset: number | null;
   elapsed_ms: number;
   connection_id: string;
   transaction: "idle" | "active" | "failed" | null;
@@ -358,7 +364,34 @@ export function api<K extends keyof Commands>(
   command: K,
   ...args: Commands[K]["args"] extends undefined ? [] : [Commands[K]["args"]]
 ): Promise<Commands[K]["result"]> {
-  return invoke(command, args[0]);
+  return invoke<Commands[K]["result"]>(command, args[0]).catch(
+    (error: unknown) => {
+      if (
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string" &&
+        "sql_offset" in error
+      ) {
+        throw new SqlError(
+          error.message,
+          typeof error.sql_offset === "number" ? error.sql_offset : null,
+        );
+      }
+      throw error;
+    },
+  );
+}
+export class SqlError extends Error {
+  constructor(
+    message: string,
+    readonly sql_offset: number | null,
+  ) {
+    super(message);
+  }
+  override toString() {
+    return this.message;
+  }
 }
 export function cellText(cell: Cell): string {
   if (cell.kind === "null") return "";
