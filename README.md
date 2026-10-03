@@ -74,6 +74,11 @@ A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and a
   <br /><sub>Real Redis keys and hash inspection in the native source debug app. Synthetic records only.</sub>
 </p>
 
+<p align="center">
+  <img src="docs/assets/postgres-structure-macos.png" alt="Actual native Klyndb macOS PostgreSQL Structure after replaying its displayed identity and generated-column definition through the SQL editor" width="100%" />
+  <br /><sub>PostgreSQL Structure, replayed through the native editor and inspected again. Synthetic data in a source debug build.</sub>
+</p>
+
 </details>
 
 <a id="features"></a>
