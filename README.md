@@ -74,7 +74,7 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MySQL | ✓ | ✓ · InnoDB | MySQL 8.4.11 |
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
-| DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 · native macOS workflow |
+| DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 · native macOS query workflow; source ER diagrams |
 | ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
 | SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts; native UI acceptance pending |
 

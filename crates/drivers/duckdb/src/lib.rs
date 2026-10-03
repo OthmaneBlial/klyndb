@@ -145,6 +145,19 @@ fn transaction_state(conn: &Connection) -> Result<TransactionState> {
     }
 }
 
+fn foreign_keys(conn: &Connection, table: &Table) -> Result<Vec<ForeignKey>> {
+    // DuckDB 1.5 rejects foreign keys across schemas/catalogs; targets share the source schema.
+    let mut stmt = conn.prepare("SELECT constraint_name,unnest(constraint_column_names) AS source_column,schema_name,referenced_table,unnest(referenced_column_names) AS target_column,generate_subscripts(constraint_column_names,1) AS ordinal FROM duckdb_constraints() WHERE database_name=current_database() AND schema_name=? AND table_name=? AND constraint_type='FOREIGN KEY' ORDER BY constraint_index,ordinal").map_err(err)?;
+    let rows = stmt
+        .query_map([&table.schema, &table.name], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .map_err(err)?
+        .collect::<duckdb::Result<Vec<_>>>()
+        .map_err(err)?;
+    Ok(group_foreign_keys(rows))
+}
+
 fn cell(array: &dyn Array, row: usize, logical: LogicalTypeId) -> Result<Cell> {
     if array.is_null(row) {
         return Ok(Cell::Null);
@@ -379,7 +392,7 @@ impl Session for DuckDb {
         Capabilities {
             affected_rows: true,
             table_browse: true,
-            diagrams: false,
+            diagrams: true,
             transactions: true,
             schemas: true,
             explain: true,
@@ -436,8 +449,13 @@ impl Session for DuckDb {
             let indexes = stmt.query_map(args, |r| Ok(serde_json::json!({"name":r.get::<_, String>(0)?, "unique":r.get::<_, bool>(1)?, "definition":r.get::<_, String>(2)?}))).map_err(err)?.collect::<duckdb::Result<Vec<_>>>().map_err(err)?;
             let mut stmt = conn.prepare("SELECT constraint_name,constraint_type,constraint_text FROM duckdb_constraints() WHERE database_name=current_database() AND schema_name=? AND table_name=? ORDER BY constraint_index").map_err(err)?;
             let constraints = stmt.query_map(args, |r| Ok(Constraint { name: r.get(0)?, kind: r.get(1)?, definition: r.get(2)? })).map_err(err)?.collect::<duckdb::Result<Vec<_>>>().map_err(err)?;
-            Ok(TableInfo { editable: false, columns, ddl, indexes, foreign_keys: vec![], constraints: Some(constraints), triggers: vec![] })
+            let foreign_keys = foreign_keys(conn, &table)?.into_iter().map(serde_json::to_value).collect::<serde_json::Result<Vec<_>>>().map_err(err)?;
+            Ok(TableInfo { editable: false, columns, ddl, indexes, foreign_keys, constraints: Some(constraints), triggers: vec![] })
         }).await
+    }
+    async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {
+        let table = table.clone();
+        self.with(move |conn| foreign_keys(conn, &table)).await
     }
     async fn apply_changes(&self, _table: Table, _changes: Vec<Change>) -> Result<MutationResult> {
         Err(Error::new(
@@ -502,6 +520,92 @@ mod tests {
 mod contract {
     use super::*;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn ordered_foreign_keys_in_quoted_schema_and_read_only_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir
+            .path()
+            .join("relations.duckdb")
+            .to_string_lossy()
+            .into_owned();
+        let db = DuckDb::connect(path.clone(), false, true).await.unwrap();
+        db.with(|conn| {
+            conn.execute_batch(r#"
+                CREATE SCHEMA "quoted schema";
+                CREATE TABLE "quoted schema"."parent's & <table>" (
+                    "first key" INTEGER, "second""key" INTEGER, u INTEGER UNIQUE,
+                    PRIMARY KEY("first key", "second""key")
+                );
+                CREATE TABLE "quoted schema".child (
+                    sb INTEGER, sa INTEGER, u INTEGER,
+                    FOREIGN KEY(sa,sb) REFERENCES "quoted schema"."parent's & <table>"("first key","second""key"),
+                    FOREIGN KEY(u) REFERENCES "quoted schema"."parent's & <table>"(u)
+                );
+                CREATE TABLE "quoted schema".implicit_child (
+                    x INTEGER, y INTEGER,
+                    FOREIGN KEY(x,y) REFERENCES "quoted schema"."parent's & <table>"
+                );
+                CREATE TABLE child (unrelated INTEGER);
+            "#).map_err(err)?;
+            Ok(())
+        }).await.unwrap();
+        let table = Table {
+            schema: "quoted schema".into(),
+            name: "child".into(),
+            kind: "table".into(),
+        };
+        let keys = db.relationships(&table).await.unwrap();
+        assert_eq!(keys.len(), 2);
+        let composite = keys.iter().find(|k| k.columns.len() == 2).unwrap();
+        assert_eq!(composite.columns, ["sa", "sb"]);
+        assert_eq!(
+            composite.target_columns,
+            [Some("first key".into()), Some("second\"key".into())]
+        );
+        for key in &keys {
+            assert_eq!(key.target_schema, "quoted schema");
+            assert_eq!(key.target_table, "parent's & <table>");
+        }
+        let unique = keys.iter().find(|k| k.columns.len() == 1).unwrap();
+        assert_eq!(unique.columns, ["u"]);
+        assert_eq!(unique.target_columns, [Some("u".into())]);
+        assert_eq!(
+            db.inspect(&table).await.unwrap().foreign_keys,
+            keys.iter()
+                .map(|k| serde_json::to_value(k).unwrap())
+                .collect::<Vec<_>>()
+        );
+        let implicit = Table {
+            name: "implicit_child".into(),
+            ..table.clone()
+        };
+        let inferred = db.relationships(&implicit).await.unwrap();
+        assert_eq!(inferred.len(), 1);
+        assert_eq!(inferred[0].columns, ["x", "y"]);
+        assert_eq!(inferred[0].target_columns, composite.target_columns);
+        assert!(
+            db.relationships(&Table {
+                schema: "main".into(),
+                ..table.clone()
+            })
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        db.disconnect().await.unwrap();
+        let readonly = DuckDb::connect(path, true, false).await.unwrap();
+        assert!(readonly.capabilities().diagrams);
+        assert_eq!(
+            serde_json::to_value(readonly.relationships(&table).await.unwrap()).unwrap(),
+            serde_json::to_value(keys).unwrap()
+        );
+        assert_eq!(
+            readonly.transaction_state().await.unwrap(),
+            TransactionState::Idle
+        );
+        readonly.disconnect().await.unwrap();
+    }
 
     async fn query(db: &Arc<DuckDb>, sql: &str, limit: usize) -> Result<Vec<Batch>> {
         let (tx, mut rx) = mpsc::channel(2);

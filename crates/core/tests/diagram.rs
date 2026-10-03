@@ -27,10 +27,19 @@ async fn run(engine: &Engine, id: &str, sql: String) {
 async fn real_relationships_layout_and_safe_svg() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Engine::new(Store::open(&dir.path().join("state.db")).unwrap());
-    let mut servers = vec![(
-        "sqlite",
-        dir.path().join("data.db").to_string_lossy().into_owned(),
-    )];
+    let mut servers = vec![
+        (
+            "sqlite",
+            dir.path().join("data.db").to_string_lossy().into_owned(),
+        ),
+        (
+            "duckdb",
+            dir.path()
+                .join("data.duckdb")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    ];
     for (variable, kind) in [
         ("KLYNDB_TEST_POSTGRES_URL", "postgres"),
         ("KLYNDB_TEST_MYSQL_URL", "mysql"),
@@ -51,7 +60,7 @@ async fn real_relationships_layout_and_safe_svg() {
             color: "#93d4b5".into(),
             favorite: false,
             read_only: false,
-            create_file: kind == "sqlite",
+            create_file: matches!(kind, "sqlite" | "duckdb"),
         };
         c.validate().unwrap();
         engine.store.save(&c).unwrap();
