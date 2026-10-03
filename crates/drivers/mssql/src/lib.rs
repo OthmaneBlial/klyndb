@@ -373,7 +373,7 @@ impl Session for SqlServer {
         Capabilities {
             affected_rows: false,
             table_browse: true,
-            diagrams: false,
+            diagrams: true,
             transactions: true,
             schemas: true,
             explain: false,
@@ -492,6 +492,19 @@ impl Session for SqlServer {
             constraints: Some(constraints),
             triggers,
         })
+    }
+    async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {
+        Ok(group_foreign_keys(
+            self.foreign_key_rows(table).await?.into_iter().map(|r| {
+                (
+                    r[0].text(),
+                    r[1].text(),
+                    r[2].text(),
+                    r[3].text(),
+                    Some(r[4].text()),
+                )
+            }),
+        ))
     }
     async fn transaction_state(&self) -> Result<TransactionState> {
         let rows = self.metadata("SELECT XACT_STATE()".into()).await?;

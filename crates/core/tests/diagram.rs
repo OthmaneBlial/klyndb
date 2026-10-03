@@ -34,6 +34,7 @@ async fn real_relationships_layout_and_safe_svg() {
     for (variable, kind) in [
         ("KLYNDB_TEST_POSTGRES_URL", "postgres"),
         ("KLYNDB_TEST_MYSQL_URL", "mysql"),
+        ("KLYNDB_TEST_MSSQL_URL", "mssql"),
     ] {
         if let Ok(url) = std::env::var(variable) {
             servers.push((kind, url));
@@ -54,18 +55,38 @@ async fn real_relationships_layout_and_safe_svg() {
         };
         c.validate().unwrap();
         engine.store.save(&c).unwrap();
-        engine.connect(&c.id, None, None, None).await.unwrap();
+        let password =
+            (kind == "mssql").then(|| std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap());
+        assert!(
+            engine
+                .connect(&c.id, password.clone(), None, None)
+                .await
+                .unwrap()
+                .diagrams
+        );
         let driver = engine.driver(&c.id).await.unwrap();
         let q = |n: &str| driver.quote_identifier(n);
         let base = format!("diagram_{}", uuid::Uuid::new_v4().simple());
         let parent = format!("{base}_p");
         let child = format!("{base}_c");
+        let parent_schema = format!("{base}_schema");
+        let parent_name = if kind == "mssql" {
+            run(
+                &engine,
+                &c.id,
+                format!("CREATE SCHEMA {}", q(&parent_schema)),
+            )
+            .await;
+            format!("{}.{}", q(&parent_schema), q(&parent))
+        } else {
+            q(&parent)
+        };
         run(
             &engine,
             &c.id,
             format!(
                 "CREATE TABLE {} (a INTEGER,b INTEGER,PRIMARY KEY(a,b))",
-                q(&parent)
+                parent_name
             ),
         )
         .await;
@@ -74,7 +95,7 @@ async fn real_relationships_layout_and_safe_svg() {
         } else {
             "(a,b)".into()
         };
-        run(&engine,&c.id,format!("CREATE TABLE {} (id INTEGER PRIMARY KEY,a INTEGER,b INTEGER,parent_id INTEGER,CONSTRAINT {} FOREIGN KEY(a,b) REFERENCES {}{target},CONSTRAINT {} FOREIGN KEY(parent_id) REFERENCES {}(id))",q(&child),q(&format!("{base}_fk")),q(&parent),q(&format!("{base}_self")),q(&child))).await;
+        run(&engine,&c.id,format!("CREATE TABLE {} (id INTEGER PRIMARY KEY,a INTEGER,b INTEGER,parent_id INTEGER,CONSTRAINT {} FOREIGN KEY(a,b) REFERENCES {}{target},CONSTRAINT {} FOREIGN KEY(parent_id) REFERENCES {}(id))",q(&child),q(&format!("{base}_fk")),parent_name,q(&format!("{base}_self")),q(&child))).await;
         let tables: Vec<_> = driver
             .tables()
             .await
@@ -94,7 +115,14 @@ async fn real_relationships_layout_and_safe_svg() {
             .unwrap();
         assert_eq!(fk.columns, vec!["a", "b"]);
         assert_eq!(fk.target_columns, vec![Some("a".into()), Some("b".into())]);
-        assert_eq!(fk.target_schema, source.table.schema);
+        assert_eq!(
+            &fk.target_schema,
+            if kind == "mssql" {
+                &parent_schema
+            } else {
+                &source.table.schema
+            }
+        );
         let self_fk = source
             .relationships
             .iter()
@@ -140,8 +168,29 @@ async fn real_relationships_layout_and_safe_svg() {
         let doc_id = format!("diagram-{}", c.id);
         engine.store.save_document(&doc_id, &layout).unwrap();
         assert_eq!(engine.store.document(&doc_id).unwrap().unwrap(), layout);
+        if kind == "mssql" {
+            let mut readonly = c.clone();
+            readonly.id.clear();
+            readonly.read_only = true;
+            readonly.validate().unwrap();
+            engine.store.save(&readonly).unwrap();
+            let caps = engine
+                .connect(&readonly.id, password, None, None)
+                .await
+                .unwrap();
+            assert!(caps.diagrams && !caps.edit_rows && !caps.import_rows);
+            let readonly_model = engine.diagram(&readonly.id, &tables).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(readonly_model).unwrap(),
+                serde_json::to_value(&model).unwrap()
+            );
+            engine.disconnect(&readonly.id).await.unwrap();
+        }
         run(&engine, &c.id, format!("DROP TABLE {}", q(&child))).await;
-        run(&engine, &c.id, format!("DROP TABLE {}", q(&parent))).await;
+        run(&engine, &c.id, format!("DROP TABLE {parent_name}")).await;
+        if kind == "mssql" {
+            run(&engine, &c.id, format!("DROP SCHEMA {}", q(&parent_schema))).await;
+        }
         engine.disconnect(&c.id).await.unwrap();
     }
 }

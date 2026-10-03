@@ -36,7 +36,7 @@ The selected database exposes schema-qualified tables/views, columns, nullabilit
 
 Execute explicit BEGIN TRANSACTION, COMMIT or ROLLBACK in SQL. The transaction indicator uses native XACT_STATE, including failed transactions. Confirmed reconnect drops the original session, rolling back its open transaction and removing temporary tables; retained result exports stay available.
 
-Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports are enabled; SQL file imports, structured execution plans and diagrams remain disabled for this driver.
+Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports are enabled; Relationship diagrams are also enabled on read-only connections; SQL file imports and structured execution plans remain disabled for this driver.
 
 ## Reviewed table editing
 
@@ -61,6 +61,14 @@ The native writer holds the session lock and one transaction/savepoint across ev
 The configured query timeout supplies the whole-file 1–3,600-second job deadline; the native driver also caps a stream at one hour. Cancellation interrupts parser waits or native requests, drains Attention and confirms rollback before reuse. Final COMMIT is not deliberately interrupted, and a late cancel can arrive after commit. Unconfirmed cleanup or commit closes the connection and requires verification before retrying. Native trigger/external-effect limits still apply.
 
 The current implementation makes per-row conversion/write requests and holds the same table-wide exclusive lock until the transaction ends. Large-file throughput remains unmeasured. Views, memory-optimized tables, enabled INSTEAD OF triggers and unsupported alias/CLR destination casts retain the editing restrictions. SQL file imports remain disabled, including GO-based dumps.
+
+## Relationship diagrams
+
+Choose **Relationships** above the connected table list or **Open relationship diagram** in the command palette. Select a focused group of tables and load their columns, primary keys and native foreign-key relationships. Composite column pairs keep SQL Server constraint order; cross-schema targets and self-references are retained. Targets outside the selection remain listed so you can add them.
+
+The existing diagram view provides manual/grid layout, keyboard positioning, pan/zoom/Fit, saved local positions and native SVG export. Read-only connections can inspect the same graph without enabling writes. Metadata visibility follows server permissions. The shared limits are 50 tables, 2,000 columns, 4,000 relationship column pairs, 4 MiB of metadata and a 30-second load deadline. See [diagram controls and limits](DIAGRAMS.md).
+
+The graph reuses the existing bounded, session-serialized catalog requests. Loading reads metadata rather than table contents; it is not a frozen schema snapshot. If a metadata request times out while reading a response, its owned native client closes and reconnect is required. Native SQL Server desktop diagram acceptance remains pending.
 
 ## Evidence and remaining validation
 
