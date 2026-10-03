@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 mod edit;
 mod plan;
+mod routines;
 use futures_util::TryStreamExt;
 use klyndb_driver_api::*;
 use std::{net::SocketAddr, time::Duration};
@@ -420,7 +421,7 @@ impl Session for SqlServer {
         Capabilities {
             affected_rows: false,
             table_browse: true,
-            routines: false,
+            routines: true,
             diagrams: true,
             transactions: true,
             schemas: true,
@@ -577,6 +578,12 @@ impl Session for SqlServer {
             *guard = Some(client);
         }
         result
+    }
+    async fn routines(&self, search: &str, offset: u32) -> Result<RoutinePage> {
+        routines::list(self, search, offset).await
+    }
+    async fn routine_definition(&self, id: &str) -> Result<String> {
+        routines::definition(self, id).await
     }
     async fn tables(&self) -> Result<Vec<Table>> {
         Ok(self.metadata("SELECT TOP (50001) SCHEMA_NAME(schema_id),name,type FROM sys.objects WHERE type IN ('U','V') AND is_ms_shipped=0 ORDER BY 1,2".into()).await?.into_iter().map(|r|Table {schema:r[0].text(),name:r[1].text(),kind:if r[2].text().trim()=="V" {"view"} else {"table"}.into()}).collect())

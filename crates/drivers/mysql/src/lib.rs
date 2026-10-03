@@ -1,5 +1,6 @@
 mod edit;
 mod import;
+mod routines;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use klyndb_driver_api::*;
@@ -340,7 +341,7 @@ impl Session for Mysql {
         Capabilities {
             affected_rows: true,
             table_browse: true,
-            routines: false,
+            routines: true,
             diagrams: true,
             transactions: true,
             schemas: true,
@@ -417,6 +418,12 @@ impl Session for Mysql {
             conn.query_drop("ROLLBACK").await.map_err(err)?;
         }
         result
+    }
+    async fn routines(&self, search: &str, offset: u32) -> Result<RoutinePage> {
+        routines::list(self, search, offset).await
+    }
+    async fn routine_definition(&self, id: &str) -> Result<String> {
+        routines::definition(self, id).await
     }
     async fn tables(&self) -> Result<Vec<Table>> {
         let mut guard = self.connection.lock().await;

@@ -54,7 +54,7 @@
 | --- | --- |
 | **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md) and [SQL Server](docs/SQLSERVER.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes and available table DDL, with foreign keys, constraints and triggers where supported. [Engine matrix](docs/COMPATIBILITY.md). |
-| **ƒ Inspect routines** | PostgreSQL source builds: search and page functions/procedures, inspect native definitions and open them in an SQL tab. |
+| **ƒ Inspect routines** | PostgreSQL, MySQL, MariaDB and SQL Server source builds: search and page routines, inspect native definitions and open them in an SQL tab. |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema-qualified table and lazy alias-column completion, statement/selection/batch execution, and source-build navigation to reported SQL error positions. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
 | **✍️ Edit data** | Staged inserts, updates and deletes on SQLite/PostgreSQL, MySQL/MariaDB InnoDB, DuckDB scalar base tables and SQL Server disk-based tables (DuckDB/SQL Server in source builds); review, bound values and optimistic conflicts. |

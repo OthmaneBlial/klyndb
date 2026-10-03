@@ -28,8 +28,7 @@ export function RoutineDefinition({
         </button>
       </div>
       <p className="muted">
-        Server-reconstructed CREATE OR REPLACE definition. Opening a tab does
-        not execute it.
+        Server-provided routine definition. Opening a tab does not execute it.
       </p>
       <pre tabIndex={0}>{definition}</pre>
     </section>

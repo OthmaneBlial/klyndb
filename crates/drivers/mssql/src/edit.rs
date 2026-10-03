@@ -78,9 +78,13 @@ async fn command(
     recover(client, result.is_err(), poison).await;
     result
 }
+pub(super) fn data_type_sql(column: &str) -> String {
+    "CASE WHEN t.is_user_defined=1 THEN QUOTENAME(SCHEMA_NAME(t.schema_id))+N'.'+QUOTENAME(t.name) WHEN t.name IN ('decimal','numeric') THEN t.name+N'('+CONVERT(nvarchar(3),c.precision)+N','+CONVERT(nvarchar(3),c.scale)+N')' WHEN t.name IN ('varchar','char','varbinary','binary','nvarchar','nchar') THEN t.name+N'('+CASE WHEN c.max_length=-1 THEN N'max' ELSE CONVERT(nvarchar(5),CASE WHEN t.name IN ('nvarchar','nchar') THEN c.max_length/2 ELSE c.max_length END) END+N')' WHEN t.name IN ('datetime2','datetimeoffset','time') THEN t.name+N'('+CONVERT(nvarchar(3),c.scale)+N')' ELSE t.name END".replace("c.", &format!("{column}."))
+}
 pub(super) fn column_sql(table: &Table) -> String {
     format!(
-        "SELECT TOP (50001) c.name,CASE WHEN t.is_user_defined=1 THEN QUOTENAME(SCHEMA_NAME(t.schema_id))+N'.'+QUOTENAME(t.name) WHEN t.name IN ('decimal','numeric') THEN t.name+N'('+CONVERT(nvarchar(3),c.precision)+N','+CONVERT(nvarchar(3),c.scale)+N')' WHEN t.name IN ('varchar','char','varbinary','binary','nvarchar','nchar') THEN t.name+N'('+CASE WHEN c.max_length=-1 THEN N'max' ELSE CONVERT(nvarchar(5),CASE WHEN t.name IN ('nvarchar','nchar') THEN c.max_length/2 ELSE c.max_length END) END+N')' WHEN t.name IN ('datetime2','datetimeoffset','time') THEN t.name+N'('+CONVERT(nvarchar(3),c.scale)+N')' ELSE t.name END,c.is_nullable,CAST(CASE WHEN EXISTS(SELECT 1 FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id=i.object_id AND ic.index_id=i.index_id WHERE i.object_id=c.object_id AND i.is_primary_key=1 AND ic.column_id=c.column_id) THEN 1 ELSE 0 END AS bit),OBJECT_DEFINITION(c.default_object_id),CAST(CASE WHEN c.is_identity=1 OR c.is_computed=1 OR c.generated_always_type<>0 OR t.name='timestamp' THEN 1 ELSE 0 END AS bit) FROM sys.columns c JOIN sys.types t ON t.user_type_id=c.user_type_id WHERE c.object_id={} ORDER BY c.column_id",
+        "SELECT TOP (50001) c.name,{},c.is_nullable,CAST(CASE WHEN EXISTS(SELECT 1 FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id=i.object_id AND ic.index_id=i.index_id WHERE i.object_id=c.object_id AND i.is_primary_key=1 AND ic.column_id=c.column_id) THEN 1 ELSE 0 END AS bit),OBJECT_DEFINITION(c.default_object_id),CAST(CASE WHEN c.is_identity=1 OR c.is_computed=1 OR c.generated_always_type<>0 OR t.name='timestamp' THEN 1 ELSE 0 END AS bit) FROM sys.columns c JOIN sys.types t ON t.user_type_id=c.user_type_id WHERE c.object_id={} ORDER BY c.column_id",
+        data_type_sql("c"),
         object_id(table)
     )
 }
