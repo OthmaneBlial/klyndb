@@ -1,9 +1,10 @@
+import type { Capabilities } from "./api";
 export interface Tab {
   id: string;
   name: string;
   connection: string;
   sql: string;
-  kind?: "sql" | "key_value";
+  kind?: "sql" | "key_value" | "document";
 }
 export interface Preferences {
   theme: "dark" | "light";
@@ -38,7 +39,10 @@ export function restoreWorkspace(value: unknown): {
             ["id", "name", "connection", "sql"].every(
               (k) => typeof (t as Record<string, unknown>)[k] === "string",
             ) &&
-            (!("kind" in t) || t.kind === "sql" || t.kind === "key_value"),
+            (!("kind" in t) ||
+              t.kind === "sql" ||
+              t.kind === "key_value" ||
+              t.kind === "document"),
         )
         .slice(0, 100)
     : [];
@@ -68,4 +72,21 @@ export function restoreWorkspace(value: unknown): {
       sidebar: p?.sidebar !== false,
     },
   };
+}
+
+export function workspaceKind(
+  capabilities: Capabilities | undefined,
+  engine?: string,
+): NonNullable<Tab["kind"]> {
+  if (capabilities)
+    return capabilities.document_queries
+      ? "document"
+      : capabilities.key_value
+        ? "key_value"
+        : "sql";
+  return engine === "mongodb"
+    ? "document"
+    : engine === "redis"
+      ? "key_value"
+      : "sql";
 }

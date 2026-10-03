@@ -38,6 +38,16 @@ raise SystemExit(subprocess.run([executables.pop(), *arguments]).returncode)
 PY
 }
 cargo test --locked --workspace
+if [[ -n "${KLYNDB_TEST_MONGODB_URL:-}" ]]; then
+  : "${KLYNDB_TEST_MONGODB_PASSWORD:?Set the disposable MongoDB writer password}"
+  : "${KLYNDB_TEST_MONGODB_READONLY_PASSWORD:?Set the disposable MongoDB reader password}"
+  workspace_test crates/drivers/mongodb/tests/integration.rs real_mongodb_documents_types_paging_indexes_aggregation_and_editing --ignored
+  if [[ -n "${KLYNDB_TEST_TLS_MONGODB_URL:-}" && -n "${KLYNDB_TEST_MTLS_MONGODB_URL:-}" ]]; then
+    workspace_test crates/drivers/mongodb/tests/integration.rs real_mongodb_verified_tls_and_client_identity --ignored
+  fi
+else
+  echo 'MongoDB integration skipped: set KLYNDB_TEST_MONGODB_URL and disposable writer/reader passwords.'
+fi
 if [[ -n "${KLYNDB_TEST_REDIS_URL:-}" ]]; then
   : "${KLYNDB_TEST_REDIS_PASSWORD:?Set KLYNDB_TEST_REDIS_PASSWORD for disposable Redis}"
   : "${KLYNDB_TEST_REDIS_READONLY_PASSWORD:?Set the disposable read-only ACL password}"

@@ -111,7 +111,9 @@ export function ConnectionDialog({
   }
   async function chooseIdentity() {
     try {
-      const path = await api("choose_client_identity_file");
+      const path = await api("choose_client_identity_file", {
+        engine: form.engine,
+      });
       if (path) {
         changeTls(
           form.engine !== "postgres" ? "required" : "require",
@@ -203,6 +205,7 @@ export function ConnectionDialog({
               "clickhouse",
               "mssql",
               "redis",
+              "mongodb",
             ].map((engine) => (
               <button
                 type="button"
@@ -223,19 +226,21 @@ export function ConnectionDialog({
               >
                 <Database size={20} />
                 <strong>
-                  {engine === "redis"
-                    ? "Redis"
-                    : engine === "sqlite"
-                      ? "SQLite"
-                      : engine === "duckdb"
-                        ? "DuckDB"
-                        : engine === "mysql"
-                          ? "MySQL / MariaDB"
-                          : engine === "mssql"
-                            ? "SQL Server"
-                            : engine === "clickhouse"
-                              ? "ClickHouse"
-                              : "PostgreSQL"}
+                  {engine === "mongodb"
+                    ? "MongoDB"
+                    : engine === "redis"
+                      ? "Redis"
+                      : engine === "sqlite"
+                        ? "SQLite"
+                        : engine === "duckdb"
+                          ? "DuckDB"
+                          : engine === "mysql"
+                            ? "MySQL / MariaDB"
+                            : engine === "mssql"
+                              ? "SQL Server"
+                              : engine === "clickhouse"
+                                ? "ClickHouse"
+                                : "PostgreSQL"}
                 </strong>
                 <span>
                   {["sqlite", "duckdb"].includes(engine)
@@ -298,15 +303,17 @@ export function ConnectionDialog({
                     setSshPassword("");
                   }}
                   placeholder={
-                    form.engine === "redis"
-                      ? "redis://default@localhost:6379/0"
-                      : form.engine === "mysql"
-                        ? "mysql://user@localhost:3306/database"
-                        : form.engine === "mssql"
-                          ? "mssql://user@localhost:1433/database"
-                          : form.engine === "clickhouse"
-                            ? "clickhouse://default@localhost:9000/default?tls=disabled"
-                            : "postgresql://user@localhost:5432/database"
+                    form.engine === "mongodb"
+                      ? "mongodb://user@localhost:27017/database?authSource=admin"
+                      : form.engine === "redis"
+                        ? "redis://default@localhost:6379/0"
+                        : form.engine === "mysql"
+                          ? "mysql://user@localhost:3306/database"
+                          : form.engine === "mssql"
+                            ? "mssql://user@localhost:1433/database"
+                            : form.engine === "clickhouse"
+                              ? "clickhouse://default@localhost:9000/default?tls=disabled"
+                              : "postgresql://user@localhost:5432/database"
                   }
                   required
                   autoComplete="off"
@@ -349,168 +356,170 @@ export function ConnectionDialog({
                   </small>
                 </label>
               </details>
-              <details className="tls-options">
-                <summary>SSH tunnel</summary>
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={ssh.enabled}
-                    onChange={(e) =>
-                      changeSsh({ ...ssh, enabled: e.target.checked })
-                    }
-                  />
-                  Connect through an SSH server
-                </label>
-                {ssh.enabled && (
-                  <>
-                    <div className="form-row">
-                      <label>
-                        SSH host
-                        <input
-                          aria-label="SSH host"
-                          required
-                          value={ssh.host}
-                          placeholder="bastion.example.com"
-                          onChange={(e) =>
-                            changeSsh({ ...ssh, host: e.target.value })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Port
-                        <input
-                          aria-label="SSH port"
-                          type="number"
-                          min={1}
-                          max={65535}
-                          step={1}
-                          required
-                          value={ssh.port}
-                          onChange={(e) =>
-                            changeSsh({ ...ssh, port: e.target.value })
-                          }
-                        />
-                      </label>
-                    </div>
-                    <label>
-                      SSH username
-                      <input
-                        aria-label="SSH username"
-                        required
-                        maxLength={128}
-                        value={ssh.user}
-                        autoComplete="off"
-                        onChange={(e) =>
-                          changeSsh({ ...ssh, user: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Host key fingerprint
-                      <input
-                        aria-label="SSH host key fingerprint"
-                        required
-                        maxLength={50}
-                        value={ssh.fingerprint}
-                        placeholder="SHA256:…"
-                        onChange={(e) =>
-                          changeSsh({ ...ssh, fingerprint: e.target.value })
-                        }
-                      />
-                      <small>
-                        Use the SHA256 fingerprint verified with your
-                        administrator. Unknown or changed keys are rejected
-                        before authentication.
-                      </small>
-                    </label>
-                    <label>
-                      Authentication
-                      <select
-                        aria-label="SSH authentication"
-                        value={ssh.auth}
-                        onChange={(e) =>
-                          changeSsh({
-                            ...ssh,
-                            auth: e.target.value,
-                            identity: "",
-                          })
-                        }
-                      >
-                        <option value="agent">SSH agent</option>
-                        <option value="key">Private key file</option>
-                        <option value="password">SSH password</option>
-                      </select>
-                    </label>
-                    {ssh.auth === "key" && (
-                      <label>
-                        SSH private key
-                        <div className="input-action">
+              {form.engine !== "mongodb" && (
+                <details className="tls-options">
+                  <summary>SSH tunnel</summary>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={ssh.enabled}
+                      onChange={(e) =>
+                        changeSsh({ ...ssh, enabled: e.target.checked })
+                      }
+                    />
+                    Connect through an SSH server
+                  </label>
+                  {ssh.enabled && (
+                    <>
+                      <div className="form-row">
+                        <label>
+                          SSH host
                           <input
-                            aria-label="SSH private key file"
+                            aria-label="SSH host"
                             required
-                            value={ssh.identity}
-                            placeholder="/path/to/id_ed25519"
+                            value={ssh.host}
+                            placeholder="bastion.example.com"
                             onChange={(e) =>
-                              changeSsh({ ...ssh, identity: e.target.value })
+                              changeSsh({ ...ssh, host: e.target.value })
                             }
                           />
-                          <button
-                            type="button"
-                            aria-label="Choose SSH private key file"
-                            onClick={() => void chooseSshIdentity()}
-                          >
-                            <FolderOpen size={17} />
-                          </button>
-                        </div>
+                        </label>
+                        <label>
+                          Port
+                          <input
+                            aria-label="SSH port"
+                            type="number"
+                            min={1}
+                            max={65535}
+                            step={1}
+                            required
+                            value={ssh.port}
+                            onChange={(e) =>
+                              changeSsh({ ...ssh, port: e.target.value })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <label>
+                        SSH username
+                        <input
+                          aria-label="SSH username"
+                          required
+                          maxLength={128}
+                          value={ssh.user}
+                          autoComplete="off"
+                          onChange={(e) =>
+                            changeSsh({ ...ssh, user: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Host key fingerprint
+                        <input
+                          aria-label="SSH host key fingerprint"
+                          required
+                          maxLength={50}
+                          value={ssh.fingerprint}
+                          placeholder="SHA256:…"
+                          onChange={(e) =>
+                            changeSsh({ ...ssh, fingerprint: e.target.value })
+                          }
+                        />
                         <small>
-                          OpenSSH or supported PEM key, up to 1 MiB. Rust reads
-                          it; private keys stay outside the interface.
+                          Use the SHA256 fingerprint verified with your
+                          administrator. Unknown or changed keys are rejected
+                          before authentication.
                         </small>
                       </label>
-                    )}
-                    {ssh.auth !== "agent" && (
-                      <>
+                      <label>
+                        Authentication
+                        <select
+                          aria-label="SSH authentication"
+                          value={ssh.auth}
+                          onChange={(e) =>
+                            changeSsh({
+                              ...ssh,
+                              auth: e.target.value,
+                              identity: "",
+                            })
+                          }
+                        >
+                          <option value="agent">SSH agent</option>
+                          <option value="key">Private key file</option>
+                          <option value="password">SSH password</option>
+                        </select>
+                      </label>
+                      {ssh.auth === "key" && (
                         <label>
-                          {ssh.auth === "key"
-                            ? "Key passphrase"
-                            : "SSH password"}
-                          <input
-                            aria-label="SSH password or key passphrase"
-                            type="password"
-                            autoComplete="off"
-                            maxLength={16384}
-                            value={sshPassword}
-                            placeholder={
-                              initial
-                                ? "Leave empty to use the stored SSH secret"
-                                : ssh.auth === "key"
-                                  ? "Private key passphrase · optional"
-                                  : "SSH password"
-                            }
-                            onChange={(e) => {
-                              setSshPassword(e.target.value);
-                              setTestStatus("");
-                            }}
-                          />
+                          SSH private key
+                          <div className="input-action">
+                            <input
+                              aria-label="SSH private key file"
+                              required
+                              value={ssh.identity}
+                              placeholder="/path/to/id_ed25519"
+                              onChange={(e) =>
+                                changeSsh({ ...ssh, identity: e.target.value })
+                              }
+                            />
+                            <button
+                              type="button"
+                              aria-label="Choose SSH private key file"
+                              onClick={() => void chooseSshIdentity()}
+                            >
+                              <FolderOpen size={17} />
+                            </button>
+                          </div>
+                          <small>
+                            OpenSSH or supported PEM key, up to 1 MiB. Rust
+                            reads it; private keys stay outside the interface.
+                          </small>
                         </label>
-                        <label className="check">
-                          <input
-                            type="checkbox"
-                            checked={rememberSsh}
-                            onChange={(e) => setRememberSsh(e.target.checked)}
-                          />
-                          Store SSH secret in the OS keychain
-                        </label>
-                      </>
-                    )}
-                    <small>
-                      The database URL names the server as seen from SSH.
-                      Database TLS keeps verifying that hostname; the connection
-                      deadline covers SSH and database setup.
-                    </small>
-                  </>
-                )}
-              </details>
+                      )}
+                      {ssh.auth !== "agent" && (
+                        <>
+                          <label>
+                            {ssh.auth === "key"
+                              ? "Key passphrase"
+                              : "SSH password"}
+                            <input
+                              aria-label="SSH password or key passphrase"
+                              type="password"
+                              autoComplete="off"
+                              maxLength={16384}
+                              value={sshPassword}
+                              placeholder={
+                                initial
+                                  ? "Leave empty to use the stored SSH secret"
+                                  : ssh.auth === "key"
+                                    ? "Private key passphrase · optional"
+                                    : "SSH password"
+                              }
+                              onChange={(e) => {
+                                setSshPassword(e.target.value);
+                                setTestStatus("");
+                              }}
+                            />
+                          </label>
+                          <label className="check">
+                            <input
+                              type="checkbox"
+                              checked={rememberSsh}
+                              onChange={(e) => setRememberSsh(e.target.checked)}
+                            />
+                            Store SSH secret in the OS keychain
+                          </label>
+                        </>
+                      )}
+                      <small>
+                        The database URL names the server as seen from SSH.
+                        Database TLS keeps verifying that hostname; the
+                        connection deadline covers SSH and database setup.
+                      </small>
+                    </>
+                  )}
+                </details>
+              )}
               <details className="tls-options">
                 <summary>TLS &amp; certificates</summary>
                 <label>
@@ -588,7 +597,11 @@ export function ConnectionDialog({
                       <input
                         aria-label="Client identity file"
                         value={tls.identity}
-                        placeholder="PKCS#12 (.p12 / .pfx)"
+                        placeholder={
+                          form.engine === "mongodb"
+                            ? "PEM certificate and private key (.pem)"
+                            : "PKCS#12 (.p12 / .pfx)"
+                        }
                         onChange={(e) => {
                           changeTls(
                             form.engine !== "postgres" ? "required" : "require",
@@ -618,7 +631,8 @@ export function ConnectionDialog({
                       )}
                     </div>
                     <small>
-                      Certificate chain and private key in one PKCS#12 file, up
+                      Certificate chain and private key in one{" "}
+                      {form.engine === "mongodb" ? "PEM" : "PKCS#12"} file, up
                       to 1 MiB. Rust reads the file; keys stay outside the
                       interface.
                     </small>
@@ -637,7 +651,7 @@ export function ConnectionDialog({
                         placeholder={
                           initial
                             ? "Leave empty to use the stored certificate password"
-                            : "Password for the PKCS#12 file · optional"
+                            : "Password for the client private key · optional"
                         }
                         onChange={(e) => {
                           setIdentityPassword(e.target.value);

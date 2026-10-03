@@ -429,6 +429,7 @@ impl Session for ClickHouse {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             key_value: false,
+            document_queries: false,
             affected_rows: false,
             table_browse: true,
             routines: false,

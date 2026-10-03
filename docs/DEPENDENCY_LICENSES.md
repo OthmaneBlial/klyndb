@@ -59,6 +59,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | bit-vec | 0.8.0 | Apache-2.0 OR MIT |
 | Cargo | bitflags | 1.3.2 | MIT/Apache-2.0 |
 | Cargo | bitflags | 2.13.2 | MIT OR Apache-2.0 |
+| Cargo | bitvec | 1.1.1 | MIT |
 | Cargo | blake2 | 0.11.0 | MIT OR Apache-2.0 |
 | Cargo | block-buffer | 0.10.4 | MIT OR Apache-2.0 |
 | Cargo | block-buffer | 0.12.1 | MIT OR Apache-2.0 |
@@ -70,6 +71,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | brotli | 9.0.0 | BSD-3-Clause AND MIT |
 | Cargo | brotli-decompressor | 6.0.1 | BSD-3-Clause/MIT |
 | Cargo | bs58 | 0.5.1 | MIT/Apache-2.0 |
+| Cargo | bson | 3.1.0 | MIT |
 | Cargo | btoi | 0.5.0 | MIT OR Apache-2.0 |
 | Cargo | bumpalo | 3.20.3 | MIT OR Apache-2.0 |
 | Cargo | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
@@ -106,6 +108,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | const-oid | 0.10.2 | Apache-2.0 OR MIT |
 | Cargo | const-random | 0.1.18 | MIT OR Apache-2.0 |
 | Cargo | const-random-macro | 0.1.16 | MIT OR Apache-2.0 |
+| Cargo | convert_case | 0.10.0 | MIT |
 | Cargo | cookie | 0.18.2 | MIT OR Apache-2.0 |
 | Cargo | core-foundation | 0.10.1 | MIT OR Apache-2.0 |
 | Cargo | core-foundation | 0.9.4 | MIT OR Apache-2.0 |
@@ -117,7 +120,9 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | cpufeatures | 0.2.17 | MIT OR Apache-2.0 |
 | Cargo | cpufeatures | 0.3.1 | MIT OR Apache-2.0 |
 | Cargo | crc32fast | 1.5.2 | MIT OR Apache-2.0 |
+| Cargo | critical-section | 1.2.0 | MIT OR Apache-2.0 |
 | Cargo | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 |
+| Cargo | crossbeam-epoch | 0.9.21 | MIT OR Apache-2.0 |
 | Cargo | crossbeam-queue | 0.3.14 | MIT OR Apache-2.0 |
 | Cargo | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 |
 | Cargo | crossterm | 0.28.1 | MIT |
@@ -147,6 +152,8 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | delegate | 0.13.5 | MIT OR Apache-2.0 |
 | Cargo | der | 0.8.2 | Apache-2.0 OR MIT |
 | Cargo | deranged | 0.5.8 | MIT OR Apache-2.0 |
+| Cargo | derive-syn-parse | 0.2.0 | MIT OR Apache-2.0 |
+| Cargo | derive-where | 1.7.0 | MIT OR Apache-2.0 |
 | Cargo | derive_arbitrary | 1.4.2 | MIT OR Apache-2.0 |
 | Cargo | derive_more | 2.1.1 | MIT |
 | Cargo | derive_more-impl | 2.1.1 | MIT |
@@ -171,6 +178,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | ecdsa | 0.17.0 | Apache-2.0 OR MIT |
 | Cargo | ed25519 | 3.0.0 | Apache-2.0 OR MIT |
 | Cargo | ed25519-dalek | 3.0.0 | BSD-3-Clause |
+| Cargo | either | 1.18.0 | MIT OR Apache-2.0 |
 | Cargo | elliptic-curve | 0.14.1 | Apache-2.0 OR MIT |
 | Cargo | embed-resource | 3.0.11 | MIT |
 | Cargo | embed_plist | 1.2.2 | MIT OR Apache-2.0 |
@@ -204,6 +212,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | foreign-types-shared | 0.1.1 | MIT/Apache-2.0 |
 | Cargo | foreign-types-shared | 0.3.1 | MIT/Apache-2.0 |
 | Cargo | form_urlencoded | 1.2.2 | MIT OR Apache-2.0 |
+| Cargo | funty | 2.0.0 | MIT |
 | Cargo | futures | 0.3.34 | MIT OR Apache-2.0 |
 | Cargo | futures-channel | 0.3.34 | MIT OR Apache-2.0 |
 | Cargo | futures-core | 0.3.34 | MIT OR Apache-2.0 |
@@ -249,6 +258,9 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | hermit-abi | 0.5.3 | MIT OR Apache-2.0 |
 | Cargo | hex | 0.4.3 | MIT OR Apache-2.0 |
 | Cargo | hex-literal | 1.1.0 | MIT OR Apache-2.0 |
+| Cargo | hickory-net | 0.26.3 | MIT OR Apache-2.0 |
+| Cargo | hickory-proto | 0.26.3 | MIT OR Apache-2.0 |
+| Cargo | hickory-resolver | 0.26.3 | MIT OR Apache-2.0 |
 | Cargo | hkdf | 0.12.4 | MIT OR Apache-2.0 |
 | Cargo | hkdf | 0.13.0 | MIT OR Apache-2.0 |
 | Cargo | hmac | 0.12.1 | MIT OR Apache-2.0 |
@@ -279,6 +291,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | infer | 0.22.0 | MIT |
 | Cargo | inout | 0.1.4 | MIT OR Apache-2.0 |
 | Cargo | inout | 0.2.2 | MIT OR Apache-2.0 |
+| Cargo | ipconfig | 0.3.4 | MIT/Apache-2.0 |
 | Cargo | ipnet | 2.12.2 | MIT OR Apache-2.0 |
 | Cargo | itoa | 1.0.18 | MIT OR Apache-2.0 |
 | Cargo | javascriptcore-rs | 1.1.2 | MIT |
@@ -289,6 +302,8 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | jiff-tzdb | 0.1.8 | Unlicense OR MIT |
 | Cargo | jiff-tzdb-platform | 0.1.3 | Unlicense OR MIT |
 | Cargo | jni | 0.21.1 | MIT/Apache-2.0 |
+| Cargo | jni | 0.22.4 | MIT OR Apache-2.0 |
+| Cargo | jni-macros | 0.22.4 | MIT OR Apache-2.0 |
 | Cargo | jni-sys | 0.3.1 | MIT OR Apache-2.0 |
 | Cargo | jni-sys | 0.4.1 | MIT OR Apache-2.0 |
 | Cargo | jni-sys-macros | 0.4.1 | MIT OR Apache-2.0 |
@@ -329,6 +344,10 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | lru | 0.18.5 | MIT |
 | Cargo | lz4 | 1.28.1 | MIT |
 | Cargo | lz4-sys | 1.11.1+lz4-1.10.0 | MIT |
+| Cargo | macro_magic | 0.5.1 | MIT |
+| Cargo | macro_magic_core | 0.5.1 | MIT |
+| Cargo | macro_magic_core_macros | 0.5.1 | MIT |
+| Cargo | macro_magic_macros | 0.5.1 | MIT |
 | Cargo | markup5ever | 0.39.0 | MIT OR Apache-2.0 |
 | Cargo | matchers | 0.2.0 | MIT |
 | Cargo | md-5 | 0.11.0 | MIT OR Apache-2.0 |
@@ -341,6 +360,11 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | mio | 1.2.3 | MIT |
 | Cargo | ml-kem | 0.3.2 | Apache-2.0 OR MIT |
 | Cargo | module-lattice | 0.2.3 | Apache-2.0 OR MIT |
+| Cargo | moka | 0.12.16 | (MIT OR Apache-2.0) AND Apache-2.0 |
+| Cargo | mongocrypt | 0.4.0 | Apache-2.0 |
+| Cargo | mongocrypt-sys | 0.1.6+1.18.2 | Apache-2.0 |
+| Cargo | mongodb | 3.9.1 | Apache-2.0 |
+| Cargo | mongodb-internal-macros | 3.9.1 | Apache-2.0 |
 | Cargo | muda | 0.20.0 | Apache-2.0 OR MIT |
 | Cargo | multiversion_no_op | 1.0.0 | Apache-2.0 OR MIT |
 | Cargo | mysql_async | 0.37.1 | MIT OR Apache-2.0 |
@@ -435,6 +459,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | powerfmt | 0.2.0 | MIT OR Apache-2.0 |
 | Cargo | ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 |
 | Cargo | precomputed-hash | 0.1.1 | MIT |
+| Cargo | prefix-trie | 0.8.4 | MIT OR Apache-2.0 |
 | Cargo | pretty-hex | 0.4.2 | MIT |
 | Cargo | primefield | 0.14.0 | Apache-2.0 OR MIT |
 | Cargo | primeorder | 0.14.0 | Apache-2.0 OR MIT |
@@ -450,11 +475,15 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | quote | 1.0.47 | MIT OR Apache-2.0 |
 | Cargo | r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | Cargo | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
+| Cargo | radium | 0.7.0 | MIT |
 | Cargo | rand | 0.10.3 | MIT OR Apache-2.0 |
 | Cargo | rand | 0.8.8 | MIT OR Apache-2.0 |
+| Cargo | rand | 0.9.5 | MIT OR Apache-2.0 |
 | Cargo | rand_chacha | 0.3.1 | MIT OR Apache-2.0 |
+| Cargo | rand_chacha | 0.9.0 | MIT OR Apache-2.0 |
 | Cargo | rand_core | 0.10.1 | MIT OR Apache-2.0 |
 | Cargo | rand_core | 0.6.4 | MIT OR Apache-2.0 |
+| Cargo | rand_core | 0.9.5 | MIT OR Apache-2.0 |
 | Cargo | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | Cargo | recursive | 0.1.1 | MIT |
 | Cargo | recursive-proc-macro-impl | 0.1.1 | MIT |
@@ -467,6 +496,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | regex-automata | 0.4.18 | MIT OR Apache-2.0 |
 | Cargo | regex-syntax | 0.8.11 | MIT OR Apache-2.0 |
 | Cargo | reqwest | 0.13.5 | MIT OR Apache-2.0 |
+| Cargo | resolv-conf | 0.7.6 | MIT OR Apache-2.0 |
 | Cargo | rfc6979 | 0.6.0 | Apache-2.0 OR MIT |
 | Cargo | rfd | 0.17.2 | MIT |
 | Cargo | ring | 0.17.14 | Apache-2.0 AND ISC |
@@ -476,6 +506,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | russh-util | 0.52.0 | Apache-2.0 |
 | Cargo | rustc-hash | 2.1.3 | Apache-2.0 OR MIT |
 | Cargo | rustc_version | 0.4.1 | MIT OR Apache-2.0 |
+| Cargo | rustc_version_runtime | 0.3.0 | MIT |
 | Cargo | rustix | 0.38.44 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | Cargo | rustix | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | Cargo | rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT |
@@ -505,6 +536,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | semver | 1.0.28 | MIT OR Apache-2.0 |
 | Cargo | serde | 1.0.229 | MIT OR Apache-2.0 |
 | Cargo | serde-untagged | 0.1.9 | MIT OR Apache-2.0 |
+| Cargo | serde_bytes | 0.11.19 | MIT OR Apache-2.0 |
 | Cargo | serde_core | 1.0.229 | MIT OR Apache-2.0 |
 | Cargo | serde_derive | 1.0.229 | MIT OR Apache-2.0 |
 | Cargo | serde_derive_internals | 0.29.1 | MIT OR Apache-2.0 |
@@ -529,6 +561,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 |
 | Cargo | signature | 3.0.0 | Apache-2.0 OR MIT |
 | Cargo | simd-adler32 | 0.3.10 | MIT |
+| Cargo | simd_cesu8 | 1.2.0 | Apache-2.0 OR MIT |
 | Cargo | simdutf8 | 0.1.5 | MIT OR Apache-2.0 |
 | Cargo | siphasher | 1.0.4 | MIT OR Apache-2.0 |
 | Cargo | slab | 0.4.12 | MIT |
@@ -561,9 +594,14 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | syn | 3.0.6 | MIT OR Apache-2.0 |
 | Cargo | sync_wrapper | 1.0.2 | Apache-2.0 |
 | Cargo | synstructure | 0.14.0 | MIT |
+| Cargo | system-configuration | 0.7.0 | MIT OR Apache-2.0 |
+| Cargo | system-configuration-sys | 0.6.0 | MIT OR Apache-2.0 |
 | Cargo | system-deps | 6.2.2 | MIT OR Apache-2.0 |
+| Cargo | tagptr | 0.2.0 | MIT/Apache-2.0 |
+| Cargo | take_mut | 0.2.2 | MIT |
 | Cargo | tao | 0.37.1 | Apache-2.0 |
 | Cargo | tao-macros | 0.1.4 | MIT OR Apache-2.0 |
+| Cargo | tap | 1.0.1 | MIT |
 | Cargo | tar | 0.4.46 | MIT OR Apache-2.0 |
 | Cargo | target-lexicon | 0.12.16 | Apache-2.0 WITH LLVM-exception |
 | Cargo | tauri | 2.12.1 | Apache-2.0 OR MIT |
@@ -617,6 +655,8 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | tray-icon | 0.25.1 | MIT OR Apache-2.0 |
 | Cargo | try-lock | 0.2.5 | MIT |
 | Cargo | twox-hash | 2.1.4 | MIT |
+| Cargo | typed-builder | 0.22.0 | MIT OR Apache-2.0 |
+| Cargo | typed-builder-macro | 0.22.0 | MIT OR Apache-2.0 |
 | Cargo | typeid | 1.0.3 | MIT OR Apache-2.0 |
 | Cargo | typenum | 1.20.1 | MIT OR Apache-2.0 |
 | Cargo | uds_windows | 1.2.1 | MIT |
@@ -626,6 +666,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | unicode-properties | 0.1.4 | MIT/Apache-2.0 |
 | Cargo | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 |
 | Cargo | unicode-width | 0.2.2 | MIT OR Apache-2.0 |
+| Cargo | unicode-xid | 0.2.6 | MIT OR Apache-2.0 |
 | Cargo | universal-hash | 0.6.1 | MIT OR Apache-2.0 |
 | Cargo | untrusted | 0.9.0 | ISC |
 | Cargo | ureq | 3.4.2 | MIT OR Apache-2.0 |
@@ -668,6 +709,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | webview2-com-macros | 0.8.1 | MIT |
 | Cargo | webview2-com-sys | 0.39.1 | MIT |
 | Cargo | whoami | 2.1.3 | Apache-2.0 OR BSL-1.0 OR MIT |
+| Cargo | widestring | 1.2.1 | MIT OR Apache-2.0 |
 | Cargo | winapi | 0.3.9 | MIT/Apache-2.0 |
 | Cargo | winapi-i686-pc-windows-gnu | 0.4.0 | MIT/Apache-2.0 |
 | Cargo | winapi-util | 0.1.11 | Unlicense OR MIT |
@@ -681,6 +723,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | windows-interface | 0.59.3 | MIT OR Apache-2.0 |
 | Cargo | windows-link | 0.2.1 | MIT OR Apache-2.0 |
 | Cargo | windows-numerics | 0.3.1 | MIT OR Apache-2.0 |
+| Cargo | windows-registry | 0.6.1 | MIT OR Apache-2.0 |
 | Cargo | windows-result | 0.4.1 | MIT OR Apache-2.0 |
 | Cargo | windows-strings | 0.5.1 | MIT OR Apache-2.0 |
 | Cargo | windows-sys | 0.45.0 | MIT OR Apache-2.0 |
@@ -723,6 +766,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | wnaf | 0.14.1 | Apache-2.0 OR MIT |
 | Cargo | writeable | 0.6.4 | Unicode-3.0 |
 | Cargo | wry | 0.57.0 | Apache-2.0 OR MIT |
+| Cargo | wyz | 0.5.1 | MIT |
 | Cargo | x11 | 2.21.0 | MIT |
 | Cargo | x11-dl | 2.21.0 | MIT |
 | Cargo | xattr | 1.6.1 | MIT OR Apache-2.0 |

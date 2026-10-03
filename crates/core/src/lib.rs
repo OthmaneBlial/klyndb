@@ -375,6 +375,15 @@ async fn open_session(
                 )
                 .await?,
             ) as Arc<dyn Session>),
+            "mongodb" => Ok(Arc::new(
+                klyndb_mongodb::MongoDb::connect(
+                    &address,
+                    password,
+                    config.read_only,
+                    identity_password,
+                )
+                .await?,
+            ) as Arc<dyn Session>),
             "redis" => Ok(Arc::new(
                 klyndb_redis::Redis::connect_via(
                     &address,
@@ -627,6 +636,30 @@ impl Engine {
             .get(id)
             .map(|c| c.driver.clone())
             .ok_or_else(|| Error::new("Connect to this database first"))
+    }
+    pub async fn document_change(
+        &self,
+        id: &str,
+        database: &str,
+        collection: &str,
+        change: DocumentChange,
+        confirmed: bool,
+    ) -> Result<MutationResult> {
+        let sessions = self.sessions.lock().await;
+        let open = sessions
+            .get(id)
+            .ok_or_else(|| Error::new("Connect to the database first"))?;
+        if open.config.read_only {
+            return Err(Error::new("This MongoDB connection is read-only"));
+        }
+        if open.config.environment == "production" && !confirmed {
+            return Err(Error::new(
+                "Confirmation required: this document edit writes to production",
+            ));
+        }
+        let driver = open.driver.clone();
+        drop(sessions);
+        driver.document_change(database, collection, change).await
     }
     pub async fn key_command(&self, id: &str, text: &str, confirmed: bool) -> Result<KeyValue> {
         let sessions = self.sessions.lock().await;

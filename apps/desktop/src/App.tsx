@@ -51,12 +51,18 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import type { EditorHandle } from "./components/SqlEditor";
+import type { DocumentWorkspaceHandle } from "./components/DocumentWorkspace";
 import type { KeyWorkspaceHandle } from "./components/KeyValueWorkspace";
 import type { SqlSubmission } from "./sql";
 import { tableKey } from "./diagram";
 const KeyValueWorkspace = lazy(() =>
   import("./components/KeyValueWorkspace").then((m) => ({
     default: m.KeyValueWorkspace,
+  })),
+);
+const DocumentWorkspace = lazy(() =>
+  import("./components/DocumentWorkspace").then((m) => ({
+    default: m.DocumentWorkspace,
   })),
 );
 const SqlEditor = lazy(() =>
@@ -87,6 +93,7 @@ const RoutineBrowser = lazy(() =>
 import {
   defaults,
   restoreWorkspace,
+  workspaceKind,
   type Preferences,
   type Tab,
 } from "./workspace";
@@ -181,6 +188,7 @@ export default function App() {
   statusesRef.current = statuses;
   const connectingRef = useRef(new Set<string>());
   const editorRef = useRef<EditorHandle | null>(null);
+  const documentWorkspaceRef = useRef<DocumentWorkspaceHandle | null>(null);
   const keyWorkspaceRef = useRef<KeyWorkspaceHandle | null>(null);
   const browsingRef = useRef(new Set<string>());
   const [browsing, setBrowsing] = useState<Record<string, boolean>>({});
@@ -192,6 +200,8 @@ export default function App() {
       (!!status && !status.done) || !!applying[active] || !!browsing[active],
     set = resultSets[active] ?? 0;
   const keyWorkspace = current?.kind === "key_value";
+  const documentWorkspace = current?.kind === "document";
+  const nativeWorkspace = keyWorkspace || documentWorkspace;
   const editable = !!(
     connection &&
     connected[connection.id]?.edit_rows &&
@@ -396,10 +406,10 @@ export default function App() {
     connectionId = connection?.id ?? connections[0]?.id ?? "",
     sql = "SELECT 1;",
     name?: string,
-    kind: Tab["kind"] = (connected[connectionId]?.key_value ??
-    connections.find((c) => c.id === connectionId)?.engine === "redis")
-      ? "key_value"
-      : "sql",
+    kind: Tab["kind"] = workspaceKind(
+      connected[connectionId],
+      connections.find((c) => c.id === connectionId)?.engine,
+    ),
   ) {
     if (tabs.length >= 100) {
       report("The workspace is limited to 100 tabs. Close an unused tab.");
@@ -409,7 +419,8 @@ export default function App() {
     const tab: Tab = {
       id,
       name:
-        name ?? `${kind === "key_value" ? "Keys" : "Query"} ${tabs.length + 1}`,
+        name ??
+        `${kind === "document" ? "Documents" : kind === "key_value" ? "Keys" : "Query"} ${tabs.length + 1}`,
       kind,
       connection: connectionId,
       sql,
@@ -478,16 +489,15 @@ export default function App() {
     });
     updateTab(id, {
       connection,
-      kind:
-        (connected[connection]?.key_value ??
-        connections.find((c) => c.id === connection)?.engine === "redis")
-          ? "key_value"
-          : "sql",
+      kind: workspaceKind(
+        connected[connection],
+        connections.find((c) => c.id === connection)?.engine,
+      ),
     });
     setView("results");
   }
   async function refresh(id: string) {
-    if (connected[id]?.key_value) return;
+    if (connected[id]?.key_value || connected[id]?.document_queries) return;
     setTables((t) => ({ ...t, [id]: [] }));
     setColumns((s) => ({ ...s, [id]: {} }));
     try {
@@ -519,21 +529,17 @@ export default function App() {
       );
       setTransactionStates((s) => ({ ...s, [c.id]: state }));
       setExpanded((s) => ({ ...s, [c.id]: true }));
-      if (!capabilities.key_value) await refresh(c.id);
+      if (!capabilities.key_value && !capabilities.document_queries)
+        await refresh(c.id);
       setTabs((current) =>
         current.map((tab) =>
           tab.connection === c.id
-            ? { ...tab, kind: capabilities.key_value ? "key_value" : "sql" }
+            ? { ...tab, kind: workspaceKind(capabilities) }
             : tab,
         ),
       );
       if (!tabs.some((t) => t.connection === c.id))
-        newTab(
-          c.id,
-          "SELECT 1;",
-          undefined,
-          capabilities.key_value ? "key_value" : "sql",
-        );
+        newTab(c.id, "SELECT 1;", undefined, workspaceKind(capabilities));
       else if (!reconnecting)
         setActive(tabs.find((t) => t.connection === c.id)!.id);
       setNotice("");
@@ -618,11 +624,11 @@ export default function App() {
       tabsRef.current.some(
         (tab) =>
           tab.connection === c.id &&
-          tab.kind === "key_value" &&
+          (tab.kind === "key_value" || tab.kind === "document") &&
           applyingRef.current[tab.id],
       )
     ) {
-      report("Wait for the Redis operation to finish before disconnecting.");
+      report("Wait for the database operation to finish before disconnecting.");
       return;
     }
     try {
@@ -640,7 +646,7 @@ export default function App() {
     confirmed = false,
     plan?: "estimate" | "analyze",
   ) {
-    if (keyWorkspace || browsingRef.current.has(active)) return;
+    if (nativeWorkspace || browsingRef.current.has(active)) return;
     if (stagedRef.current[active]?.length) {
       report("Apply or discard staged changes before running another query.");
       return;
@@ -876,7 +882,7 @@ export default function App() {
     }
   }
   async function formatSql() {
-    if (keyWorkspace) return;
+    if (nativeWorkspace) return;
     try {
       const { format } = await import("sql-formatter");
       editorRef.current?.replace(
@@ -958,6 +964,20 @@ export default function App() {
     }
   }
   const commands = [
+    ...(documentWorkspace
+      ? [
+          {
+            name: "Run document query",
+            key: "⌘ ↵",
+            action: () => documentWorkspaceRef.current?.run(),
+          },
+          {
+            name: "Load collections",
+            key: "",
+            action: () => documentWorkspaceRef.current?.refresh(),
+          },
+        ]
+      : []),
     ...(keyWorkspace
       ? [
           {
@@ -973,12 +993,16 @@ export default function App() {
         ]
       : []),
     {
-      name: keyWorkspace ? "New key explorer tab" : "New SQL tab",
+      name: documentWorkspace
+        ? "New document tab"
+        : keyWorkspace
+          ? "New key explorer tab"
+          : "New SQL tab",
       key: "⌘ T",
       action: () => void newTab(),
     },
     { name: "New connection", key: "", action: () => setDialog(true) },
-    ...(!keyWorkspace
+    ...(!nativeWorkspace
       ? [
           {
             name: "Run current statement or selection",
@@ -1002,7 +1026,7 @@ export default function App() {
           },
         ]
       : []),
-    ...(!keyWorkspace
+    ...(!nativeWorkspace
       ? [
           {
             name: "Refresh schema",
@@ -1080,11 +1104,11 @@ export default function App() {
         e.preventDefault();
         newTab();
       }
-      if (!keyWorkspace && e.key.toLowerCase() === "s") {
+      if (!nativeWorkspace && e.key.toLowerCase() === "s") {
         e.preventDefault();
         setSaveName(current?.name ?? "");
       }
-      if (!keyWorkspace && e.shiftKey && e.key.toLowerCase() === "f") {
+      if (!nativeWorkspace && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         formatSql();
       }
@@ -1275,7 +1299,14 @@ export default function App() {
                                 <Network size={13} /> Relationships
                               </button>
                             )}
-                            {connected[c.id]?.key_value ? (
+                            {connected[c.id]?.document_queries ? (
+                              <button
+                                className="diagram-open"
+                                onClick={() => newTab(c.id)}
+                              >
+                                <Database size={13} /> Open documents
+                              </button>
+                            ) : connected[c.id]?.key_value ? (
                               <button
                                 className="diagram-open"
                                 onClick={() => newTab(c.id)}
@@ -1397,7 +1428,13 @@ export default function App() {
           </div>
           <button
             className="icon"
-            aria-label={keyWorkspace ? "New key explorer tab" : "New SQL tab"}
+            aria-label={
+              documentWorkspace
+                ? "New document tab"
+                : keyWorkspace
+                  ? "New key explorer tab"
+                  : "New SQL tab"
+            }
             onClick={() => newTab()}
           >
             <Plus size={17} />
@@ -1456,7 +1493,7 @@ export default function App() {
                   </button>
                 )}
               </div>
-              {!keyWorkspace && (
+              {!nativeWorkspace && (
                 <div>
                   <button
                     title="Format SQL · Shift+Cmd/Ctrl+F"
@@ -1532,7 +1569,32 @@ export default function App() {
                 </div>
               )}
             </div>
-            {keyWorkspace ? (
+            {documentWorkspace ? (
+              <Suspense
+                fallback={
+                  <div className="result-empty">
+                    Loading document workspace…
+                  </div>
+                }
+              >
+                <DocumentWorkspace
+                  key={`${current.id}-${current.connection}-${!!connected[current.connection]}`}
+                  connection={connection}
+                  ready={!!connected[current.connection]?.document_queries}
+                  workspaceRef={documentWorkspaceRef}
+                  onBusy={(value) => {
+                    applyingRef.current = {
+                      ...applyingRef.current,
+                      [current.id]: value,
+                    };
+                    setApplying((previous) => ({
+                      ...previous,
+                      [current.id]: value,
+                    }));
+                  }}
+                />
+              </Suspense>
+            ) : keyWorkspace ? (
               <Suspense
                 fallback={
                   <div className="result-empty">Loading key workspace…</div>
@@ -1728,7 +1790,9 @@ export default function App() {
                   : ""}
               </span>
               <span>
-                {keyWorkspace ? (
+                {documentWorkspace ? (
+                  "MongoDB · Extended JSON · 100-document pages"
+                ) : keyWorkspace ? (
                   "Redis · bounded replies · 10s per request"
                 ) : (
                   <>
@@ -1740,11 +1804,13 @@ export default function App() {
               <span>
                 {busy
                   ? "Executing…"
-                  : keyWorkspace
-                    ? "Key workspace"
-                    : status?.done
-                      ? "Ready"
-                      : "SQL workbench"}
+                  : documentWorkspace
+                    ? "Document workspace"
+                    : keyWorkspace
+                      ? "Key workspace"
+                      : status?.done
+                        ? "Ready"
+                        : "SQL workbench"}
               </span>
             </footer>
           </>

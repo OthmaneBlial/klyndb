@@ -112,6 +112,7 @@ pub type Row = Vec<Cell>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capabilities {
     pub key_value: bool,
+    pub document_queries: bool,
     pub affected_rows: bool,
     pub table_browse: bool,
     pub routines: bool,
@@ -125,6 +126,35 @@ pub struct Capabilities {
     pub import_sql: bool,
     pub cancel: bool,
     pub tls: bool,
+}
+
+/// BSON values cross IPC as canonical Extended JSON, never JavaScript numbers.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DocumentRecord {
+    pub json: String,
+    /// Original ordered BSON used for the atomic stale-edit predicate.
+    pub snapshot: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DocumentPage {
+    pub documents: Vec<DocumentRecord>,
+    pub has_more: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DocumentQuery {
+    pub database: String,
+    pub collection: String,
+    pub text: String,
+    pub sort: String,
+    pub aggregate: bool,
+    pub offset: u32,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DocumentChange {
+    Insert { json: String },
+    Replace { snapshot: String, json: String },
+    Delete { snapshot: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -581,6 +611,28 @@ pub trait Session: Send + Sync {
         self.execute(sql, output, cancel, limit).await
     }
     async fn tables(&self) -> Result<Vec<Table>>;
+    async fn document_databases(&self) -> Result<Vec<String>> {
+        Err(Error::new(
+            "This driver does not support document databases",
+        ))
+    }
+    async fn document_collections(&self, _database: &str) -> Result<Vec<Table>> {
+        Err(Error::new("This driver does not support collections"))
+    }
+    async fn document_indexes(&self, _database: &str, _collection: &str) -> Result<Vec<String>> {
+        Err(Error::new("This driver does not support document indexes"))
+    }
+    async fn document_query(&self, _query: DocumentQuery) -> Result<DocumentPage> {
+        Err(Error::new("This driver does not support document queries"))
+    }
+    async fn document_change(
+        &self,
+        _database: &str,
+        _collection: &str,
+        _change: DocumentChange,
+    ) -> Result<MutationResult> {
+        Err(Error::new("This driver does not support document editing"))
+    }
     async fn scan_keys(&self, _pattern: &str, _cursor: &str) -> Result<KeyScan> {
         Err(Error::new("This driver does not support key browsing"))
     }

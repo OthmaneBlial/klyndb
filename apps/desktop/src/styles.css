@@ -2117,3 +2117,83 @@ small {
     flex-basis: 100%;
   }
 }
+
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.document-actions label {
+  flex: 1;
+  min-width: 140px;
+}
+.document-query textarea {
+  min-height: 80px;
+}
+.document-query h2,
+.document-inspector {
+  overflow-wrap: anywhere;
+}
+.document-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  margin: 14px 0;
+}
+.document-card {
+  display: block;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+}
+.document-card small {
+  color: var(--muted);
+}
+.document-card pre {
+  margin: 6px 0 0;
+  overflow: hidden;
+  font:
+    11px/1.5 "IBM Plex Mono",
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 130px;
+}
+.document-card.selected {
+  border-color: var(--accent);
+  background: var(--selection);
+}
+.document-inspector {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.document-tree {
+  max-height: 360px;
+  overflow: auto;
+  font:
+    12px/1.7 "IBM Plex Mono",
+    monospace;
+  padding: 12px;
+  background: var(--bg);
+}
+.document-tree summary {
+  cursor: pointer;
+}
+.document-tree-children {
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+.document-leaf {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.document-edit {
+  width: 100%;
+  min-height: 280px;
+  font:
+    12px/1.6 "IBM Plex Mono",
+    monospace;
+}

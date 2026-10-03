@@ -44,9 +44,11 @@ You can store the certificate password in the OS keychain, independently of the 
 
 The identity path is stored as the URL option `sslidentity`. Passwords are separate IPC arguments and keychain entries; they are rejected as URL parameters. Identity files have the same 1 MiB regular-file bound as CA files. Rust validates the archive using the platform TLS implementation. Klyndb-managed file buffers and transient passwords are zeroized when dropped; platform TLS/native driver libraries retain the identity and connection options needed by the live session. The private key never crosses IPC or enters local connection/workspace/history storage. Protect the identity file as a credential; Klyndb does not copy it into application state.
 
-A client identity requires verified TLS without plaintext fallback, even when using system trust roots instead of a custom CA. The server must trust the client issuer and authorize the certificate identity. PostgreSQL certificate authentication also checks the certificate name or configured mapping. Certificate format/encryption support follows the native TLS provider; standalone PEM client keys and identity-file creation/conversion remain follow-ups.
+A client identity requires verified TLS without plaintext fallback, even when using system trust roots instead of a custom CA. The server must trust the client issuer and authorize the certificate identity. PostgreSQL certificate authentication also checks the certificate name or configured mapping. Certificate format/encryption support follows the native TLS provider; standalone PEM client keys on PostgreSQL/MySQL/MariaDB and identity-file creation/conversion remain follow-ups.
 
 [SSH tunnels/bastions](SSH.md) retain the original database hostname for TLS verification. Proxy and multi-hop configuration remain pending. A CA file provides server trust; it is separate from your client identity.
+
+Source builds also support MongoDB through the official Rust driver: verified TLS is the default, CA files accept PEM/DER, and client identity files contain the certificate chain and private key together in **PEM**, including supported encrypted PKCS#8 keys. Private temporary snapshots are retained for the native client and removed on disconnect. MongoDB uses the shared setup deadline and keychain controls; SSH remains pending. See [MongoDB connection and fixture details](MONGODB.md). Other source drivers have their own limits: [Redis](REDIS.md), [ClickHouse](CLICKHOUSE.md) and [SQL Server](SQLSERVER.md).
 
 ## Local validation
 

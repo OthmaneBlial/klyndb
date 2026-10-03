@@ -15,6 +15,7 @@ klyndb-mysql = { path = "../drivers/mysql" }
 klyndb-duckdb = { path = "../drivers/duckdb" }
 klyndb-clickhouse = { path = "../drivers/clickhouse" }
 klyndb-mssql = { path = "../drivers/mssql" }
+klyndb-mongodb = { path = "../drivers/mongodb" }
 klyndb-redis = { path = "../drivers/redis" }
 rusqlite.workspace = true
 tokio.workspace = true

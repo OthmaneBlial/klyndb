@@ -13,6 +13,7 @@ export interface Connection {
 }
 export interface Capabilities {
   key_value: boolean;
+  document_queries: boolean;
   affected_rows: boolean;
   table_browse: boolean;
   routines: boolean;
@@ -27,6 +28,26 @@ export interface Capabilities {
   cancel: boolean;
   tls: boolean;
 }
+export interface DocumentRecord {
+  json: string;
+  snapshot: string | null;
+}
+export interface DocumentPage {
+  documents: DocumentRecord[];
+  has_more: boolean;
+}
+export interface DocumentQuery {
+  database: string;
+  collection: string;
+  text: string;
+  sort: string;
+  aggregate: boolean;
+  offset: number;
+}
+export type DocumentChange =
+  | { kind: "insert"; json: string }
+  | { kind: "replace"; snapshot: string; json: string }
+  | { kind: "delete"; snapshot: string };
 export interface Routine {
   id: string;
   schema: string;
@@ -288,6 +309,29 @@ interface Commands {
   };
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
+  document_databases: { args: { id: string }; result: string[] };
+  document_collections: {
+    args: { id: string; database: string };
+    result: Table[];
+  };
+  document_indexes: {
+    args: { id: string; database: string; collection: string };
+    result: string[];
+  };
+  document_query: {
+    args: { id: string; query: DocumentQuery };
+    result: DocumentPage;
+  };
+  document_change: {
+    args: {
+      id: string;
+      database: string;
+      collection: string;
+      change: DocumentChange;
+      confirmed: boolean;
+    };
+    result: { affected: number; pending_transaction: boolean };
+  };
   scan_keys: {
     args: { id: string; pattern: string; cursor: string };
     result: KeyScan;
@@ -372,7 +416,10 @@ interface Commands {
   history: { args: undefined; result: History[] };
   clear_history: { args: undefined; result: void };
   choose_ca_file: { args: undefined; result: string | null };
-  choose_client_identity_file: { args: undefined; result: string | null };
+  choose_client_identity_file: {
+    args: { engine?: string };
+    result: string | null;
+  };
   choose_ssh_identity_file: { args: undefined; result: string | null };
   choose_database_file: {
     args: { create: boolean; engine: string };

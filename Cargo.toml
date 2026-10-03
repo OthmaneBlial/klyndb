@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 exclude = ["third_party/klickhouse-0.15.3", "third_party/tiberius-0.13.0"]
-members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "crates/drivers/mssql", "crates/drivers/redis", "apps/desktop/src-tauri"]
-default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "crates/drivers/mssql", "crates/drivers/redis"]
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "crates/drivers/mssql", "crates/drivers/redis", "crates/drivers/mongodb", "apps/desktop/src-tauri"]
+default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "crates/drivers/mssql", "crates/drivers/redis", "crates/drivers/mongodb"]
 
 [workspace.package]
 version = "0.1.0"

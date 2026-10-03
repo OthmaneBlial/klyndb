@@ -6,8 +6,9 @@ use klyndb_core::import::{
 };
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
-    Capabilities, Cell, Change, KeyCommandInfo, KeyInspection, KeyScan, KeyValue, MutationResult,
-    RoutinePage, Row, Table, TableInfo, TableQuery, TransactionState,
+    Capabilities, Cell, Change, DocumentChange, DocumentPage, DocumentQuery, KeyCommandInfo,
+    KeyInspection, KeyScan, KeyValue, MutationResult, RoutinePage, Row, Table, TableInfo,
+    TableQuery, TransactionState,
 };
 use std::sync::Arc;
 use tauri::{Manager, State};
@@ -170,6 +171,73 @@ async fn tables(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<Vec<Tab
         .await
         .map_err(api)?
         .tables()
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn document_databases(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<Vec<String>> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .document_databases()
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn document_collections(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    database: String,
+) -> ApiResult<Vec<Table>> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .document_collections(&database)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn document_indexes(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    database: String,
+    collection: String,
+) -> ApiResult<Vec<String>> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .document_indexes(&database, &collection)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn document_query(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    query: DocumentQuery,
+) -> ApiResult<DocumentPage> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .document_query(query)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn document_change(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    database: String,
+    collection: String,
+    change: DocumentChange,
+    confirmed: bool,
+) -> ApiResult<MutationResult> {
+    engine
+        .document_change(&id, &database, &collection, change, confirmed)
         .await
         .map_err(api)
 }
@@ -455,10 +523,14 @@ async fn choose_ssh_identity_file() -> ApiResult<Option<String>> {
         .map(|f| f.path().to_string_lossy().into_owned()))
 }
 #[tauri::command]
-async fn choose_client_identity_file() -> ApiResult<Option<String>> {
-    Ok(rfd::AsyncFileDialog::new()
-        .set_title("Choose client identity")
-        .add_filter("PKCS#12 client identity", &["p12", "pfx"])
+async fn choose_client_identity_file(engine: Option<String>) -> ApiResult<Option<String>> {
+    let dialog = rfd::AsyncFileDialog::new().set_title("Choose client identity");
+    let dialog = if engine.as_deref() == Some("mongodb") {
+        dialog.add_filter("PEM certificate and private key", &["pem"])
+    } else {
+        dialog.add_filter("PKCS#12 client identity", &["p12", "pfx"])
+    };
+    Ok(dialog
         .pick_file()
         .await
         .map(|f| f.path().to_string_lossy().into_owned()))
@@ -624,6 +696,11 @@ fn main() {
             tables,
             inspect_table,
             routines,
+            document_databases,
+            document_collections,
+            document_indexes,
+            document_query,
+            document_change,
             scan_keys,
             inspect_key,
             key_command_info,

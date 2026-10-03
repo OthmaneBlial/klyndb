@@ -43,7 +43,8 @@ impl Connection {
         )
     }
     pub fn has_client_identity(&self) -> bool {
-        if !["postgres", "mysql", "clickhouse", "redis"].contains(&self.engine.as_str()) {
+        if !["postgres", "mysql", "clickhouse", "redis", "mongodb"].contains(&self.engine.as_str())
+        {
             return false;
         }
         url::Url::parse(&self.address)
@@ -67,11 +68,13 @@ impl Connection {
                 }
                 Ok(None)
             }
-            "postgres" | "mysql" | "clickhouse" | "mssql" | "redis" => {
+            "postgres" | "mysql" | "clickhouse" | "mssql" | "redis" | "mongodb" => {
                 let mut url = url::Url::parse(&self.address)
                     .map_err(|_| Error::new("Enter a valid database connection URL"))?;
                 let native_tls_mode = self.engine != "postgres";
-                let schemes: &[&str] = if self.engine == "redis" {
+                let schemes: &[&str] = if self.engine == "mongodb" {
+                    &["mongodb", "mongodb+srv"]
+                } else if self.engine == "redis" {
                     &["redis", "rediss"]
                 } else if native_tls_mode {
                     &[self.engine.as_str()]
@@ -80,7 +83,9 @@ impl Connection {
                 };
                 if !schemes.contains(&url.scheme()) || url.host_str().is_none() {
                     return Err(Error::new(if native_tls_mode {
-                        if self.engine == "redis" {
+                        if self.engine == "mongodb" {
+                            "Expected a single-seed mongodb://user@host/database or mongodb+srv:// URL"
+                        } else if self.engine == "redis" {
                             "Expected redis://user@host:6379/0"
                         } else if self.engine == "mssql" {
                             "Expected mssql://user@host:1433/database"
@@ -93,7 +98,18 @@ impl Connection {
                         "Expected postgresql://user@host/database"
                     }));
                 }
-                let options: &[&str] = if self.engine == "mssql" {
+                let options: &[&str] = if self.engine == "mongodb" {
+                    &[
+                        "tls",
+                        "sslrootcert",
+                        "sslidentity",
+                        "connect_timeout",
+                        "authSource",
+                        "authMechanism",
+                        "replicaSet",
+                        "directConnection",
+                    ]
+                } else if self.engine == "mssql" {
                     &["tls", "sslrootcert", "connect_timeout"]
                 } else if native_tls_mode {
                     &["tls", "sslrootcert", "sslidentity", "connect_timeout"]
@@ -136,7 +152,25 @@ impl Connection {
                     }
                 }
                 self.connect_timeout()?;
+                if self.engine == "mongodb"
+                    && (url.fragment().is_some()
+                        || url
+                            .query_pairs()
+                            .any(|(k, _)| ssh::OPTIONS.contains(&k.as_ref())))
+                {
+                    return Err(Error::new(
+                        "MongoDB SSH tunnels are not available yet; use a verified direct/SRV connection",
+                    ));
+                }
                 self.ssh()?;
+                if self.engine == "mongodb"
+                    && url.scheme() == "mongodb+srv"
+                    && url
+                        .query_pairs()
+                        .any(|(k, v)| k == "tls" && v == "disabled")
+                {
+                    return Err(Error::new("MongoDB SRV URLs require verified TLS"));
+                }
                 if self.engine == "redis" {
                     let database = url.path().strip_prefix('/').unwrap_or(url.path());
                     if !database.is_empty()

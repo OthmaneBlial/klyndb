@@ -489,6 +489,7 @@ impl Session for DuckDb {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             key_value: false,
+            document_queries: false,
             affected_rows: true,
             table_browse: true,
             routines: false,

@@ -215,6 +215,7 @@ impl Session for Redis {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             key_value: true,
+            document_queries: false,
             affected_rows: false,
             table_browse: false,
             routines: false,

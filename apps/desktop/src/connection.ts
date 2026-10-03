@@ -28,6 +28,8 @@ function serverUrl(address: string) {
       "mssql:",
       "redis:",
       "rediss:",
+      "mongodb:",
+      "mongodb+srv:",
     ].includes(url.protocol)
   )
     throw new Error("Enter a valid server connection URL first.");
