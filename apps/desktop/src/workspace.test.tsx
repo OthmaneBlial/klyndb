@@ -156,5 +156,9 @@ test("restored Redis draft and privacy setting render as escaped unsent text", (
   expect(settings).toContain("Restore MongoDB and Redis drafts after restart");
   expect(settings).toContain("without encryption");
   expect(settings).toContain("never run automatically");
-  expect(settings).not.toContain('checked=""');
+  const draftToggle = settings.match(
+    /<input[^>]*\/>Restore MongoDB and Redis drafts after restart/,
+  );
+  expect(draftToggle).not.toBeNull();
+  expect(draftToggle![0]).not.toContain('checked=""');
 });

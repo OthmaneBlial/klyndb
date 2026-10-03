@@ -1,3 +1,8 @@
+import {
+  defaultConfirmations,
+  destructiveConfirmations,
+  type Confirmations,
+} from "../confirmations";
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { Moon, Sun, Shield } from "lucide-react";
 import type { Preferences } from "../workspace";
@@ -113,6 +118,66 @@ export function SettingsDialog({
             current drafts in memory. Restored requests never run automatically.
           </small>
         </label>
+        <details className="shortcut-settings confirmation-settings">
+          <summary>Query confirmations</summary>
+          <label>
+            Production SQL
+            <select
+              value={preferences.confirmations.production}
+              onChange={(e) =>
+                setPreferences((p) => ({
+                  ...p,
+                  confirmations: {
+                    ...p.confirmations,
+                    production: e.target.value as Confirmations["production"],
+                  },
+                }))
+              }
+            >
+              <option value="writes">Confirm writes</option>
+              <option value="all">Confirm every query</option>
+              <option value="destructive">
+                Use destructive SQL rules only
+              </option>
+            </select>
+          </label>
+          <p className="muted">
+            Ask before executing these statements on any connection:
+          </p>
+          {destructiveConfirmations.map(({ id, label }) => (
+            <label className="check" key={id}>
+              <input
+                type="checkbox"
+                checked={preferences.confirmations[id]}
+                onChange={(e) =>
+                  setPreferences((p) => ({
+                    ...p,
+                    confirmations: {
+                      ...p.confirmations,
+                      [id]: e.target.checked,
+                    },
+                  }))
+                }
+              />
+              {label}
+            </label>
+          ))}
+          <p className="muted">
+            Turning a rule off lets matching SQL run without that prompt.
+            Read-only connections still reject writes. ANALYZE, reviewed edits,
+            imports and reconnect keep their own confirmations.
+          </p>
+          <button
+            onClick={() =>
+              setPreferences((p) => ({
+                ...p,
+                confirmations: { ...defaultConfirmations },
+              }))
+            }
+          >
+            Restore confirmation defaults
+          </button>
+        </details>
         <details className="shortcut-settings">
           <summary>Keyboard shortcuts</summary>
           <p className="muted">

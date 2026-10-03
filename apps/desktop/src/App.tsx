@@ -1,3 +1,4 @@
+import { queryConfirmation } from "./confirmations";
 import {
   useState,
   useEffect,
@@ -737,14 +738,17 @@ export default function App() {
         report("Connect to this database before running SQL.");
         return;
       }
-      const warnings =
+      const analysis =
         plan === "estimate"
-          ? []
-          : (await api("analyze_query", { sql, engine: c.engine })).warnings;
-      if (plan === "analyze")
-        warnings.unshift(
-          "ANALYZE executes this statement, including writes and side effects. It does not roll back automatically.",
-        );
+          ? { statements: [], warnings: [], read_only: true }
+          : await api("analyze_query", { sql, engine: c.engine });
+      const { warnings, confirmedByPolicy } = queryConfirmation(
+        analysis,
+        c.environment,
+        preferences.confirmations,
+        plan,
+      );
+      const approved = confirmed || confirmedByPolicy;
       if (!confirmed && warnings.length) {
         setConfirm({
           title: plan === "analyze" ? "Run ANALYZE?" : "Confirm SQL execution",
@@ -762,7 +766,7 @@ export default function App() {
             sql,
             analyze: plan === "analyze",
             timeoutSeconds: preferences.timeout,
-            confirmed,
+            confirmed: approved,
           })
         : await api("start_query", {
             connection: c.id,
@@ -772,7 +776,7 @@ export default function App() {
                 ? inspected.browse.limit
                 : preferences.rowLimit,
             timeoutSeconds: preferences.timeout,
-            confirmed,
+            confirmed: approved,
           });
       const initial = await api("query_status", { id });
       if (source) queryOrigins.current[tab.id] = { id, source };

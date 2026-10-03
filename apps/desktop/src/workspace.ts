@@ -1,3 +1,8 @@
+import {
+  defaultConfirmations,
+  restoreConfirmations,
+  type Confirmations,
+} from "./confirmations";
 import type { Capabilities } from "./api";
 import {
   defaultShortcuts,
@@ -36,6 +41,7 @@ export interface Preferences {
   sidebar: boolean;
   restoreNativeDrafts: boolean;
   shortcuts: Shortcuts;
+  confirmations: Confirmations;
 }
 export const defaults: Preferences = {
   theme: "dark",
@@ -45,6 +51,7 @@ export const defaults: Preferences = {
   sidebar: true,
   restoreNativeDrafts: false,
   shortcuts: { ...defaultShortcuts },
+  confirmations: { ...defaultConfirmations },
 };
 function restoreDraft(
   value: unknown,
@@ -186,6 +193,7 @@ export function restoreWorkspace(value: unknown): {
       sidebar: p?.sidebar !== false,
       restoreNativeDrafts: p?.restoreNativeDrafts === true,
       shortcuts: restoreShortcuts(p?.shortcuts),
+      confirmations: restoreConfirmations(p?.confirmations),
     },
   };
 }
