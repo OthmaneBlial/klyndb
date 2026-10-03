@@ -41,6 +41,11 @@ impl Snapshot {
         let mut reader = self.sql_reader(engine)?;
         let mut preview = SqlPreview {
             statements: 0,
+            unit: if engine == "mssql" {
+                "batches"
+            } else {
+                "statements"
+            },
             sample: vec![],
             warnings: vec![],
         };

@@ -10,7 +10,9 @@ use sqlparser::{
     tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace},
 };
 use std::ops::ControlFlow;
+mod mssql;
 pub mod plan;
+pub use mssql::MssqlReader;
 pub const SQL_LIMIT: usize = 4 * 1024 * 1024;
 
 // Keep executable comments visible: their meaning varies with the server/version.
@@ -188,7 +190,21 @@ pub fn sql_server_plan_target(sql: &str) -> DriverResult<()> {
     Ok(())
 }
 pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
-    let (statements, _) = parse(sql, engine)?;
+    let statements = if engine == "mssql" {
+        if sql.len() > SQL_LIMIT {
+            return Err(Error::new(
+                "SQL exceeds the 4 MiB editor limit. Import a file instead.",
+            ));
+        }
+        let mut reader = MssqlReader::new(sql.as_bytes());
+        let mut statements = vec![];
+        while let Some(batch) = reader.next_batch(|| false)? {
+            statements.extend(parse(&batch, engine)?.0);
+        }
+        statements
+    } else {
+        parse(sql, engine)?.0
+    };
     if statements.is_empty() {
         return Err(Error::new("Enter a SQL statement."));
     }
@@ -230,18 +246,25 @@ pub fn analyze_script(sql: &str, engine: &str) -> DriverResult<Option<Analysis>>
     if statements.is_empty() {
         return Ok(None);
     }
-    if statements.len() != 1 {
+    if engine != "mssql" && statements.len() != 1 {
         return Err(Error::new(
             "SQL file framing produced more than one statement",
         ));
     }
     // Lexical settings can make server statement boundaries disagree with the file reader.
-    if matches!(statements[0], Statement::Set(_)) {
-        let normalized = statements[0].to_string().to_ascii_lowercase();
-        if normalized.contains("sql_mode") || normalized.contains("standard_conforming_strings") {
-            return Err(Error::new(
-                "Changing SQL lexical settings inside imports is unsupported. Remove sql_mode/standard_conforming_strings assignments.",
-            ));
+    for statement in &statements {
+        if matches!(statement, Statement::Set(_)) {
+            let normalized = statement.to_string().to_ascii_lowercase();
+            if normalized.contains("sql_mode")
+                || normalized.contains("standard_conforming_strings")
+                || engine == "mssql"
+                    && normalized.contains("quoted_identifier")
+                    && normalized != "set quoted_identifier on"
+            {
+                return Err(Error::new(
+                    "Changing SQL lexical settings inside imports is unsupported. Remove sql_mode/standard_conforming_strings/QUOTED_IDENTIFIER assignments.",
+                ));
+            }
         }
     }
     if matches!(

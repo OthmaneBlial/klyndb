@@ -190,6 +190,45 @@ async fn stream(
     }
     Ok(truncated)
 }
+async fn execute_batch(
+    client: &mut NativeClient,
+    sql: &str,
+    output: &mpsc::Sender<Batch>,
+    cancel: &CancellationToken,
+    limit: usize,
+    discard: bool,
+) -> (Result<bool>, bool) {
+    let result = tokio::select! {biased;
+        result=stream(client,sql,output,limit,discard)=>result,
+        _=cancel.cancelled()=>Err(Error::new("Query cancelled")),
+        _=output.closed()=>Err(Error::new("Result consumer closed")),
+    };
+    if (result.is_err() || !discard && matches!(result, Ok(true)))
+        && !matches!(
+            tokio::time::timeout(Duration::from_secs(3), client.cancel_query()).await,
+            Ok(Ok(()))
+        )
+    {
+        let cause = result
+            .as_ref()
+            .err()
+            .map_or("Row limit reached", |e| e.message.as_str());
+        return (
+            Err(Error::new(format!(
+                "{cause}. Interruption could not be confirmed; connection closed. Reconnect and verify writes before retrying."
+            ))),
+            false,
+        );
+    }
+    let result = match result {
+        Err(error) => Err(error),
+        Ok(truncated) => tokio::select! {biased;
+            result=send(output,Batch::Complete {affected:0,truncated:truncated && !discard})=>result.map(|()|truncated),
+            _=cancel.cancelled()=>Err(Error::new("Query cancelled")),
+        },
+    };
+    (result, true)
+}
 async fn catalog(client: &mut NativeClient, sql: String) -> Result<Vec<Row>> {
     catalog_rows(client.simple_query(sql).await.map_err(err)?).await
 }
@@ -388,7 +427,7 @@ impl Session for SqlServer {
             explain_analyze: !self.read_only,
             edit_rows: !self.read_only,
             import_rows: !self.read_only,
-            import_sql: false,
+            import_sql: !self.read_only,
             cancel: true,
             tls: true,
         }
@@ -466,36 +505,77 @@ impl Session for SqlServer {
             return Err(Error::new("This SQL Server connection is read-only"));
         }
         let mut guard = tokio::select! {biased;_ = cancel.cancelled()=>return Err(Error::new("Query cancelled")),guard=self.connection.lock()=>guard};
-        let client = guard
-            .as_mut()
+        let mut client = guard
+            .take()
             .ok_or_else(|| Error::new("Connection is closed"))?;
-        let result = {
-            let request = stream(client, &sql, &output, limit, false);
-            tokio::pin!(request);
-            tokio::select! {biased; result=&mut request=>result,_=cancel.cancelled()=>Err(Error::new("Query cancelled")),_=output.closed()=>Err(Error::new("Result consumer closed"))}
-        };
-        if result.as_ref().is_err() || matches!(result, Ok(true)) {
-            let attention =
-                tokio::time::timeout(Duration::from_secs(3), client.cancel_query()).await;
-            if !matches!(attention, Ok(Ok(()))) {
-                guard.take();
-                let cause = result
-                    .as_ref()
-                    .err()
-                    .map_or("Row limit reached", |e| e.message.as_str());
-                return Err(Error::new(format!(
-                    "{cause}. Interruption could not be confirmed; connection closed. Reconnect and verify writes before retrying."
-                )));
+        let mut reusable = true;
+        let result = async {
+            let mut reader = klyndb_query::MssqlReader::new(sql.as_bytes());
+            while let Some(batch) = reader.next_batch(|| cancel.is_cancelled())? {
+                let (result, synchronized) =
+                    execute_batch(&mut client, &batch, &output, &cancel, limit, false).await;
+                reusable = synchronized;
+                if result? {
+                    break;
+                } // A row cap stops later GO batches too.
             }
+            Ok(())
         }
-        let truncated = result?;
-        // The response is fully consumed: cancellation here must not send late Attention.
-        tokio::select! {
-            biased;
-            result = send(&output, Batch::Complete { affected: 0, truncated }) => result,
-            _ = cancel.cancelled() => Err(Error::new("Query cancelled")),
-            _ = output.closed() => Err(Error::new("Result consumer closed")),
+        .await;
+        if reusable {
+            *guard = Some(client);
         }
+        result
+    }
+    async fn execute_script(
+        &self,
+        mut input: mpsc::Receiver<Result<ScriptBatch>>,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        completed: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ) -> Result<()> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let mut guard = tokio::select! {biased;
+            _=cancel.cancelled()=>return Err(Error::new("SQL import cancelled while waiting for the session")),
+            guard=self.connection.lock()=>guard,
+        };
+        let mut client = guard
+            .take()
+            .ok_or_else(|| Error::new("Connection is closed"))?;
+        let mut reusable = true;
+        let result = async {
+            while let Some(sql) = next_script_statement(&mut input,&cancel).await? {
+                klyndb_query::analyze_script(&sql,"mssql")?;
+                // Constant session-property reads do not open an implicit table transaction.
+                let mode = tokio::select! {biased;
+                    _=cancel.cancelled()=>None,
+                    result=tokio::time::timeout(Duration::from_secs(3),catalog(&mut client,"SELECT CAST(SESSIONPROPERTY('QUOTED_IDENTIFIER') AS int)".into()))=>result.ok(),
+                };
+                let Some(mode) = mode else {
+                    reusable = false;
+                    return Err(Error::new("SQL import lexical check interrupted; connection closed. Reconnect and verify earlier writes."));
+                };
+                let mode = match mode { Ok(mode)=>mode, Err(error)=> {
+                    reusable=false;
+                    return Err(Error::new(format!("{} SQL import lexical check failed; connection closed. Reconnect and verify earlier writes.",error.message)));
+                } };
+                if mode.len()!=1 || mode[0].len()!=1 || mode[0][0].text()!="1" {
+                    return Err(Error::new("SQL Server imports require QUOTED_IDENTIFIER ON and SHOWPLAN disabled"));
+                }
+                // Zero retained rows: discard SELECT data while fully draining every native batch.
+                let (result,synchronized)=execute_batch(&mut client,&sql,&output,&cancel,0,true).await;
+                reusable=synchronized;
+                result?;
+                completed.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+            }
+            Ok(())
+        }.await;
+        if reusable {
+            *guard = Some(client);
+        }
+        result
     }
     async fn tables(&self) -> Result<Vec<Table>> {
         Ok(self.metadata("SELECT TOP (50001) SCHEMA_NAME(schema_id),name,type FROM sys.objects WHERE type IN ('U','V') AND is_ms_shipped=0 ORDER BY 1,2".into()).await?.into_iter().map(|r|Table {schema:r[0].text(),name:r[1].text(),kind:if r[2].text().trim()=="V" {"view"} else {"table"}.into()}).collect())

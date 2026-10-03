@@ -36,7 +36,7 @@ The selected database exposes schema-qualified tables/views, columns, nullabilit
 
 Execute explicit BEGIN TRANSACTION, COMMIT or ROLLBACK in SQL. The transaction indicator uses native XACT_STATE, including failed transactions. Confirmed reconnect drops the original session, rolling back its open transaction and removing temporary tables; retained result exports stay available.
 
-Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports and relationship diagrams are enabled. Estimated plans are available on read-only connections; runtime Analyze requires a writable connection and explicit confirmation. SQL file imports remain disabled for this driver.
+Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports and relationship diagrams are enabled. Estimated plans are available on read-only connections; runtime Analyze requires a writable connection and explicit confirmation. Reviewed SQL file imports are enabled on writable connections.
 
 ## Reviewed table editing
 
@@ -60,7 +60,17 @@ The native writer holds the session lock and one transaction/savepoint across ev
 
 The configured query timeout supplies the whole-file 1–3,600-second job deadline; the native driver also caps a stream at one hour. Cancellation interrupts parser waits or native requests, drains Attention and confirms rollback before reuse. Final COMMIT is not deliberately interrupted, and a late cancel can arrive after commit. Unconfirmed cleanup or commit closes the connection and requires verification before retrying. Native trigger/external-effect limits still apply.
 
-The current implementation makes per-row conversion/write requests and holds the same table-wide exclusive lock until the transaction ends. Large-file throughput remains unmeasured. Views, memory-optimized tables, enabled INSTEAD OF triggers and unsupported alias/CLR destination casts retain the editing restrictions. SQL file imports remain disabled, including GO-based dumps.
+The current implementation makes per-row conversion/write requests and holds the same table-wide exclusive lock until the transaction ends. Large-file throughput remains unmeasured. Views, memory-optimized tables, enabled INSTEAD OF triggers and unsupported alias/CLR destination casts retain the editing restrictions. SQL files use the separate reviewed batch workflow below.
+
+## SQL files and native batches
+
+Choose **Import SQL** on a connected SQL tab, select a UTF-8 file through the native picker, review the immutable whole-file preflight and confirm execution. The dialog counts **batches**, rather than individual statements. Standalone case-insensitive `GO` lines separate native requests; semicolons within a batch preserve DECLARE variables and original SQL. Quoted strings/identifiers and nested comments keep embedded GO text. The editor uses the same framing when executing a selected batch or Execute all. [Microsoft describes GO and variable scope](https://learn.microsoft.com/en-us/sql/t-sql/language-elements/sql-server-utilities-statements-go?view=sql-server-ver17).
+
+Files are limited to 512 MiB, with a 4 MiB native batch bound. Split independent units with GO. SQL INSERT exports add GO after each insertion and remain executable through the editor or import workflow. The shared parser checks every batch before execution; client commands such as `:r`, SQLCMD substitutions, GO repeat counts/GO semicolons and vendor syntax outside the parser remain unsupported. Imports require QUOTED_IDENTIFIER ON and SHOWPLAN disabled; assignments that turn QUOTED_IDENTIFIER off are rejected during preflight. Explicit ON assignments are allowed. The native session property is checked before every batch, without opening an implicit table transaction.
+
+One session lock spans the whole file, including producer waits. SELECT results are fully drained and discarded, without a retained-row cap stopping later SQL. Progress increments only after a native batch finishes. The script owns its transactions: no automatic whole-file transaction or rollback is added. Earlier batches and effects within a failing batch can remain committed; SQL Server can continue statements within that batch after some native errors. Verify data and use COMMIT/ROLLBACK as appropriate before retrying. Cancellation/deadlines stop subsequent batches and drain native Attention before reuse. An uncertain interruption closes the connection; a dropped execution future also closes its owned client.
+
+Native SQL Server desktop file-picker/review/cancel interaction remains pending. See [shared import controls](IMPORTS.md).
 
 ## Relationship diagrams
 
@@ -78,7 +88,7 @@ The session lock spans separate native setup/query/cleanup batches. Settings mus
 
 Runtime data results retain at most 5,000 rows per set, while surplus data is drained so the native profile can complete. The last native plan/profile table supplies the formatted tree; other result sets remain available in Results/export. The tree uses statement-scoped node/parent IDs, preserving all reported fields. Plans share the ordinary timeout/Cancel action and bounded conversion limits. Native statements that emit no profile, such as a constant-only SELECT, do not receive fabricated runtime metrics: the plan error states that execution completed and that writes must be verified before retrying.
 
-The server requires SHOWPLAN permission and the relevant statement permissions for all referenced databases. Estimated DML is non-executing even on a client read-only connection, but native permissions can reject it. EXEC, session-control commands, transaction commands and DDL are excluded from this plan action. History records native setup/query/cleanup with GO batch separators to distinguish planning from plain execution; select the original statement and use Explain/Analyze to repeat it. GO-based whole-file/editor batches remain unsupported. Native desktop plan interaction remains pending. See [shared plan controls and limits](EXPLAIN.md).
+The server requires SHOWPLAN permission and the relevant statement permissions for all referenced databases. Estimated DML is non-executing even on a client read-only connection, but native permissions can reject it. EXEC, session-control commands, transaction commands and DDL are excluded from this plan action. History records native setup/query/cleanup with GO batch separators to distinguish planning from plain execution; select the original statement and use Explain/Analyze to repeat it. Standalone GO is now supported in imports and editor batches; the plan action still accepts one original statement. Native desktop plan interaction remains pending. See [shared plan controls and limits](EXPLAIN.md).
 
 ## Evidence and remaining validation
 

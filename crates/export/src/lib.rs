@@ -128,6 +128,9 @@ pub fn export_for_engine(
                     values.join(", ")
                 )
                 .map_err(io)?;
+                if engine == "mssql" {
+                    out.write_all(b"GO\n").map_err(io)?;
+                }
                 count += 1;
             }
         }

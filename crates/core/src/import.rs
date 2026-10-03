@@ -377,6 +377,11 @@ impl Engine {
                 timer_flag.store(true, Ordering::Relaxed);
                 token.cancel();
             });
+            let unit = if dialect == "mssql" {
+                "batches"
+            } else {
+                "statements"
+            };
             let (output, input) = mpsc::channel(2);
             let reader_job = job.clone();
             let producer = tokio::task::spawn_blocking(move || {
@@ -427,7 +432,7 @@ impl Engine {
                     affected,
                     pending_transaction: transaction != Some(TransactionState::Idle),
                 });
-                status.error = result.err().map(|e| format!("{}{} statements completed. {} Earlier effects may remain committed; verify data before retrying and inspect the transaction state.", if timed_out.load(Ordering::Relaxed) { format!("SQL import timed out after {timeout_seconds} seconds. ") } else { String::new() }, completed, e.message));
+                status.error = result.err().map(|e| format!("{}{} {unit} completed. {} Earlier effects may remain committed; verify data before retrying and inspect the transaction state.", if timed_out.load(Ordering::Relaxed) { format!("SQL import timed out after {timeout_seconds} seconds. ") } else { String::new() }, completed, e.message));
             }
             job.finished.cancel();
         });

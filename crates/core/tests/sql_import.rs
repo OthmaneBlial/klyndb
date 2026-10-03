@@ -86,6 +86,7 @@ async fn streaming_sql_import_real_engines() {
         ("postgres", "postgres", "KLYNDB_TEST_POSTGRES_URL"),
         ("mysql", "mysql", "KLYNDB_TEST_MYSQL_URL"),
         ("mariadb", "mysql", "KLYNDB_TEST_MARIADB_URL"),
+        ("mssql", "mssql", "KLYNDB_TEST_MSSQL_URL"),
     ] {
         if let Ok(url) = std::env::var(variable) {
             fixtures.push((name, engine, url));
@@ -108,18 +109,34 @@ async fn streaming_sql_import_real_engines() {
         };
         config.validate().unwrap();
         engine.store.save(&config).unwrap();
-        engine.connect(&config.id, None, None, None).await.unwrap();
+        let password =
+            (dialect == "mssql").then(|| std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap());
+        engine
+            .connect(&config.id, password.clone(), None, None)
+            .await
+            .unwrap();
         let driver = engine.driver(&config.id).await.unwrap();
         assert!(driver.capabilities().import_sql);
         let table = format!("sql_import_{}", uuid::Uuid::new_v4().simple());
         let quote = driver.quote_identifier(&table);
-        let binary = if dialect == "postgres" {
-            "BYTEA"
-        } else {
-            "BLOB"
+        let binary = match dialect {
+            "postgres" => "BYTEA",
+            "mssql" => "VARBINARY(MAX)",
+            _ => "BLOB",
         };
-        let mut file = format!("\u{feff}-- SQL file; whole-file preflight\nCREATE TABLE {quote} (id BIGINT PRIMARY KEY, label TEXT, precise TEXT, payload {binary});\n").into_bytes();
-        let label = format!("  'quoted';\\ line\nnext é {}  ", "x".repeat(3600));
+        let text = if dialect == "mssql" {
+            "NVARCHAR(MAX)"
+        } else {
+            "TEXT"
+        };
+        let boundary = if dialect == "mssql" { "\nGO\n" } else { "\n" };
+        let begin = if dialect == "mssql" {
+            "BEGIN TRANSACTION"
+        } else {
+            "BEGIN"
+        };
+        let mut file = format!("\u{feff}-- SQL file; whole-file preflight\nCREATE TABLE {quote} (id BIGINT PRIMARY KEY, label {text}, precise {text}, payload {binary});{boundary}").into_bytes();
+        let label = format!("  'quoted';\\ line\nGO\nnext é {}  ", "x".repeat(3600));
         let rows = (0..1201).map(|i| {
             Ok(vec![
                 Cell::Number(i.to_string()),
@@ -153,6 +170,14 @@ async fn streaming_sql_import_real_engines() {
             .await
             .unwrap();
         assert_eq!(source.preview.statements, 1202);
+        assert_eq!(
+            source.preview.unit,
+            if dialect == "mssql" {
+                "batches"
+            } else {
+                "statements"
+            }
+        );
         assert_eq!(source.preview.sample.len(), 5);
         assert!(source.preview.sample.iter().all(|s| s.len() <= 516));
         let request = |confirmed| SqlImportRequest {
@@ -194,10 +219,10 @@ async fn streaming_sql_import_real_engines() {
                 "00ff27"
             }
         );
-        let binary_sql = if dialect == "postgres" {
-            "encode(payload, 'hex')"
-        } else {
-            "hex(payload)"
+        let binary_sql = match dialect {
+            "postgres" => "encode(payload, 'hex')",
+            "mssql" => "CONVERT(varchar(max),payload,2)",
+            _ => "hex(payload)",
         };
         assert_eq!(
             sql(
@@ -276,7 +301,7 @@ async fn streaming_sql_import_real_engines() {
 
         // A native error reports the successful prefix, with no invented whole-file rollback.
         let failed = format!(
-            "INSERT INTO {quote} (id) VALUES (2002); INSERT INTO {quote} (id) VALUES (0); INSERT INTO {quote} (id) VALUES (2003);"
+            "INSERT INTO {quote} (id) VALUES (2002);{boundary}INSERT INTO {quote} (id) VALUES (0);{boundary}INSERT INTO {quote} (id) VALUES (2003);"
         );
         let status = run_file(&engine, &config, &path, failed.as_bytes()).await;
         assert_eq!(status.completed_statements, 1, "{name}");
@@ -295,7 +320,7 @@ async fn streaming_sql_import_real_engines() {
             }]]
         );
 
-        let manual = format!("BEGIN; INSERT INTO {quote} (id) VALUES (2004);");
+        let manual = format!("{begin}; INSERT INTO {quote} (id) VALUES (2004);");
         let status = run_file(&engine, &config, &path, manual.as_bytes()).await;
         assert_eq!(status.transaction, Some(TransactionState::Active));
         sql(driver.as_ref(), "ROLLBACK".into()).await.unwrap();
@@ -323,7 +348,7 @@ async fn streaming_sql_import_real_engines() {
                 .execute_script(input, output, worker_cancel, worker_count)
                 .await
         });
-        send.send(Ok(ScriptBatch::Statement("BEGIN".into())))
+        send.send(Ok(ScriptBatch::Statement(begin.into())))
             .await
             .unwrap();
         send.send(Ok(ScriptBatch::Statement(format!(
@@ -375,6 +400,7 @@ async fn streaming_sql_import_real_engines() {
         let slow = match dialect {
             "postgres" => "SELECT pg_sleep(30);",
             "mysql" => "SELECT SLEEP(30);",
+            "mssql" => "EXEC(N'WAITFOR DELAY ''00:00:30''');",
             _ => {
                 "WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT sum(x) FROM n;"
             }
@@ -394,12 +420,108 @@ async fn streaming_sql_import_real_engines() {
             .await
             .unwrap();
         let status = done(&engine, &id).await;
-        assert!(status.error.unwrap().contains("timed out"), "{name}");
+        assert!(
+            status
+                .error
+                .as_ref()
+                .is_some_and(|error| error.contains("timed out")),
+            "{name}: {:?}",
+            status.error
+        );
         engine.imports.release(&id).unwrap();
         assert_eq!(
             sql(driver.as_ref(), "SELECT 42".into()).await.unwrap()[0][0].text(),
             "42"
         );
+
+        if dialect == "mssql" {
+            // Native GO boundaries preserve variables within a batch and reset their scope afterwards.
+            let native = format!(
+                "DECLARE @n bigint=2010; INSERT INTO {quote} (id,label) VALUES(@n,N'雪;\nGO\nquoted');{boundary}SELECT TOP(6001) a.object_id FROM sys.all_objects a CROSS JOIN sys.all_objects b;{boundary}"
+            );
+            let status = run_file(&engine, &config, &path, native.as_bytes()).await;
+            assert!(status.error.is_none(), "{:?}", status.error);
+            assert_eq!(status.completed_statements, 2);
+            assert_eq!(
+                sql(
+                    driver.as_ref(),
+                    format!("SELECT label FROM {quote} WHERE id=2010")
+                )
+                .await
+                .unwrap()[0][0]
+                    .text(),
+                "雪;\nGO\nquoted"
+            );
+            let id = engine
+                .start(
+                    config.id.clone(),
+                    "DECLARE @n int=42; SELECT @n AS value;\nGO\nSELECT 43 AS next_value".into(),
+                    100,
+                    5,
+                    true,
+                )
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while !engine.job(&id).unwrap().status().unwrap().done {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let job = engine.job(&id).unwrap();
+            assert!(job.status().unwrap().error.is_none());
+            assert_eq!(job.page(0, 0, 10).unwrap()[0][0].text(), "42");
+            assert_eq!(job.page(1, 0, 10).unwrap()[0][0].text(), "43");
+            engine.release(&id).unwrap();
+            for invalid in [
+                format!("INSERT INTO {quote}(id) VALUES(2011);{boundary}GO 2"),
+                format!(
+                    "INSERT INTO {quote}(id) VALUES(2011);{boundary}SET QUOTED_IDENTIFIER OFF;"
+                ),
+            ] {
+                std::fs::write(&path, invalid).unwrap();
+                assert!(
+                    engine
+                        .prepare_sql_import(path.clone(), &config.id)
+                        .await
+                        .is_err()
+                );
+            }
+            assert!(
+                sql(
+                    driver.as_ref(),
+                    format!("SELECT id FROM {quote} WHERE id=2011")
+                )
+                .await
+                .unwrap()
+                .is_empty()
+            );
+            sql(driver.as_ref(), "SET QUOTED_IDENTIFIER OFF".into())
+                .await
+                .unwrap();
+            let status = run_file(&engine, &config, &path, b"SELECT 42").await;
+            assert_eq!(status.completed_statements, 0);
+            assert!(status.error.unwrap().contains("QUOTED_IDENTIFIER"));
+            sql(driver.as_ref(), "SET QUOTED_IDENTIFIER ON".into())
+                .await
+                .unwrap();
+            sql(driver.as_ref(), "SET IMPLICIT_TRANSACTIONS ON".into())
+                .await
+                .unwrap();
+            let status = run_file(&engine, &config, &path, b"SELECT 42").await;
+            assert!(status.error.is_none());
+            assert_eq!(
+                sql(driver.as_ref(), "SELECT @@TRANCOUNT".into())
+                    .await
+                    .unwrap()[0][0]
+                    .text(),
+                "0"
+            );
+            sql(driver.as_ref(), "SET IMPLICIT_TRANSACTIONS OFF".into())
+                .await
+                .unwrap();
+        }
 
         let mut read_only = config.clone();
         read_only.id.clear();
@@ -407,7 +529,7 @@ async fn streaming_sql_import_real_engines() {
         read_only.validate().unwrap();
         engine.store.save(&read_only).unwrap();
         engine
-            .connect(&read_only.id, None, None, None)
+            .connect(&read_only.id, password, None, None)
             .await
             .unwrap();
         assert!(

@@ -339,7 +339,7 @@ async fn sql_server_saved_session_spool_export_and_reconnect() {
         .await
         .unwrap();
     assert!(caps.transactions && caps.table_browse && caps.cancel && caps.tls && caps.edit_rows);
-    assert!(caps.import_rows && !caps.affected_rows && !caps.import_sql);
+    assert!(caps.import_rows && !caps.affected_rows && caps.import_sql);
     let name = format!("klyndb_{}", uuid::Uuid::new_v4().simple());
     let copy = format!("{name}_copy]雪");
     let quoted = format!("[{}]", copy.replace(']', "]]"));

@@ -147,7 +147,7 @@ export interface SqlSource {
   id: string;
   name: string;
   bytes: number;
-  preview: { statements: number; sample: string[]; warnings: string[] };
+  preview: { statements: number; unit: "statements" | "batches"; sample: string[]; warnings: string[] };
 }
 export interface ResultSet {
   columns: string[];

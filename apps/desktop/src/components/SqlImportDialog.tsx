@@ -136,7 +136,7 @@ export function SqlImportDialog({
       </p>
       <p className="muted">
         Run the script on this connection without loading it into the editor.
-        All statements are checked before execution; SELECT results are
+        All SQL is checked before execution; SELECT results are
         discarded.
       </p>
       <div className="import-file">
@@ -148,7 +148,7 @@ export function SqlImportDialog({
           <span>
             <strong>{source.name}</strong>
             <small>
-              {source.preview.statements.toLocaleString()} statements ·{" "}
+              {source.preview.statements.toLocaleString()} {source.preview.unit} ·{" "}
               {(source.bytes / 1024).toLocaleString(undefined, {
                 maximumFractionDigits: 1,
               })}{" "}
@@ -159,7 +159,7 @@ export function SqlImportDialog({
       </div>
       {!source && (
         <p className="muted">
-          UTF-8 .sql · up to 512 MiB · 4 MiB per statement
+          UTF-8 .sql · up to 512 MiB · 4 MiB per statement or SQL Server batch
         </p>
       )}
       {busy && !job && !source && (
@@ -168,7 +168,7 @@ export function SqlImportDialog({
       {source && (
         <>
           <p className="import-section-label">
-            First {source.preview.sample.length} statements
+            First {source.preview.sample.length} {source.preview.unit}
           </p>
           <pre className="sql-preview">
             {source.preview.sample.join("\n\n")}
@@ -179,7 +179,7 @@ export function SqlImportDialog({
             </p>
           ))}
           <p>
-            Statements run in order using the script’s own transaction commands.
+            Statements and native batches run in order using the script’s own transaction commands.
             Earlier changes may stay committed after failure or cancellation.
             MySQL DDL can commit implicitly. An open or failed transaction needs
             COMMIT or ROLLBACK in the editor.
@@ -202,7 +202,7 @@ export function SqlImportDialog({
         <div role="status" aria-live="polite">
           <p>
             {status.completed_statements.toLocaleString()} of{" "}
-            {source?.preview.statements.toLocaleString()} statements completed ·{" "}
+            {source?.preview.statements.toLocaleString()} {source?.preview.unit} completed ·{" "}
             {(status.elapsed_ms / 1000).toFixed(1)} s
           </p>
           {status.done && !status.error && (

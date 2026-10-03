@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Serialize)]
 pub struct SqlPreview {
     pub statements: u64,
+    pub unit: &'static str,
     pub sample: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -19,9 +20,58 @@ enum Lexical {
     Dollar(Vec<u8>),
 }
 
+enum Reader<R: Read> {
+    Statements(StatementReader<R>),
+    SqlServer(klyndb_query::MssqlReader<R>),
+}
+pub struct SqlReader<R: Read> {
+    reader: Reader<R>,
+    cancel: CancellationToken,
+    warnings: Vec<String>,
+}
+impl<R: Read> SqlReader<R> {
+    pub fn new(input: R, engine: &str) -> Result<Self> {
+        Ok(Self {
+            reader: if engine == "mssql" {
+                Reader::SqlServer(klyndb_query::MssqlReader::new(input))
+            } else {
+                Reader::Statements(StatementReader::new(input, engine)?)
+            },
+            cancel: CancellationToken::new(),
+            warnings: vec![],
+        })
+    }
+    pub fn set_cancel(&mut self, cancel: CancellationToken) {
+        if let Reader::Statements(reader) = &mut self.reader {
+            reader.set_cancel(cancel.clone());
+        }
+        self.cancel = cancel;
+    }
+    pub fn warnings(&self) -> &[String] {
+        match &self.reader {
+            Reader::Statements(reader) => reader.warnings(),
+            Reader::SqlServer(_) => &self.warnings,
+        }
+    }
+    pub fn next_statement(&mut self) -> Result<Option<String>> {
+        match &mut self.reader {
+            Reader::Statements(reader) => reader.next_statement(),
+            Reader::SqlServer(reader) => {
+                while let Some(sql) = reader.next_batch(|| self.cancel.is_cancelled())? {
+                    if let Some(analysis) = klyndb_query::analyze_script(&sql, "mssql")? {
+                        self.warnings = analysis.warnings;
+                        return Ok(Some(sql));
+                    }
+                }
+                Ok(None)
+            }
+        }
+    }
+}
+
 /// Incremental UTF-8 SQL framing. Keep original text; validate each complete unit
 /// with the editor parser before returning it. Memory is bounded by SQL_LIMIT.
-pub struct SqlReader<R: Read> {
+struct StatementReader<R: Read> {
     input: BufReader<Chain<Cursor<Vec<u8>>, R>>,
     engine: String,
     cancel: CancellationToken,
@@ -29,7 +79,7 @@ pub struct SqlReader<R: Read> {
     line: u64,
     warnings: Vec<String>,
 }
-impl<R: Read> SqlReader<R> {
+impl<R: Read> StatementReader<R> {
     pub fn new(mut input: R, engine: &str) -> Result<Self> {
         if !["sqlite", "postgres", "mysql", "duckdb", "clickhouse"].contains(&engine) {
             return Err(Error::new(
