@@ -395,6 +395,7 @@ fn inspect(conn: &Connection, table: &Table) -> Result<TableInfo> {
         foreign_keys,
         constraints: None,
         triggers,
+        statistics: None,
     })
 }
 

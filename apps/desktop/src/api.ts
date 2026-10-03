@@ -99,6 +99,13 @@ export interface DiagramTable {
 export interface Diagram {
   tables: DiagramTable[];
 }
+export interface TableStatistics {
+  source: string;
+  estimated_rows: string | null;
+  table_bytes: string | null;
+  index_bytes: string | null;
+  total_bytes: string | null;
+}
 export interface TableInfo {
   editable: boolean;
   columns: Column[];
@@ -107,6 +114,7 @@ export interface TableInfo {
   foreign_keys: Record<string, unknown>[];
   constraints: Constraint[] | null;
   triggers: Trigger[];
+  statistics?: TableStatistics | null;
 }
 export type FilterOp =
   | "equal"

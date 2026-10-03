@@ -827,6 +827,10 @@ small {
   color: var(--muted);
   font-weight: 500;
 }
+.structure .statistic-value {
+  font-family: "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
 .structure pre {
   font-size: 11px;
   line-height: 1.7;

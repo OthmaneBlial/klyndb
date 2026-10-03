@@ -272,6 +272,15 @@ pub struct Trigger {
     pub state: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TableStatistics {
+    pub source: String,
+    // Decimal strings preserve native counts/sizes across JavaScript IPC.
+    pub estimated_rows: Option<String>,
+    pub table_bytes: Option<String>,
+    pub index_bytes: Option<String>,
+    pub total_bytes: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableInfo {
     pub editable: bool,
     pub columns: Vec<Column>,
@@ -281,6 +290,8 @@ pub struct TableInfo {
     /// None means definitions are available in DDL rather than a native constraint catalog.
     pub constraints: Option<Vec<Constraint>>,
     pub triggers: Vec<Trigger>,
+    #[serde(default)]
+    pub statistics: Option<TableStatistics>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

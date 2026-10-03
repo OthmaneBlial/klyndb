@@ -561,6 +561,21 @@ impl Session for Postgres {
                 text
             }
         });
+        let statistics = self
+            .client
+            .query_opt(
+                include_str!("statistics.sql"),
+                &[&table.schema, &table.name],
+            )
+            .await
+            .map_err(err)?
+            .map(|row| TableStatistics {
+                source: "PostgreSQL planner and storage metadata".into(),
+                estimated_rows: row.get(0),
+                table_bytes: row.get(1),
+                index_bytes: row.get(2),
+                total_bytes: row.get(3),
+            });
         Ok(TableInfo {
             editable,
             columns,
@@ -569,6 +584,7 @@ impl Session for Postgres {
             foreign_keys,
             constraints: Some(constraints),
             triggers,
+            statistics,
         })
     }
     async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {

@@ -53,6 +53,22 @@ test("structure renders native constraints, trigger state and DDL fallback as te
   );
   expect(html).toContain("CREATE TABLE items");
   expect(html).toContain("No user triggers visible.");
+  expect(html).not.toContain('aria-label="Table statistics"');
+  inspector.info.statistics = {
+    source: "Native <planner>",
+    estimated_rows: null,
+    table_bytes: "9007199254740993",
+    index_bytes: "0",
+    total_bytes: "9223372036854775807",
+  };
+  html = render();
+  expect(html).toContain('aria-label="Table statistics"');
+  expect(html).toContain("Native &lt;planner&gt;");
+  expect(html).toContain("Rows (estimate)");
+  expect(html).toContain("Unavailable");
+  expect(html).toContain("9007199254740993");
+  expect(html).toContain("9223372036854775807");
+  expect(html).not.toContain("9007199254740992");
 });
 
 test("result error navigation is explicit and only offered with an authoritative source", () => {

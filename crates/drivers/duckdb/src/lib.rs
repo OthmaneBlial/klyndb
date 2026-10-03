@@ -253,6 +253,7 @@ fn inspect(conn: &Connection, table: &Table, read_only: bool) -> Result<TableInf
         foreign_keys,
         constraints: Some(constraints),
         triggers: vec![],
+        statistics: None,
     })
 }
 

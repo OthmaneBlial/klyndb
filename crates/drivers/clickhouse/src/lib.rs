@@ -567,6 +567,7 @@ impl Session for ClickHouse {
             foreign_keys: vec![],
             constraints: None,
             triggers: vec![],
+            statistics: None,
         })
     }
     async fn transaction_state(&self) -> Result<TransactionState> {

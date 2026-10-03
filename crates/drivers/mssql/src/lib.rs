@@ -618,6 +618,7 @@ impl Session for SqlServer {
             foreign_keys,
             constraints: Some(constraints),
             triggers,
+            statistics: None,
         })
     }
     async fn relationships(&self, table: &Table) -> Result<Vec<ForeignKey>> {

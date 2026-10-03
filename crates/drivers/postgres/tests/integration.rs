@@ -19,6 +19,109 @@ async fn query(db: Arc<Postgres>, sql: &str) -> Vec<Batch> {
 
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
+async fn postgres_table_statistics_native_estimates_and_storage() {
+    use klyndb_driver_api::Table;
+    let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();
+    let db = Arc::new(Postgres::connect(&url, None, false, None).await.unwrap());
+    let name = format!("stats \" {}", uuid::Uuid::new_v4().simple());
+    let qualified = format!("public.{}", db.quote_identifier(&name));
+    let table = Table {
+        schema: "public".into(),
+        name,
+        kind: "base table".into(),
+    };
+    query(
+        db.clone(),
+        &format!("CREATE TABLE {qualified}(id bigint, body text)"),
+    )
+    .await;
+    let fresh = db.inspect(&table).await.unwrap().statistics.unwrap();
+    assert!(
+        fresh.estimated_rows.is_none(),
+        "Never-analyzed rows are unknown, not zero"
+    );
+    query(db.clone(), &format!("INSERT INTO {qualified} SELECT n,repeat('native statistics',100) FROM generate_series(1,64) n; CREATE INDEX ON {qualified}(id); ANALYZE {qualified}")).await;
+    let ro = Arc::new(Postgres::connect(&url, None, true, None).await.unwrap());
+    let info = ro.inspect(&table).await.unwrap();
+    let stats = info.statistics.as_ref().unwrap();
+    println!(
+        "KLYNDB_TABLE_STATS_FIXTURE {}",
+        serde_json::to_string(&info).unwrap()
+    );
+    assert_eq!(stats.estimated_rows.as_deref(), Some("64"));
+    let bytes = |value: &Option<String>| value.as_ref().unwrap().parse::<u64>().unwrap();
+    assert!(bytes(&stats.table_bytes) > 0 && bytes(&stats.index_bytes) > 0);
+    assert_eq!(
+        bytes(&stats.total_bytes),
+        bytes(&stats.table_bytes) + bytes(&stats.index_bytes)
+    );
+    assert!(serde_json::to_value(stats).unwrap()["total_bytes"].is_string());
+    assert_eq!(
+        ro.transaction_state().await.unwrap(),
+        TransactionState::Idle
+    );
+    // Read-only connection queries clean up their own transaction. Check a
+    // manually opened read-only transaction on the ordinary connection too.
+    query(db.clone(), "BEGIN READ ONLY").await;
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Active
+    );
+    assert_eq!(
+        db.inspect(&table)
+            .await
+            .unwrap()
+            .statistics
+            .unwrap()
+            .estimated_rows,
+        stats.estimated_rows
+    );
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Active
+    );
+    query(db.clone(), "ROLLBACK").await;
+    let view = Table {
+        schema: "public".into(),
+        name: format!("{}_view", table.name),
+        kind: "view".into(),
+    };
+    let view_name = format!("public.{}", db.quote_identifier(&view.name));
+    query(
+        db.clone(),
+        &format!("CREATE VIEW {view_name} AS SELECT id FROM {qualified}"),
+    )
+    .await;
+    assert!(ro.inspect(&view).await.unwrap().statistics.is_none());
+    let materialized = Table {
+        schema: "public".into(),
+        name: format!("{}_cached", table.name),
+        kind: "materialized view".into(),
+    };
+    let cached_name = format!("public.{}", db.quote_identifier(&materialized.name));
+    query(db.clone(), &format!("CREATE MATERIALIZED VIEW {cached_name} AS SELECT id FROM {qualified}; ANALYZE {cached_name}")).await;
+    assert_eq!(
+        ro.inspect(&materialized)
+            .await
+            .unwrap()
+            .statistics
+            .unwrap()
+            .estimated_rows
+            .as_deref(),
+        Some("64")
+    );
+    ro.disconnect().await.unwrap();
+    query(
+        db.clone(),
+        &format!(
+            "DROP VIEW {view_name}; DROP MATERIALIZED VIEW {cached_name}; DROP TABLE {qualified}"
+        ),
+    )
+    .await;
+    db.disconnect().await.unwrap();
+}
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
 async fn postgres_structure_ddl_roundtrip_views_and_materialized_catalog() {
     use klyndb_driver_api::Table;
     let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();

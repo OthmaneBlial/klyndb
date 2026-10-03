@@ -147,6 +147,52 @@ export function ResultPanel({
               ))}
             </tbody>
           </table>
+          {inspector.info.statistics && (
+            <section aria-label="Table statistics">
+              <h4>Statistics</h4>
+              <p className="muted">
+                {inspector.info.statistics.source}. Rows are planner estimates,
+                not live counts. Storage can change while you work.
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                    <th>Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    [
+                      "Rows (estimate)",
+                      inspector.info.statistics.estimated_rows,
+                      "rows",
+                    ],
+                    [
+                      "Table storage",
+                      inspector.info.statistics.table_bytes,
+                      "bytes",
+                    ],
+                    ["Indexes", inspector.info.statistics.index_bytes, "bytes"],
+                    [
+                      "Total storage",
+                      inspector.info.statistics.total_bytes,
+                      "bytes",
+                    ],
+                  ].map(([name, value, unit]) => (
+                    <tr key={name}>
+                      <td>{name}</td>
+                      <td className="statistic-value">
+                        {value ?? "Unavailable"}
+                      </td>
+                      <td>{unit}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
           <h4>Indexes</h4>
           <pre>{JSON.stringify(inspector.info.indexes, null, 2)}</pre>
           <h4>Foreign keys</h4>
