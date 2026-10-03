@@ -2,6 +2,7 @@ use klyndb_driver_api::{Error, PlanFormat, Result, Row};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+mod mssql;
 
 #[derive(Debug, Serialize)]
 pub struct PlanNode {
@@ -125,10 +126,10 @@ pub fn decode(
     format: PlanFormat,
     columns: &[String],
     rows: &[Row],
-    warnings: Vec<String>,
+    mut warnings: Vec<String>,
 ) -> Result<Plan> {
     let mut count = 0;
-    let raw = if format == PlanFormat::Sqlite {
+    let raw = if matches!(format, PlanFormat::Sqlite | PlanFormat::SqlServerTabular) {
         serde_json::to_string_pretty(&serde_json::json!({"columns": columns, "rows": rows}))
             .map_err(|e| Error::new(e.to_string()))?
     } else if format == PlanFormat::DuckDbJson {
@@ -161,6 +162,7 @@ pub fn decode(
         return Err(Error::new("Plan exceeds 4 MiB. Export the raw results."));
     }
     let nodes = match format {
+        PlanFormat::SqlServerTabular => mssql::decode(columns, rows, &mut count, &mut warnings)?,
         PlanFormat::Sqlite => {
             let mut entries = HashMap::new();
             for row in rows {

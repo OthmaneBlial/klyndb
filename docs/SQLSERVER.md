@@ -36,7 +36,7 @@ The selected database exposes schema-qualified tables/views, columns, nullabilit
 
 Execute explicit BEGIN TRANSACTION, COMMIT or ROLLBACK in SQL. The transaction indicator uses native XACT_STATE, including failed transactions. Confirmed reconnect drops the original session, rolling back its open transaction and removing temporary tables; retained result exports stay available.
 
-Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports are enabled; Relationship diagrams are also enabled on read-only connections; SQL file imports and structured execution plans remain disabled for this driver.
+Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports and relationship diagrams are enabled. Estimated plans are available on read-only connections; runtime Analyze requires a writable connection and explicit confirmation. SQL file imports remain disabled for this driver.
 
 ## Reviewed table editing
 
@@ -69,6 +69,16 @@ Choose **Relationships** above the connected table list or **Open relationship d
 The existing diagram view provides manual/grid layout, keyboard positioning, pan/zoom/Fit, saved local positions and native SVG export. Read-only connections can inspect the same graph without enabling writes. Metadata visibility follows server permissions. The shared limits are 50 tables, 2,000 columns, 4,000 relationship column pairs, 4 MiB of metadata and a 30-second load deadline. See [diagram controls and limits](DIAGRAMS.md).
 
 The graph reuses the existing bounded, session-serialized catalog requests. Loading reads metadata rather than table contents; it is not a frozen schema snapshot. If a metadata request times out while reading a response, its owned native client closes and reconnect is required. Native SQL Server desktop diagram acceptance remains pending.
+
+## Execution plans
+
+Select one SELECT, INSERT, UPDATE or DELETE statement and choose **Explain** for a native estimated plan, or **Analyze** for confirmed runtime execution. The shared view shows an operator tree, all original fields, native warnings and raw tabular output. Estimated SHOWPLAN_ALL does not execute the original statement. STATISTICS PROFILE executes it and reports actual Rows and Executes alongside estimated rows, CPU/I/O costs and subtree costs. Those costs remain optimizer estimates, not wall-clock timings; per-operator runtime timings are not provided. [Microsoft documents the estimate format](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-showplan-all-transact-sql?view=sql-server-ver17) and [runtime profile fields](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-profile-transact-sql?view=sql-server-ver17).
+
+The session lock spans separate native setup/query/cleanup batches. Settings must be restored before reuse; cancellation drains Attention first, and uncertain cleanup closes the connection and asks you to verify writes/transactions. Analyze does not roll back writes. A caller-owned transaction remains yours to COMMIT/ROLLBACK. Already enabled SHOWPLAN/STATISTICS PROFILE/XML settings are rejected without intentionally changing them; disable those settings before requesting a plan.
+
+Runtime data results retain at most 5,000 rows per set, while surplus data is drained so the native profile can complete. The last native plan/profile table supplies the formatted tree; other result sets remain available in Results/export. The tree uses statement-scoped node/parent IDs, preserving all reported fields. Plans share the ordinary timeout/Cancel action and bounded conversion limits. Native statements that emit no profile, such as a constant-only SELECT, do not receive fabricated runtime metrics: the plan error states that execution completed and that writes must be verified before retrying.
+
+The server requires SHOWPLAN permission and the relevant statement permissions for all referenced databases. Estimated DML is non-executing even on a client read-only connection, but native permissions can reject it. EXEC, session-control commands, transaction commands and DDL are excluded from this plan action. History records native setup/query/cleanup with GO batch separators to distinguish planning from plain execution; select the original statement and use Explain/Analyze to repeat it. GO-based whole-file/editor batches remain unsupported. Native desktop plan interaction remains pending. See [shared plan controls and limits](EXPLAIN.md).
 
 ## Evidence and remaining validation
 

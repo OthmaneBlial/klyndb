@@ -172,6 +172,21 @@ pub fn explain_target<'a>(sql: &'a str, engine: &str) -> DriverResult<&'a str> {
     }
     Ok(&sql[..end])
 }
+pub fn sql_server_plan_target(sql: &str) -> DriverResult<()> {
+    let (statements, _) = parse(sql, "mssql")?;
+    if !matches!(
+        statements.as_slice(),
+        [Statement::Query(_)
+            | Statement::Insert(_)
+            | Statement::Update { .. }
+            | Statement::Delete(_)]
+    ) {
+        return Err(Error::new(
+            "SQL Server plans support one SELECT, INSERT, UPDATE or DELETE statement",
+        ));
+    }
+    Ok(())
+}
 pub fn analyze(sql: &str, engine: &str) -> DriverResult<Analysis> {
     let (statements, _) = parse(sql, engine)?;
     if statements.is_empty() {

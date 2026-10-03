@@ -59,6 +59,7 @@ async fn real_plan_workflow() {
         ("KLYNDB_TEST_POSTGRES_URL", "postgres"),
         ("KLYNDB_TEST_MYSQL_URL", "mysql"),
         ("KLYNDB_TEST_MARIADB_URL", "mysql"),
+        ("KLYNDB_TEST_MSSQL_URL", "mssql"),
     ] {
         if let Ok(url) = std::env::var(name) {
             servers.push((engine, url));
@@ -79,8 +80,10 @@ async fn real_plan_workflow() {
         };
         connection.validate().unwrap();
         engine.store.save(&connection).unwrap();
+        let password =
+            (kind == "mssql").then(|| std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap());
         let capabilities = engine
-            .connect(&connection.id, None, None, None)
+            .connect(&connection.id, password.clone(), None, None)
             .await
             .unwrap();
         let table = format!("klyndb_plan_{}", uuid::Uuid::new_v4().simple());
@@ -161,7 +164,13 @@ async fn real_plan_workflow() {
                 .start_plan(connection.id.clone(), select, true, 5, true)
                 .await
                 .unwrap();
-            let plan = completed(&engine, &id).await.plan().unwrap();
+            let job = completed(&engine, &id).await;
+            let plan = job.plan().unwrap();
+            if kind == "mssql" {
+                assert_eq!(job.status().unwrap().sets[0].rows, 2);
+                assert_eq!(job.page(0, 0, 10).unwrap()[0][1].text(), "10");
+                assert!(has_attribute(&plan.nodes, "Rows", "2"));
+            }
             let encoded = serde_json::to_string(&plan).unwrap();
             assert!(
                 encoded.contains(match format {
@@ -169,13 +178,23 @@ async fn real_plan_workflow() {
                     PlanFormat::MysqlJson => "loops=",
                     PlanFormat::MariaJson => "r_loops",
                     PlanFormat::DuckDbJson => "operator_timing",
+                    PlanFormat::SqlServerTabular => "Executes",
                     _ => panic!("unexpected runtime format"),
                 }),
                 "{encoded}"
             );
             engine.release(&id).unwrap();
             // Runtime DML is a real write on engines that support it; a caller-owned transaction remains explicit.
-            run(&engine, &connection, "BEGIN").await;
+            run(
+                &engine,
+                &connection,
+                if kind == "mssql" {
+                    "BEGIN TRANSACTION"
+                } else {
+                    "BEGIN"
+                },
+            )
+            .await;
             let update = format!("UPDATE {table} SET value=value+1");
             if format == PlanFormat::MysqlJson {
                 assert!(
@@ -216,6 +235,9 @@ async fn real_plan_workflow() {
             );
             let sleep = match kind {
                 "postgres" => "SELECT pg_sleep(30)",
+                "mssql" => {
+                    "SELECT COUNT_BIG(*) FROM sys.all_objects a CROSS JOIN sys.all_objects b CROSS JOIN sys.all_objects c"
+                }
                 "duckdb" => {
                     "SELECT sum(a.i*b.i) FROM range(1000000000) a(i), range(1000000000) b(i)"
                 }
@@ -260,6 +282,133 @@ async fn real_plan_workflow() {
                     .is_err()
             );
         }
+        if kind == "mssql" {
+            run(&engine, &connection, "SET IMPLICIT_TRANSACTIONS ON").await;
+            let estimate = engine
+                .start_plan(
+                    connection.id.clone(),
+                    format!("UPDATE {table} SET value=99"),
+                    false,
+                    5,
+                    false,
+                )
+                .await
+                .unwrap();
+            completed(&engine, &estimate).await.plan().unwrap();
+            engine.release(&estimate).unwrap();
+            assert_eq!(
+                run(&engine, &connection, "SELECT @@TRANCOUNT").await[0][0].text(),
+                "0"
+            );
+            run(&engine, &connection, "SET IMPLICIT_TRANSACTIONS OFF").await;
+            let constant = engine
+                .start_plan(connection.id.clone(), "SELECT 42".into(), true, 5, true)
+                .await
+                .unwrap();
+            let job = completed(&engine, &constant).await;
+            assert_eq!(job.page(0, 0, 10).unwrap()[0][0].text(), "42");
+            assert!(
+                job.plan()
+                    .unwrap_err()
+                    .message
+                    .contains("Statement completed")
+            );
+            engine.release(&constant).unwrap();
+            let sql = "SELECT TOP(6001) a.object_id AS id FROM sys.all_objects a CROSS JOIN sys.all_objects b";
+            let id = engine
+                .start_plan(connection.id.clone(), sql.into(), true, 10, true)
+                .await
+                .unwrap();
+            let job = completed(&engine, &id).await;
+            assert!(job.status().unwrap().sets[0].truncated);
+            assert_eq!(job.status().unwrap().sets[0].rows, 5000);
+            assert!(has_attribute(&job.plan().unwrap().nodes, "Rows", "6001"));
+            engine.release(&id).unwrap();
+            for option in ["SHOWPLAN_ALL", "STATISTICS PROFILE"] {
+                run(&engine, &connection, &format!("SET {option} ON")).await;
+                let id = engine
+                    .start_plan(connection.id.clone(), "SELECT 42".into(), false, 5, false)
+                    .await
+                    .unwrap();
+                assert!(
+                    completed(&engine, &id)
+                        .await
+                        .status()
+                        .unwrap()
+                        .error
+                        .unwrap()
+                        .contains("Disable existing")
+                );
+                engine.release(&id).unwrap();
+                // Rejection must preserve the caller's enabled mode, not silently turn it off.
+                let id = engine
+                    .start(
+                        connection.id.clone(),
+                        "SELECT COUNT_BIG(*) FROM sys.objects WHERE object_id=-1".into(),
+                        100,
+                        5,
+                        true,
+                    )
+                    .await
+                    .unwrap();
+                let job = completed(&engine, &id).await;
+                assert!(
+                    job.status()
+                        .unwrap()
+                        .sets
+                        .iter()
+                        .any(|s| s.columns.iter().any(|c| c == "NodeId"))
+                );
+                engine.release(&id).unwrap();
+                run(&engine, &connection, &format!("SET {option} OFF")).await;
+            }
+            let id = engine
+                .start_plan(
+                    connection.id.clone(),
+                    format!("SELECT nonexistent_column FROM {table}"),
+                    false,
+                    5,
+                    false,
+                )
+                .await
+                .unwrap();
+            assert!(
+                completed(&engine, &id)
+                    .await
+                    .status()
+                    .unwrap()
+                    .error
+                    .is_some()
+            );
+            engine.release(&id).unwrap();
+            assert_eq!(
+                run(&engine, &connection, "SELECT 42").await[0][0].text(),
+                "42"
+            );
+            let history = engine.store.history().unwrap();
+            assert!(history.iter().any(|entry| {
+                entry["sql"]
+                    .as_str()
+                    .is_some_and(|sql| sql.starts_with("SET SHOWPLAN_ALL ON;\nGO\n"))
+            }));
+            assert!(history.iter().any(|entry| {
+                entry["sql"]
+                    .as_str()
+                    .is_some_and(|sql| sql.starts_with("SET STATISTICS PROFILE ON;\nGO\n"))
+            }));
+            for unsafe_target in [
+                "SET SHOWPLAN_ALL OFF",
+                "EXEC(N'SELECT 1')",
+                "BEGIN TRANSACTION",
+            ] {
+                assert!(
+                    engine
+                        .start_plan(connection.id.clone(), unsafe_target.into(), false, 5, true)
+                        .await
+                        .is_err()
+                );
+            }
+        }
         if kind == "duckdb" {
             engine.disconnect(&connection.id).await.unwrap();
         }
@@ -271,7 +420,7 @@ async fn real_plan_workflow() {
         engine.store.save(&readonly).unwrap();
         assert!(
             !engine
-                .connect(&readonly.id, None, None, None)
+                .connect(&readonly.id, password.clone(), None, None)
                 .await
                 .unwrap()
                 .explain_analyze
@@ -338,4 +487,11 @@ async fn real_plan_workflow() {
         run(&engine, &connection, &format!("DROP TABLE {table}")).await;
         engine.disconnect(&connection.id).await.unwrap();
     }
+}
+
+fn has_attribute(nodes: &[klyndb_query::plan::PlanNode], name: &str, value: &str) -> bool {
+    nodes.iter().any(|node| {
+        node.attributes.iter().any(|(n, v)| n == name && v == value)
+            || has_attribute(&node.children, name, value)
+    })
 }

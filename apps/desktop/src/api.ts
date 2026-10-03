@@ -172,7 +172,8 @@ export type PlanFormat =
   | "mysql_json"
   | "mysql_tree"
   | "maria_json"
-  | "duck_db_json";
+  | "duck_db_json"
+  | "sql_server_tabular";
 export interface PlanNode {
   label: string;
   attributes: [string, string][];

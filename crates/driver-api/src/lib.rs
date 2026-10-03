@@ -99,6 +99,7 @@ pub enum PlanFormat {
     MysqlTree,
     MariaJson,
     DuckDbJson,
+    SqlServerTabular,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Table {
@@ -483,6 +484,17 @@ pub trait Session: Send + Sync {
         cancel: CancellationToken,
         limit: usize,
     ) -> Result<()>;
+    /// Native plan execution can require session settings across separate requests.
+    async fn execute_plan(
+        &self,
+        sql: String,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        limit: usize,
+        _analyze: bool,
+    ) -> Result<()> {
+        self.execute(sql, output, cancel, limit).await
+    }
     async fn tables(&self) -> Result<Vec<Table>>;
     async fn inspect(&self, table: &Table) -> Result<TableInfo>;
     async fn relationships(&self, _table: &Table) -> Result<Vec<ForeignKey>> {

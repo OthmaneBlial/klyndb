@@ -127,6 +127,14 @@ impl Job {
     }
     pub fn plan(&self) -> Result<klyndb_query::plan::Plan> {
         let status = self.status()?;
+        self.decoded_plan().map_err(|error| {
+            if status.plan_analyze && status.done && status.error.is_none() {
+                Error::new(format!("Statement completed, but its plan could not be displayed. {} Verify writes before retrying.", error.message))
+            } else { error }
+        })
+    }
+    fn decoded_plan(&self) -> Result<klyndb_query::plan::Plan> {
+        let status = self.status()?;
         let format = status
             .plan_format
             .ok_or_else(|| Error::new("This result is not an execution plan"))?;
@@ -137,9 +145,30 @@ impl Job {
                     .unwrap_or_else(|| "Wait for the plan to finish".into()),
             ));
         }
+        let set_index = if format == PlanFormat::SqlServerTabular {
+            status
+                .sets
+                .iter()
+                .rposition(|s| {
+                    [
+                        "StmtText",
+                        "StmtId",
+                        "NodeId",
+                        "Parent",
+                        "PhysicalOp",
+                        "EstimateRows",
+                        "TotalSubtreeCost",
+                    ]
+                    .iter()
+                    .all(|name| s.columns.iter().any(|c| c == name))
+                })
+                .ok_or_else(|| Error::new("SQL Server returned no native plan/profile result"))?
+        } else {
+            0
+        };
         let first = status
             .sets
-            .first()
+            .get(set_index)
             .ok_or_else(|| Error::new("The server returned no execution plan"))?;
         if first.truncated {
             return Err(Error::new(
@@ -149,7 +178,7 @@ impl Job {
         let mut rows = vec![];
         let mut bytes = 0;
         for offset in (0..first.rows).step_by(500) {
-            let page = self.page(0, offset, 500)?;
+            let page = self.page(set_index, offset, 500)?;
             bytes += page.iter().flatten().map(Cell::byte_len).sum::<usize>();
             if bytes > 4 * 1024 * 1024 {
                 return Err(Error::new("Plan exceeds 4 MiB. Export the raw results."));
@@ -157,7 +186,11 @@ impl Job {
             rows.extend(page);
         }
         let mut warnings = vec![];
-        if let Some(set) = status.sets.get(1) {
+        if let Some(set) = status
+            .sets
+            .get(1)
+            .filter(|_| format != PlanFormat::SqlServerTabular)
+        {
             for offset in (0..set.rows).step_by(500) {
                 for row in self.page(1, offset, 500)? {
                     bytes += row.iter().map(Cell::byte_len).sum::<usize>();
@@ -602,6 +635,17 @@ impl Engine {
         timeout_seconds: u64,
         confirmed: bool,
     ) -> Result<String> {
+        self.start_query(connection, sql, (limit, timeout_seconds, confirmed), None)
+            .await
+    }
+    async fn start_query(
+        &self,
+        connection: String,
+        mut sql: String,
+        options: (usize, u64, bool),
+        plan: Option<bool>,
+    ) -> Result<String> {
+        let (limit, timeout_seconds, confirmed) = options;
         if limit == 0 || limit > 10_000_000 {
             return Err(Error::new("Row limit must be 1–10,000,000"));
         }
@@ -612,16 +656,30 @@ impl Engine {
         let open = sessions
             .get(&connection)
             .ok_or_else(|| Error::new("Connect to the database first"))?;
+        let plan = if let Some(analyze) = plan {
+            let target = klyndb_query::explain_target(&sql, &open.config.engine)?;
+            let (prepared, format) = open.driver.explain_sql(target, analyze)?;
+            sql = prepared;
+            if analyze && !confirmed {
+                return Err(Error::new(
+                    "Confirmation required: ANALYZE executes the statement, including writes and side effects",
+                ));
+            }
+            Some((format, analyze))
+        } else {
+            None
+        };
+        let estimated = plan.is_some_and(|(_, analyze)| !analyze);
         let analysis = klyndb_query::analyze(&sql, &open.config.engine)?;
         if analysis.statements.len() > 100 {
             return Err(Error::new("Run at most 100 statements per batch"));
         }
-        if open.config.read_only && !analysis.read_only {
+        if open.config.read_only && !analysis.read_only && !estimated {
             return Err(Error::new(
                 "This connection is read-only. Only SELECT and non-executing EXPLAIN are allowed.",
             ));
         }
-        if !confirmed && !analysis.warnings.is_empty() {
+        if !estimated && !confirmed && !analysis.warnings.is_empty() {
             return Err(Error::new(format!(
                 "Confirmation required: {}",
                 analysis.warnings.join("; ")
@@ -630,6 +688,11 @@ impl Engine {
         let driver = open.driver.clone();
         let dialect = open.config.engine.clone();
         let job = Arc::new(Job::new(connection.clone(), dialect)?);
+        if let Some((format, analyze)) = plan {
+            let mut status = job.status.lock().map_err(error)?;
+            status.plan_format = Some(format);
+            status.plan_analyze = analyze;
+        }
         let id = job.status()?.id;
         {
             let mut jobs = self.jobs.lock().map_err(error)?;
@@ -658,7 +721,14 @@ impl Engine {
             let spool = job.clone();
             let affected_rows = driver.capabilities().affected_rows;
             let consumer = tokio::task::spawn_blocking(move || spool.consume(input, affected_rows));
-            let query = driver.execute(sql.clone(), output, token, limit).await;
+            let query = match plan {
+                Some((_, analyze)) => {
+                    driver
+                        .execute_plan(sql.clone(), output, token, limit, analyze)
+                        .await
+                }
+                None => driver.execute(sql.clone(), output, token, limit).await,
+            };
             let consumed = consumer.await.map_err(error).and_then(|r| r);
             timer.abort();
             // Preserve an unconfirmed termination warning over a spool cancellation
@@ -688,7 +758,20 @@ impl Engine {
                 status.elapsed_ms = elapsed;
                 status.transaction = transaction;
             }
-            if let Err(e) = store.add_history(&connection, &sql, message.as_deref(), elapsed) {
+            let history_sql = if let Some((PlanFormat::SqlServerTabular, analyze)) = plan {
+                let option = if analyze {
+                    "STATISTICS PROFILE"
+                } else {
+                    "SHOWPLAN_ALL"
+                };
+                // Native batches, separated as in sqlcmd: history must not present an estimate as an executed write.
+                format!("SET {option} ON;\nGO\n{sql}\nGO\nSET {option} OFF;")
+            } else {
+                sql
+            };
+            if let Err(e) =
+                store.add_history(&connection, &history_sql, message.as_deref(), elapsed)
+            {
                 tracing::warn!(error=%e,"could not save query history");
             }
             tracing::info!(
@@ -707,26 +790,13 @@ impl Engine {
         timeout_seconds: u64,
         confirmed: bool,
     ) -> Result<String> {
-        let sessions = self.sessions.lock().await;
-        let open = sessions
-            .get(&connection)
-            .ok_or_else(|| Error::new("Connect to the database first"))?;
-        let target = klyndb_query::explain_target(&sql, &open.config.engine)?;
-        let (sql, format) = open.driver.explain_sql(target, analyze)?;
-        if analyze && !confirmed {
-            return Err(Error::new(
-                "Confirmation required: ANALYZE executes the statement, including writes and side effects",
-            ));
-        }
-        drop(sessions);
-        let id = self
-            .start(connection, sql, 5000, timeout_seconds, confirmed)
-            .await?;
-        let job = self.job(&id)?;
-        let mut status = job.status.lock().map_err(error)?;
-        status.plan_format = Some(format);
-        status.plan_analyze = analyze;
-        Ok(id)
+        self.start_query(
+            connection,
+            sql,
+            (5000, timeout_seconds, confirmed),
+            Some(analyze),
+        )
+        .await
     }
     pub async fn apply_changes(
         &self,

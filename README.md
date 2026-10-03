@@ -57,7 +57,7 @@
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
 | **✍️ Edit data** | Staged SQLite/PostgreSQL, MySQL/MariaDB InnoDB and SQL Server source-build inserts, updates and deletes; review, bound values and optimistic conflicts. |
-| **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
+| **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis, including SQL Server source-build rows/execution counts. [Plan guide](docs/EXPLAIN.md). |
 | **🛡️ Stay in control** | Cancellation, configurable connection/query timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
 | **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export on SQLite/PostgreSQL/MySQL/MariaDB and SQL Server source builds. [Diagram guide](docs/DIAGRAMS.md). |
 | **📥 Import CSV / JSON / SQL** | Native file pickers, mapped CSV/JSON inserts on five relational engines (SQL Server in source builds), and SQLite/PostgreSQL/MySQL/MariaDB SQL scripts with review, transaction visibility and progress/cancel. [Import guide](docs/IMPORTS.md). |

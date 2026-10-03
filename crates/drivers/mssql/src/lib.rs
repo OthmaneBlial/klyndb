@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 mod edit;
+mod plan;
 use futures_util::TryStreamExt;
 use klyndb_driver_api::*;
 use std::{net::SocketAddr, time::Duration};
@@ -116,6 +117,7 @@ async fn stream(
     sql: &str,
     out: &mpsc::Sender<Batch>,
     limit: usize,
+    drain_truncated: bool,
 ) -> Result<bool> {
     // Preserve one original T-SQL batch: DECLARE variables do not survive separate requests.
     let mut stream = client.simple_query(sql).await.map_err(err)?;
@@ -123,6 +125,7 @@ async fn stream(
     let mut count = 0;
     let mut buffer = vec![];
     let mut bytes = 0;
+    let mut truncated = false;
     while let Some(item) = stream.try_next().await.map_err(err)? {
         match item {
             QueryItem::Metadata(meta) => {
@@ -134,7 +137,7 @@ async fn stream(
                         out,
                         Batch::Complete {
                             affected: 0,
-                            truncated: false,
+                            truncated,
                         },
                     )
                     .await?;
@@ -152,12 +155,17 @@ async fn stream(
                 found = true;
                 count = 0;
                 bytes = 0;
+                truncated = false;
             }
             QueryItem::Row(native) => {
                 if !found {
                     return Err(Error::new("SQL Server omitted result metadata"));
                 }
                 if count == limit {
+                    if drain_truncated {
+                        truncated = true;
+                        continue;
+                    }
                     if !buffer.is_empty() {
                         send(out, Batch::Rows(buffer)).await?;
                     }
@@ -180,7 +188,7 @@ async fn stream(
     if !buffer.is_empty() {
         send(out, Batch::Rows(buffer)).await?;
     }
-    Ok(false)
+    Ok(truncated)
 }
 async fn catalog(client: &mut NativeClient, sql: String) -> Result<Vec<Row>> {
     catalog_rows(client.simple_query(sql).await.map_err(err)?).await
@@ -376,8 +384,8 @@ impl Session for SqlServer {
             diagrams: true,
             transactions: true,
             schemas: true,
-            explain: false,
-            explain_analyze: false,
+            explain: true,
+            explain_analyze: !self.read_only,
             edit_rows: !self.read_only,
             import_rows: !self.read_only,
             import_sql: false,
@@ -387,6 +395,35 @@ impl Session for SqlServer {
     }
     fn quote_identifier(&self, name: &str) -> String {
         identifier(name)
+    }
+    fn explain_sql(&self, sql: &str, analyze: bool) -> Result<(String, PlanFormat)> {
+        klyndb_query::sql_server_plan_target(sql)?;
+        if analyze && self.read_only {
+            return Err(Error::new(
+                "ANALYZE executes the statement and is disabled on read-only connections",
+            ));
+        }
+        Ok((sql.into(), PlanFormat::SqlServerTabular))
+    }
+    async fn execute_plan(
+        &self,
+        sql: String,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        limit: usize,
+        analyze: bool,
+    ) -> Result<()> {
+        self.explain_sql(&sql, analyze)?;
+        let mut guard = tokio::select! {biased; _=cancel.cancelled()=>return Err(Error::new("Query cancelled")), guard=self.connection.lock()=>guard};
+        let mut client = guard
+            .take()
+            .ok_or_else(|| Error::new("Connection is closed; reconnect."))?;
+        let (result, reusable) =
+            plan::execute(&mut client, &sql, &output, &cancel, limit, analyze).await;
+        if reusable {
+            *guard = Some(client);
+        }
+        result
     }
     fn quote_filter_value(&self, value: &str) -> String {
         literal(value)
@@ -433,7 +470,7 @@ impl Session for SqlServer {
             .as_mut()
             .ok_or_else(|| Error::new("Connection is closed"))?;
         let result = {
-            let request = stream(client, &sql, &output, limit);
+            let request = stream(client, &sql, &output, limit, false);
             tokio::pin!(request);
             tokio::select! {biased; result=&mut request=>result,_=cancel.cancelled()=>Err(Error::new("Query cancelled")),_=output.closed()=>Err(Error::new("Result consumer closed"))}
         };
