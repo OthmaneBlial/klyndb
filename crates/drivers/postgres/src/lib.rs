@@ -385,6 +385,7 @@ impl Postgres {
 impl Session for Postgres {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            key_value: false,
             affected_rows: true,
             table_browse: true,
             routines: true,

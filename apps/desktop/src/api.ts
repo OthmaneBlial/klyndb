@@ -12,6 +12,7 @@ export interface Connection {
   create_file: boolean;
 }
 export interface Capabilities {
+  key_value: boolean;
   affected_rows: boolean;
   table_browse: boolean;
   routines: boolean;
@@ -114,6 +115,29 @@ export type Cell =
   | { kind: "boolean"; value: boolean }
   | { kind: "json"; value: unknown };
 export type Row = Cell[];
+export type KeyValue =
+  { kind: "cell"; value: Cell } | { kind: "array"; value: KeyValue[] };
+export interface KeyEntry {
+  key: Cell;
+  data_type: string;
+  ttl_ms: string;
+}
+export interface KeyScan {
+  cursor: string;
+  keys: KeyEntry[];
+}
+export interface KeyInspection {
+  entry: KeyEntry;
+  length: string;
+  position: string;
+  next: string | null;
+  value: KeyValue;
+}
+export interface KeyCommandInfo {
+  command: string;
+  writes: boolean;
+  arguments: number;
+}
 export type Change =
   | { kind: "insert"; values: Record<string, Cell> }
   | { kind: "update"; old: Row; values: Record<string, Cell> }
@@ -264,6 +288,22 @@ interface Commands {
   };
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
+  scan_keys: {
+    args: { id: string; pattern: string; cursor: string };
+    result: KeyScan;
+  };
+  inspect_key: {
+    args: { id: string; key: Cell; position: string };
+    result: KeyInspection;
+  };
+  key_command_info: {
+    args: { id: string; text: string };
+    result: KeyCommandInfo;
+  };
+  key_command: {
+    args: { id: string; text: string; confirmed: boolean };
+    result: KeyValue;
+  };
   routines: {
     args: { id: string; search: string; offset: number };
     result: RoutinePage;

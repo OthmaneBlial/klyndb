@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>🦀 A native database workbench. Free, open source, and yours.</strong><br />
-  SQL tabs. Real databases. A workspace that stays on your machine.
+  SQL tabs. Redis keys. A workspace that stays on your machine.
 </p>
 
 <p align="center">
@@ -19,6 +19,7 @@
   <a href="https://othmaneblial.github.io/klyndb/">🌐 Website</a> ·
   <a href="https://othmaneblial.github.io/klyndb/docs.html">📖 Docs</a> ·
   <a href="#get-started">🚀 Get started</a> ·
+  <a href="#demo">🎬 Demo</a> ·
   <a href="#features">✨ Features</a> ·
   <a href="docs/COMPATIBILITY.md">🗄️ Databases</a> ·
   <a href="ROADMAP.md">🧭 Roadmap</a> ·
@@ -41,10 +42,29 @@
 
 **No Electron. No account. No mandatory cloud. No query telemetry.**
 
+<a id="demo"></a>
+
+## 🎬 Meet your next database client
+
+[![Watch the 46-second Klyndb preview walkthrough](site/assets/demo-poster.jpg)](https://othmaneblial.github.io/klyndb/#demo)
+
+<p align="center">
+  <a href="https://othmaneblial.github.io/klyndb/#demo"><strong>▶ Watch the 46-second demo</strong></a> ·
+  <a href="https://othmaneblial.github.io/klyndb/assets/klyndb-preview-demo.mp4">Download MP4</a> ·
+  <a href="docs/DEMO.md">Scene guide</a>
+</p>
+
+A captioned screenshot walkthrough of **SQL tabs and results**, **Redis key inspection**, and **production-write review**. SQL footage is an actual native macOS screenshot; Redis scenes show the production React component with captured test-server values and simulated IPC.
+
+<details>
+<summary>📸 See the native macOS workspace</summary>
+
 <p align="center">
   <img src="docs/assets/workbench-macos.jpg" alt="Actual Klyndb macOS application with connected SQLite and MySQL databases, SQL tabs and a 10,000-row SQLite result" width="100%" />
   <br /><sub>Captured from the native macOS app with 10,000 synthetic test records in a local validation database.</sub>
 </p>
+
+</details>
 
 <a id="features"></a>
 
@@ -52,7 +72,8 @@
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md) and [SQL Server](docs/SQLSERVER.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
+| **🔑 Explore Redis** | Source builds add native key search, types/TTL, bounded string/hash/list/set/sorted-set/stream inspection and native data commands in a dedicated workspace; production confirmations and read-only guards. |
+| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md), [SQL Server](docs/SQLSERVER.md) and [Redis](docs/REDIS.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes and available table DDL, with foreign keys, constraints and triggers where supported. [Engine matrix](docs/COMPATIBILITY.md). |
 | **ƒ Inspect routines** | PostgreSQL, MySQL, MariaDB and SQL Server source builds: search and page routines, inspect native definitions and open them in an SQL tab. |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema-qualified table and lazy alias-column completion, statement/selection/batch execution, and source-build navigation to reported SQL error positions. |
@@ -67,7 +88,7 @@
 
 Server passwords stay in the **OS keychain**. TLS verification is enabled by default, with optional [CA files and client certificates](docs/TLS.md) for private servers, plus [SSH tunnels with verified host keys](docs/SSH.md). Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 
-## 🗄️ Seven databases. One workspace.
+## 🗄️ Eight databases. One workspace.
 
 | Database | Queries & schema | Staged grid edits | Verified against |
 | --- | --- | --- | --- |
@@ -78,10 +99,11 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | DuckDB · source builds | ✓ | ✓ · scalar base tables; finish SQL transactions first | Embedded DuckDB 1.5.6 · native macOS query workflow; source editing/imports/ER diagrams |
 | ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
 | SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts; native UI acceptance pending |
+| Redis · source builds | Native keys, TTLs, six value types and data commands | Native data commands; production/read-only guards | Redis 7.4.11 · real backend/TLS/mTLS contracts; native UI acceptance pending |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-DuckDB, ClickHouse and SQL Server are available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md) and [SQL Server](docs/SQLSERVER.md) guides for setup and current limits.
+DuckDB, ClickHouse, SQL Server and Redis are available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md), [SQL Server](docs/SQLSERVER.md) and [Redis](docs/REDIS.md) guides for setup and current limits.
 
 **Development preview:** [Download Preview 1 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 
@@ -119,7 +141,7 @@ Then create a connection, open a table or SQL tab, and run a real query.
 | `Shift + Cmd/Ctrl + F` | Format SQL |
 | `Cmd/Ctrl + S` | Save a query |
 
-Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Public downloadable releases are not available yet. macOS signing and notarization require Apple credentials. The [local release guide](docs/RELEASES.md) documents the optimized macOS DMG/ZIP candidate builder and acceptance checks.
+Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Preview 1 is available for macOS Apple Silicon; other platform downloads remain pending. macOS signing and notarization require Apple credentials. The [local release guide](docs/RELEASES.md) documents the optimized macOS DMG/ZIP candidate builder and acceptance checks.
 
 ## 🧪 Local checks
 
@@ -129,7 +151,7 @@ Build a native package with `npm run tauri build`. Platform targets are macOS, W
 
 Install the audit tools with `cargo install cargo-audit cargo-deny --locked`. The script runs locked frontend installation, lint, typecheck, tests, production build, Rust formatting/Clippy/tests, a native debug build and dependency/license audits.
 
-Set `KLYNDB_TEST_POSTGRES_URL` or `KLYNDB_TEST_MYSQL_URL` to run the real-server and delayed-handshake contracts against **disposable local databases**. The MySQL contract runs on either MySQL or MariaDB; verify both separately. `KLYNDB_TEST_MARIADB_URL` additionally runs MariaDB delayed-handshake coverage. For native ClickHouse TCP/TLS contracts, use the disposable fixture variables in [the ClickHouse guide](docs/CLICKHOUSE.md). Never use production databases for integration tests.
+Set `KLYNDB_TEST_POSTGRES_URL` or `KLYNDB_TEST_MYSQL_URL` to run the real-server and delayed-handshake contracts against **disposable local databases**. The MySQL contract runs on either MySQL or MariaDB; verify both separately. `KLYNDB_TEST_MARIADB_URL` additionally runs MariaDB delayed-handshake coverage. For native ClickHouse TCP/TLS contracts, use the disposable fixture variables in [the ClickHouse guide](docs/CLICKHOUSE.md). For Redis, set `KLYNDB_TEST_REDIS_URL`, `KLYNDB_TEST_REDIS_PASSWORD` and `KLYNDB_TEST_REDIS_READONLY_PASSWORD` for separate writable/read-only ACL fixture users; TLS/mTLS contracts additionally use `KLYNDB_TEST_TLS_REDIS_URL`, `KLYNDB_TEST_MTLS_REDIS_URL` and `KLYNDB_TEST_TLS_CERT_DIR`. Never use production databases for integration tests.
 
 **GitHub Actions is disabled by owner instruction. All current CI checks run locally.**
 

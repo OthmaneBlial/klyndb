@@ -13,7 +13,8 @@ Reviewed the public README and user workflow documentation of [Beekeeper Studio]
 | Query plans | Inspect EXPLAIN and runtime plans alongside results | Native driver formats, Rust tree normalization, raw output and server messages | All four backend contracts verified; native macOS MySQL/SQLite workflows passed |
 | Diagrams | Explore tables and relationships across schemas | Native typed foreign keys, SVG workspace, manual/grid layout, pan/zoom, local layouts and native SVG export | Four-engine composite/self-FK contracts pass; native and large-catalog checks are recorded in validation evidence |
 | Routines | Search functions/procedures and inspect argument/return types | Independent capability-gated, paged native catalog and definition reads; explicit SQL-tab opening | PostgreSQL, MySQL/MariaDB and SQL Server source builds; real paging/signature/definition/read-only/no-execution checks pass; native UI acceptance pending |
-| NoSQL | Specialized engine behavior | Separate document/key experiences planned | Pending |
+| Redis | [Public Redis workflow documentation](https://docs.beekeeperstudio.io/user_guide/connecting/redis/): typed keys, TTLs, native commands and TLS/SSH | Original redis-rs driver and dedicated capability-driven workspace; six types, bounded paging, JSON argument arrays, production/read-only guards | Real driver/core/TLS contracts pass; native desktop/Redis SSH pending; no reference source copied |
+| MongoDB | Specialized document queries and collections | Separate document experience planned | Pending |
 
 References are behavior only. No branded icons, logos, screenshots or source were copied. Analyze each major area just before implementing it, and update this matrix from actual behavior.
 

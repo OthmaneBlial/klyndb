@@ -3,6 +3,7 @@ export interface Tab {
   name: string;
   connection: string;
   sql: string;
+  kind?: "sql" | "key_value";
 }
 export interface Preferences {
   theme: "dark" | "light";
@@ -36,7 +37,8 @@ export function restoreWorkspace(value: unknown): {
             t !== null &&
             ["id", "name", "connection", "sql"].every(
               (k) => typeof (t as Record<string, unknown>)[k] === "string",
-            ),
+            ) &&
+            (!("kind" in t) || t.kind === "sql" || t.kind === "key_value"),
         )
         .slice(0, 100)
     : [];

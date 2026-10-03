@@ -428,6 +428,7 @@ async fn rows(client: &Client, sql: String) -> Result<Vec<Row>> {
 impl Session for ClickHouse {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            key_value: false,
             affected_rows: false,
             table_browse: true,
             routines: false,

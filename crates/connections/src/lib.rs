@@ -43,7 +43,7 @@ impl Connection {
         )
     }
     pub fn has_client_identity(&self) -> bool {
-        if !["postgres", "mysql", "clickhouse"].contains(&self.engine.as_str()) {
+        if !["postgres", "mysql", "clickhouse", "redis"].contains(&self.engine.as_str()) {
             return false;
         }
         url::Url::parse(&self.address)
@@ -67,18 +67,22 @@ impl Connection {
                 }
                 Ok(None)
             }
-            "postgres" | "mysql" | "clickhouse" | "mssql" => {
+            "postgres" | "mysql" | "clickhouse" | "mssql" | "redis" => {
                 let mut url = url::Url::parse(&self.address)
                     .map_err(|_| Error::new("Enter a valid database connection URL"))?;
                 let native_tls_mode = self.engine != "postgres";
-                let schemes: &[&str] = if native_tls_mode {
+                let schemes: &[&str] = if self.engine == "redis" {
+                    &["redis", "rediss"]
+                } else if native_tls_mode {
                     &[self.engine.as_str()]
                 } else {
                     &["postgres", "postgresql"]
                 };
                 if !schemes.contains(&url.scheme()) || url.host_str().is_none() {
                     return Err(Error::new(if native_tls_mode {
-                        if self.engine == "mssql" {
+                        if self.engine == "redis" {
+                            "Expected redis://user@host:6379/0"
+                        } else if self.engine == "mssql" {
                             "Expected mssql://user@host:1433/database"
                         } else if self.engine == "clickhouse" {
                             "Expected clickhouse://user@host:9000/database"
@@ -133,6 +137,22 @@ impl Connection {
                 }
                 self.connect_timeout()?;
                 self.ssh()?;
+                if self.engine == "redis" {
+                    let database = url.path().strip_prefix('/').unwrap_or(url.path());
+                    if !database.is_empty()
+                        && (database.parse::<u32>().is_err()
+                            || !database.bytes().all(|c| c.is_ascii_digit()))
+                    {
+                        return Err(Error::new("Redis database must be a nonnegative integer"));
+                    }
+                    if url.scheme() == "rediss"
+                        && url
+                            .query_pairs()
+                            .any(|(k, v)| k == "tls" && v == "disabled")
+                    {
+                        return Err(Error::new("rediss URLs require verified TLS"));
+                    }
+                }
                 let password = url.password().map(|p| Zeroizing::new(percent_decode(p)));
                 url.set_password(None)
                     .map_err(|_| Error::new("Invalid URL credentials"))?;
@@ -331,6 +351,27 @@ mod tests {
         assert_eq!(c.validate().unwrap().unwrap().as_str(), "p@ss+word");
         assert!(!c.address.contains("word"));
         assert!(c.address.contains("tls=required"));
+        let mut redis = c.clone();
+        redis.engine = "redis".into();
+        redis.address = "redis://alice:p%40ss+word@localhost:6379/0".into();
+        assert_eq!(redis.validate().unwrap().unwrap().as_str(), "p@ss+word");
+        assert!(!redis.address.contains("word"));
+        assert!(redis.address.contains("tls=required"));
+        for address in [
+            "redis://localhost/-1",
+            "redis://localhost/+1",
+            "redis://localhost/abc",
+            "redis://localhost/0/1",
+            "rediss://localhost/0?tls=disabled",
+            "redis://localhost/0?tls=disabled&sslrootcert=%2Ftmp%2Fca.pem",
+            "redis://localhost/0?tls=required&tls=disabled",
+        ] {
+            redis.address = address.into();
+            assert!(redis.validate().is_err());
+        }
+        redis.address = "rediss://alice@localhost/1?sslidentity=%2Ftmp%2Fclient.p12".into();
+        redis.validate().unwrap();
+        assert!(redis.has_client_identity());
         for address in [
             "mysql://alice@localhost/db?tls=invalid",
             "mysql://alice@localhost/db?password=leak",

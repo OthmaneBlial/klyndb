@@ -51,8 +51,14 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import type { EditorHandle } from "./components/SqlEditor";
+import type { KeyWorkspaceHandle } from "./components/KeyValueWorkspace";
 import type { SqlSubmission } from "./sql";
 import { tableKey } from "./diagram";
+const KeyValueWorkspace = lazy(() =>
+  import("./components/KeyValueWorkspace").then((m) => ({
+    default: m.KeyValueWorkspace,
+  })),
+);
 const SqlEditor = lazy(() =>
   import("./components/SqlEditor").then((m) => ({ default: m.SqlEditor })),
 );
@@ -158,6 +164,7 @@ export default function App() {
     [transactionStates, setTransactionStates] = useState<
       Record<string, "idle" | "active" | "failed" | "unknown">
     >({});
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const applyingRef = useRef(applying);
   applyingRef.current = applying;
   const importDialogRef = useRef(importDialog);
@@ -174,6 +181,7 @@ export default function App() {
   statusesRef.current = statuses;
   const connectingRef = useRef(new Set<string>());
   const editorRef = useRef<EditorHandle | null>(null);
+  const keyWorkspaceRef = useRef<KeyWorkspaceHandle | null>(null);
   const browsingRef = useRef(new Set<string>());
   const [browsing, setBrowsing] = useState<Record<string, boolean>>({});
   const current = tabs.find((t) => t.id === active),
@@ -183,6 +191,7 @@ export default function App() {
     busy =
       (!!status && !status.done) || !!applying[active] || !!browsing[active],
     set = resultSets[active] ?? 0;
+  const keyWorkspace = current?.kind === "key_value";
   const editable = !!(
     connection &&
     connected[connection.id]?.edit_rows &&
@@ -306,7 +315,7 @@ export default function App() {
           return;
         }
         if (Object.values(applyingRef.current).some(Boolean)) {
-          report("Wait for the editing batch to finish before closing.");
+          report("Wait for the current operation to finish before closing.");
           return;
         }
         const close = async () => {
@@ -387,6 +396,10 @@ export default function App() {
     connectionId = connection?.id ?? connections[0]?.id ?? "",
     sql = "SELECT 1;",
     name?: string,
+    kind: Tab["kind"] = (connected[connectionId]?.key_value ??
+    connections.find((c) => c.id === connectionId)?.engine === "redis")
+      ? "key_value"
+      : "sql",
   ) {
     if (tabs.length >= 100) {
       report("The workspace is limited to 100 tabs. Close an unused tab.");
@@ -395,7 +408,9 @@ export default function App() {
     const id = crypto.randomUUID();
     const tab: Tab = {
       id,
-      name: name ?? `Query ${tabs.length + 1}`,
+      name:
+        name ?? `${kind === "key_value" ? "Keys" : "Query"} ${tabs.length + 1}`,
+      kind,
       connection: connectionId,
       sql,
     };
@@ -406,7 +421,7 @@ export default function App() {
   }
   async function closeTab(id: string, discard = false) {
     if (applyingRef.current[id] || browsingRef.current.has(id)) {
-      report("Wait for the current table operation to finish.");
+      report("Wait for the current operation to finish.");
       return;
     }
     if (!discard && stagedRef.current[id]?.length) {
@@ -419,6 +434,11 @@ export default function App() {
     }
     setStaged((s) => {
       const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setKeyDrafts((previous) => {
+      const next = { ...previous };
       delete next[id];
       return next;
     });
@@ -439,7 +459,7 @@ export default function App() {
     if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
   }
   async function switchTabConnection(id: string, connection: string) {
-    if (browsingRef.current.has(id)) return;
+    if (browsingRef.current.has(id) || applyingRef.current[id]) return;
     if (stagedRef.current[id]?.length) {
       report("Apply or discard staged changes before switching connection.");
       return;
@@ -456,10 +476,18 @@ export default function App() {
       delete next[id];
       return next;
     });
-    updateTab(id, { connection });
+    updateTab(id, {
+      connection,
+      kind:
+        (connected[connection]?.key_value ??
+        connections.find((c) => c.id === connection)?.engine === "redis")
+          ? "key_value"
+          : "sql",
+    });
     setView("results");
   }
   async function refresh(id: string) {
+    if (connected[id]?.key_value) return;
     setTables((t) => ({ ...t, [id]: [] }));
     setColumns((s) => ({ ...s, [id]: {} }));
     try {
@@ -491,8 +519,21 @@ export default function App() {
       );
       setTransactionStates((s) => ({ ...s, [c.id]: state }));
       setExpanded((s) => ({ ...s, [c.id]: true }));
-      await refresh(c.id);
-      if (!tabs.some((t) => t.connection === c.id)) newTab(c.id);
+      if (!capabilities.key_value) await refresh(c.id);
+      setTabs((current) =>
+        current.map((tab) =>
+          tab.connection === c.id
+            ? { ...tab, kind: capabilities.key_value ? "key_value" : "sql" }
+            : tab,
+        ),
+      );
+      if (!tabs.some((t) => t.connection === c.id))
+        newTab(
+          c.id,
+          "SELECT 1;",
+          undefined,
+          capabilities.key_value ? "key_value" : "sql",
+        );
       else if (!reconnecting)
         setActive(tabs.find((t) => t.connection === c.id)!.id);
       setNotice("");
@@ -573,6 +614,17 @@ export default function App() {
   }
   async function disconnect(c: Connection) {
     if (connectingRef.current.has(c.id)) return;
+    if (
+      tabsRef.current.some(
+        (tab) =>
+          tab.connection === c.id &&
+          tab.kind === "key_value" &&
+          applyingRef.current[tab.id],
+      )
+    ) {
+      report("Wait for the Redis operation to finish before disconnecting.");
+      return;
+    }
     try {
       await api("disconnect", { id: c.id });
     } catch (e) {
@@ -588,7 +640,7 @@ export default function App() {
     confirmed = false,
     plan?: "estimate" | "analyze",
   ) {
-    if (browsingRef.current.has(active)) return;
+    if (keyWorkspace || browsingRef.current.has(active)) return;
     if (stagedRef.current[active]?.length) {
       report("Apply or discard staged changes before running another query.");
       return;
@@ -824,6 +876,7 @@ export default function App() {
     }
   }
   async function formatSql() {
+    if (keyWorkspace) return;
     try {
       const { format } = await import("sql-formatter");
       editorRef.current?.replace(
@@ -905,19 +958,41 @@ export default function App() {
     }
   }
   const commands = [
-    { name: "New SQL tab", key: "⌘ T", action: () => newTab() },
+    ...(keyWorkspace
+      ? [
+          {
+            name: "Scan Redis keys",
+            key: "",
+            action: () => keyWorkspaceRef.current?.scan(),
+          },
+          {
+            name: "Run Redis command",
+            key: "⌘ ↵",
+            action: () => keyWorkspaceRef.current?.run(),
+          },
+        ]
+      : []),
+    {
+      name: keyWorkspace ? "New key explorer tab" : "New SQL tab",
+      key: "⌘ T",
+      action: () => void newTab(),
+    },
     { name: "New connection", key: "", action: () => setDialog(true) },
-    {
-      name: "Run current statement or selection",
-      key: "⌘ ↵",
-      action: () => void run(),
-    },
-    {
-      name: "Run entire editor",
-      key: "",
-      action: () => void run(editorRef.current?.allText()),
-    },
-    { name: "Format SQL", key: "⇧ ⌘ F", action: formatSql },
+    ...(!keyWorkspace
+      ? [
+          {
+            name: "Run current statement or selection",
+            key: "⌘ ↵",
+            action: () => void run(),
+          },
+          {
+            name: "Run entire editor",
+            key: "",
+            action: () => void run(editorRef.current?.allText()),
+          },
+          { name: "Format SQL", key: "⇧ ⌘ F", action: formatSql },
+        ]
+      : []),
     ...(connection && connected[connection.id]?.import_sql
       ? [
           {
@@ -927,23 +1002,24 @@ export default function App() {
           },
         ]
       : []),
-    {
-      name: "Refresh schema",
-      key: "",
-      action: () => connection && void refresh(connection.id),
-    },
-    {
-      name: "Open relationship diagram",
-      key: "",
-      action: () => {
-        if (connection && connected[connection.id]?.diagrams)
-          setDiagramConnection(connection);
-        else
-          report(
-            "Connect to a supported database and select its SQL tab first.",
-          );
-      },
-    },
+    ...(!keyWorkspace
+      ? [
+          {
+            name: "Refresh schema",
+            key: "",
+            action: () => connection && void refresh(connection.id),
+          },
+        ]
+      : []),
+    ...(connection && connected[connection.id]?.diagrams
+      ? [
+          {
+            name: "Open relationship diagram",
+            key: "",
+            action: () => setDiagramConnection(connection),
+          },
+        ]
+      : []),
     ...(connection && connected[connection.id]?.routines
       ? [
           {
@@ -1004,11 +1080,11 @@ export default function App() {
         e.preventDefault();
         newTab();
       }
-      if (e.key.toLowerCase() === "s") {
+      if (!keyWorkspace && e.key.toLowerCase() === "s") {
         e.preventDefault();
         setSaveName(current?.name ?? "");
       }
-      if (e.shiftKey && e.key.toLowerCase() === "f") {
+      if (!keyWorkspace && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         formatSql();
       }
@@ -1199,37 +1275,49 @@ export default function App() {
                                 <Network size={13} /> Relationships
                               </button>
                             )}
-                            <div className="tables-heading">
-                              <span>
-                                Tables & views <small>{allTables.length}</small>
-                              </span>
+                            {connected[c.id]?.key_value ? (
                               <button
-                                className="icon"
-                                aria-label={`Refresh ${c.name} schema`}
-                                onClick={() => void refresh(c.id)}
+                                className="diagram-open"
+                                onClick={() => newTab(c.id)}
                               >
-                                <RefreshCw size={12} />
+                                <Search size={13} /> Open key explorer
                               </button>
-                            </div>
-                            {matches.map((table) => (
-                              <button
-                                className="table-item"
-                                key={`${table.schema}.${table.name}`}
-                                onClick={() => void openTable(c, table)}
-                              >
-                                <Table2 size={13} />
-                                <span>
-                                  {table.schema !== "main"
-                                    ? `${table.schema}.`
-                                    : ""}
-                                  {table.name}
-                                </span>
-                              </button>
-                            ))}
-                            {!allTables.length && (
-                              <p className="muted tree-empty">
-                                No tables. Create one in a SQL tab.
-                              </p>
+                            ) : (
+                              <>
+                                <div className="tables-heading">
+                                  <span>
+                                    Tables & views{" "}
+                                    <small>{allTables.length}</small>
+                                  </span>
+                                  <button
+                                    className="icon"
+                                    aria-label={`Refresh ${c.name} schema`}
+                                    onClick={() => void refresh(c.id)}
+                                  >
+                                    <RefreshCw size={12} />
+                                  </button>
+                                </div>
+                                {matches.map((table) => (
+                                  <button
+                                    className="table-item"
+                                    key={`${table.schema}.${table.name}`}
+                                    onClick={() => void openTable(c, table)}
+                                  >
+                                    <Table2 size={13} />
+                                    <span>
+                                      {table.schema !== "main"
+                                        ? `${table.schema}.`
+                                        : ""}
+                                      {table.name}
+                                    </span>
+                                  </button>
+                                ))}
+                                {!allTables.length && (
+                                  <p className="muted tree-empty">
+                                    No tables. Create one in a SQL tab.
+                                  </p>
+                                )}
+                              </>
                             )}
                           </div>
                         )}
@@ -1309,7 +1397,7 @@ export default function App() {
           </div>
           <button
             className="icon"
-            aria-label="New SQL tab"
+            aria-label={keyWorkspace ? "New key explorer tab" : "New SQL tab"}
             onClick={() => newTab()}
           >
             <Plus size={17} />
@@ -1368,211 +1456,260 @@ export default function App() {
                   </button>
                 )}
               </div>
-              <div>
-                <button
-                  title="Format SQL · Shift+Cmd/Ctrl+F"
-                  onClick={formatSql}
-                >
-                  <WandSparkles size={14} /> Format
-                </button>
-                <button
-                  title="Save query · Cmd/Ctrl+S"
-                  onClick={() => setSaveName(current.name)}
-                >
-                  <Bookmark size={14} />
-                </button>
-                {applying[active] ? (
-                  <span className="muted">Applying batch…</span>
-                ) : busy ? (
+              {!keyWorkspace && (
+                <div>
                   <button
-                    className="danger"
-                    onClick={() =>
-                      void api("cancel_query", { id: status.id }).catch((e) =>
-                        report(String(e)),
-                      )
-                    }
+                    title="Format SQL · Shift+Cmd/Ctrl+F"
+                    onClick={formatSql}
                   >
-                    <Square size={13} /> Cancel
+                    <WandSparkles size={14} /> Format
                   </button>
-                ) : (
-                  <>
-                    {connection && connected[connection.id]?.import_sql && (
-                      <button onClick={() => setSqlImport(connection)}>
-                        <FileUp size={14} /> Import SQL
-                      </button>
-                    )}
-                    {connection && connected[connection.id]?.explain && (
-                      <>
-                        <button
-                          title="Estimate the current statement or selection without executing it"
-                          onClick={() => void run(undefined, false, "estimate")}
-                        >
-                          Explain
-                        </button>
-                        {connected[connection.id]?.explain_analyze && (
-                          <button
-                            title="Execute with runtime statistics; confirmation required"
-                            onClick={() =>
-                              void run(undefined, false, "analyze")
-                            }
-                          >
-                            Analyze
-                          </button>
-                        )}
-                      </>
-                    )}
+                  <button
+                    title="Save query · Cmd/Ctrl+S"
+                    onClick={() => setSaveName(current.name)}
+                  >
+                    <Bookmark size={14} />
+                  </button>
+                  {applying[active] ? (
+                    <span className="muted">Applying batch…</span>
+                  ) : busy ? (
                     <button
-                      className="primary"
-                      disabled={!connection || !connected[connection.id]}
-                      onClick={() => void run()}
-                    >
-                      <Play size={13} fill="currentColor" /> Run <kbd>⌘ ↵</kbd>
-                    </button>
-                    <button
-                      title="Run all statements"
-                      disabled={!connection || !connected[connection.id]}
-                      onClick={() => void run(editorRef.current?.allText())}
-                    >
-                      All
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            <section className="editor-area">
-              <Suspense
-                fallback={
-                  <div className="result-empty">Loading SQL editor…</div>
-                }
-              >
-                <SqlEditor
-                  key={current.id}
-                  value={current.sql}
-                  engine={connection?.engine ?? "sqlite"}
-                  schema={schema}
-                  loadColumns={loadCompletionColumns}
-                  onError={report}
-                  onChange={(sql) => updateTab(current.id, { sql })}
-                  onRun={(sql) => void run(sql)}
-                  editorRef={editorRef}
-                />
-              </Suspense>
-            </section>
-            <ResultPanel
-              status={status}
-              onLocateError={
-                status?.error_offset != null &&
-                status.error &&
-                queryOrigins.current[current.id]?.id === status.id &&
-                queryOrigins.current[current.id].source.document === current.sql
-                  ? () =>
-                      locateError(
-                        queryOrigins.current[current.id].source,
-                        status.error_offset!,
-                      )
-                  : undefined
-              }
-              set={set}
-              onSelectSet={(i) => setResultSets((p) => ({ ...p, [active]: i }))}
-              view={view}
-              onView={setView}
-              inspector={inspector}
-              busy={busy}
-              onError={report}
-              onExport={() => setExportOpen(true)}
-              onEdit={
-                editable && keyed && !busy
-                  ? (old) => setRowDialog({ tab: current, inspector, old })
-                  : undefined
-              }
-              onDelete={
-                editable && keyed && !busy
-                  ? (old) => stage(active, { kind: "delete", old })
-                  : undefined
-              }
-              rowOffset={tableResult ? inspector?.browse.offset : undefined}
-              browsing={
-                inspector &&
-                connection &&
-                connected[connection.id]?.table_browse && (
-                  <TableControls
-                    key={`${current.id}-${inspector.query}`}
-                    columns={inspector.info.columns}
-                    query={inspector.browse}
-                    active={tableResult}
-                    busy={busy}
-                    staged={!!staged[active]?.length}
-                    done={!!status?.done}
-                    failed={!!status?.error}
-                    rows={status?.sets[0]?.rows ?? 0}
-                    onBrowse={(query) => browseTable(current, inspector, query)}
-                  />
-                )
-              }
-              editing={
-                editable && (
-                  <div className="table-editing">
-                    <button
-                      disabled={busy}
+                      className="danger"
                       onClick={() =>
-                        setRowDialog({ tab: current, inspector, old: null })
+                        void api("cancel_query", { id: status.id }).catch((e) =>
+                          report(String(e)),
+                        )
                       }
                     >
-                      <Plus size={14} /> Insert row
+                      <Square size={13} /> Cancel
                     </button>
-                    {connection && connected[connection.id]?.import_rows && (
-                      <button
-                        disabled={
-                          busy ||
-                          !!staged[active]?.length ||
-                          Object.values(statuses).some(
-                            (s) => s.connection_id === connection.id && !s.done,
-                          )
-                        }
-                        onClick={() =>
-                          setImportDialog({
-                            tab: current,
-                            inspector,
-                            connection,
-                          })
-                        }
-                      >
-                        <FileUp size={14} /> Import data
-                      </button>
-                    )}
-                    <span className="muted">
-                      {staged[active]?.length ?? 0} staged changes
-                      {!keyed ? " · no primary key: insert only" : ""}
-                    </span>
-                    {!!staged[active]?.length && (
-                      <>
-                        <button
-                          disabled={busy}
-                          onClick={() => setReviewChanges(true)}
-                        >
-                          Review
+                  ) : (
+                    <>
+                      {connection && connected[connection.id]?.import_sql && (
+                        <button onClick={() => setSqlImport(connection)}>
+                          <FileUp size={14} /> Import SQL
                         </button>
+                      )}
+                      {connection && connected[connection.id]?.explain && (
+                        <>
+                          <button
+                            title="Estimate the current statement or selection without executing it"
+                            onClick={() =>
+                              void run(undefined, false, "estimate")
+                            }
+                          >
+                            Explain
+                          </button>
+                          {connected[connection.id]?.explain_analyze && (
+                            <button
+                              title="Execute with runtime statistics; confirmation required"
+                              onClick={() =>
+                                void run(undefined, false, "analyze")
+                              }
+                            >
+                              Analyze
+                            </button>
+                          )}
+                        </>
+                      )}
+                      <button
+                        className="primary"
+                        disabled={!connection || !connected[connection.id]}
+                        onClick={() => void run()}
+                      >
+                        <Play size={13} fill="currentColor" /> Run{" "}
+                        <kbd>⌘ ↵</kbd>
+                      </button>
+                      <button
+                        title="Run all statements"
+                        disabled={!connection || !connected[connection.id]}
+                        onClick={() => void run(editorRef.current?.allText())}
+                      >
+                        All
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            {keyWorkspace ? (
+              <Suspense
+                fallback={
+                  <div className="result-empty">Loading key workspace…</div>
+                }
+              >
+                <KeyValueWorkspace
+                  key={`${current.id}-${current.connection}-${!!connected[current.connection]}`}
+                  connection={connection}
+                  workspaceRef={keyWorkspaceRef}
+                  ready={!!connected[current.connection]?.key_value}
+                  draft={keyDrafts[current.id] ?? '["PING"]'}
+                  onDraft={(text) =>
+                    setKeyDrafts((previous) => ({
+                      ...previous,
+                      [current.id]: text,
+                    }))
+                  }
+                  onBusy={(value) => {
+                    applyingRef.current = {
+                      ...applyingRef.current,
+                      [current.id]: value,
+                    };
+                    setApplying((previous) => ({
+                      ...previous,
+                      [current.id]: value,
+                    }));
+                  }}
+                />
+              </Suspense>
+            ) : (
+              <>
+                <section className="editor-area">
+                  <Suspense
+                    fallback={
+                      <div className="result-empty">Loading SQL editor…</div>
+                    }
+                  >
+                    <SqlEditor
+                      key={current.id}
+                      value={current.sql}
+                      engine={connection?.engine ?? "sqlite"}
+                      schema={schema}
+                      loadColumns={loadCompletionColumns}
+                      onError={report}
+                      onChange={(sql) => updateTab(current.id, { sql })}
+                      onRun={(sql) => void run(sql)}
+                      editorRef={editorRef}
+                    />
+                  </Suspense>
+                </section>
+                <ResultPanel
+                  status={status}
+                  onLocateError={
+                    status?.error_offset != null &&
+                    status.error &&
+                    queryOrigins.current[current.id]?.id === status.id &&
+                    queryOrigins.current[current.id].source.document ===
+                      current.sql
+                      ? () =>
+                          locateError(
+                            queryOrigins.current[current.id].source,
+                            status.error_offset!,
+                          )
+                      : undefined
+                  }
+                  set={set}
+                  onSelectSet={(i) =>
+                    setResultSets((p) => ({ ...p, [active]: i }))
+                  }
+                  view={view}
+                  onView={setView}
+                  inspector={inspector}
+                  busy={busy}
+                  onError={report}
+                  onExport={() => setExportOpen(true)}
+                  onEdit={
+                    editable && keyed && !busy
+                      ? (old) => setRowDialog({ tab: current, inspector, old })
+                      : undefined
+                  }
+                  onDelete={
+                    editable && keyed && !busy
+                      ? (old) => stage(active, { kind: "delete", old })
+                      : undefined
+                  }
+                  rowOffset={tableResult ? inspector?.browse.offset : undefined}
+                  browsing={
+                    inspector &&
+                    connection &&
+                    connected[connection.id]?.table_browse && (
+                      <TableControls
+                        key={`${current.id}-${inspector.query}`}
+                        columns={inspector.info.columns}
+                        query={inspector.browse}
+                        active={tableResult}
+                        busy={busy}
+                        staged={!!staged[active]?.length}
+                        done={!!status?.done}
+                        failed={!!status?.error}
+                        rows={status?.sets[0]?.rows ?? 0}
+                        onBrowse={(query) =>
+                          browseTable(current, inspector, query)
+                        }
+                      />
+                    )
+                  }
+                  editing={
+                    editable && (
+                      <div className="table-editing">
                         <button
                           disabled={busy}
                           onClick={() =>
-                            setStaged((s) => ({ ...s, [active]: [] }))
+                            setRowDialog({ tab: current, inspector, old: null })
                           }
                         >
-                          Discard
+                          <Plus size={14} /> Insert row
                         </button>
-                        <button
-                          className="primary"
-                          disabled={busy}
-                          onClick={() => void applyStaged(current, inspector)}
-                        >
-                          Apply batch
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )
-              }
-            />
+                        {connection &&
+                          connected[connection.id]?.import_rows && (
+                            <button
+                              disabled={
+                                busy ||
+                                !!staged[active]?.length ||
+                                Object.values(statuses).some(
+                                  (s) =>
+                                    s.connection_id === connection.id &&
+                                    !s.done,
+                                )
+                              }
+                              onClick={() =>
+                                setImportDialog({
+                                  tab: current,
+                                  inspector,
+                                  connection,
+                                })
+                              }
+                            >
+                              <FileUp size={14} /> Import data
+                            </button>
+                          )}
+                        <span className="muted">
+                          {staged[active]?.length ?? 0} staged changes
+                          {!keyed ? " · no primary key: insert only" : ""}
+                        </span>
+                        {!!staged[active]?.length && (
+                          <>
+                            <button
+                              disabled={busy}
+                              onClick={() => setReviewChanges(true)}
+                            >
+                              Review
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                setStaged((s) => ({ ...s, [active]: [] }))
+                              }
+                            >
+                              Discard
+                            </button>
+                            <button
+                              className="primary"
+                              disabled={busy}
+                              onClick={() =>
+                                void applyStaged(current, inspector)
+                              }
+                            >
+                              Apply batch
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )
+                  }
+                />
+              </>
+            )}
             <footer className="statusbar">
               <span>
                 <span
@@ -1591,11 +1728,23 @@ export default function App() {
                   : ""}
               </span>
               <span>
-                Limit {preferences.rowLimit.toLocaleString()} · Timeout{" "}
-                {preferences.timeout}s
+                {keyWorkspace ? (
+                  "Redis · bounded replies · 10s per request"
+                ) : (
+                  <>
+                    Limit {preferences.rowLimit.toLocaleString()} · Timeout{" "}
+                    {preferences.timeout}s
+                  </>
+                )}
               </span>
               <span>
-                {busy ? "Executing…" : status?.done ? "Ready" : "SQL workbench"}
+                {busy
+                  ? "Executing…"
+                  : keyWorkspace
+                    ? "Key workspace"
+                    : status?.done
+                      ? "Ready"
+                      : "SQL workbench"}
               </span>
             </footer>
           </>

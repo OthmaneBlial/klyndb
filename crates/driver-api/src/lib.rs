@@ -111,6 +111,7 @@ pub type Row = Vec<Cell>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capabilities {
+    pub key_value: bool,
     pub affected_rows: bool,
     pub table_browse: bool,
     pub routines: bool,
@@ -124,6 +125,38 @@ pub struct Capabilities {
     pub import_sql: bool,
     pub cancel: bool,
     pub tls: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum KeyValue {
+    Cell(Cell),
+    Array(Vec<KeyValue>),
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyEntry {
+    pub key: Cell,
+    pub data_type: String,
+    pub ttl_ms: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyScan {
+    pub cursor: String,
+    pub keys: Vec<KeyEntry>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyInspection {
+    pub entry: KeyEntry,
+    pub length: String,
+    pub position: String,
+    pub next: Option<String>,
+    pub value: KeyValue,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyCommandInfo {
+    pub command: String,
+    pub writes: bool,
+    pub arguments: usize,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -548,6 +581,22 @@ pub trait Session: Send + Sync {
         self.execute(sql, output, cancel, limit).await
     }
     async fn tables(&self) -> Result<Vec<Table>>;
+    async fn scan_keys(&self, _pattern: &str, _cursor: &str) -> Result<KeyScan> {
+        Err(Error::new("This driver does not support key browsing"))
+    }
+    async fn inspect_key(&self, _key: &Cell, _position: &str) -> Result<KeyInspection> {
+        Err(Error::new("This driver does not support key inspection"))
+    }
+    fn key_command_info(&self, _text: &str) -> Result<KeyCommandInfo> {
+        Err(Error::new(
+            "This driver does not support native key commands",
+        ))
+    }
+    async fn key_command(&self, _text: &str) -> Result<KeyValue> {
+        Err(Error::new(
+            "This driver does not support native key commands",
+        ))
+    }
     /// On-demand, fixed-size catalog pages. Definitions are fetched separately.
     async fn routines(&self, _search: &str, _offset: u32) -> Result<RoutinePage> {
         Err(Error::new("This driver does not support routine browsing"))

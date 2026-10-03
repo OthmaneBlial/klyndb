@@ -38,6 +38,16 @@ raise SystemExit(subprocess.run([executables.pop(), *arguments]).returncode)
 PY
 }
 cargo test --locked --workspace
+if [[ -n "${KLYNDB_TEST_REDIS_URL:-}" ]]; then
+  : "${KLYNDB_TEST_REDIS_PASSWORD:?Set KLYNDB_TEST_REDIS_PASSWORD for disposable Redis}"
+  : "${KLYNDB_TEST_REDIS_READONLY_PASSWORD:?Set the disposable read-only ACL password}"
+  workspace_test crates/drivers/redis/tests/integration.rs real_redis_types_paging_native_commands_readonly_and_limits --ignored
+  if [[ -n "${KLYNDB_TEST_TLS_REDIS_URL:-}" && -n "${KLYNDB_TEST_MTLS_REDIS_URL:-}" ]]; then
+    workspace_test crates/drivers/redis/tests/integration.rs real_redis_verified_tls_and_client_identity --ignored
+  fi
+else
+  echo 'Redis integration skipped: set KLYNDB_TEST_REDIS_URL and disposable ACL passwords.'
+fi
 if [[ -n "${KLYNDB_TEST_POSTGRES_URL:-}" ]]; then
   workspace_test crates/drivers/postgres/tests/integration.rs --ignored
 else

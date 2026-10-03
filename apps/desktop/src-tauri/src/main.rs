@@ -6,8 +6,8 @@ use klyndb_core::import::{
 };
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
-    Capabilities, Change, MutationResult, RoutinePage, Row, Table, TableInfo, TableQuery,
-    TransactionState,
+    Capabilities, Cell, Change, KeyCommandInfo, KeyInspection, KeyScan, KeyValue, MutationResult,
+    RoutinePage, Row, Table, TableInfo, TableQuery, TransactionState,
 };
 use std::sync::Arc;
 use tauri::{Manager, State};
@@ -172,6 +172,58 @@ async fn tables(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<Vec<Tab
         .tables()
         .await
         .map_err(api)
+}
+#[tauri::command]
+async fn scan_keys(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    pattern: String,
+    cursor: String,
+) -> ApiResult<KeyScan> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .scan_keys(&pattern, &cursor)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn inspect_key(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    key: Cell,
+    position: String,
+) -> ApiResult<KeyInspection> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .inspect_key(&key, &position)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn key_command_info(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    text: String,
+) -> ApiResult<KeyCommandInfo> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .key_command_info(&text)
+        .map_err(api)
+}
+#[tauri::command]
+async fn key_command(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    text: String,
+    confirmed: bool,
+) -> ApiResult<KeyValue> {
+    engine.key_command(&id, &text, confirmed).await.map_err(api)
 }
 #[tauri::command]
 async fn routines(
@@ -572,6 +624,10 @@ fn main() {
             tables,
             inspect_table,
             routines,
+            scan_keys,
+            inspect_key,
+            key_command_info,
+            key_command,
             routine_definition,
             table_select_sql,
             table_query_sql,

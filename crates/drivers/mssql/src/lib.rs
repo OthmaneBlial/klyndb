@@ -419,6 +419,7 @@ impl SqlServer {
 impl Session for SqlServer {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            key_value: false,
             affected_rows: false,
             table_browse: true,
             routines: true,

@@ -1,0 +1,22 @@
+[package]
+name = "klyndb-redis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../../driver-api" }
+redis = { version = "=1.7.1", default-features = false, features = ["tokio-comp"] }
+tokio.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+url = "2"
+percent-encoding = "2"
+hex = "0.4"
+
+[dev-dependencies]
+uuid.workspace = true

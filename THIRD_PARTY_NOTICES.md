@@ -16,6 +16,8 @@ Original Klyndb implementation and icon are MIT licensed. Beekeeper Studio is a 
 | SQLite | Public domain | Bundled database engine |
 | duckdb / libduckdb-sys / DuckDB | MIT, plus original native third-party terms | Embedded DuckDB 1.5.6, Rust wrapper 1.10506.0; pinned native notices retained |
 | tokio-postgres / postgres-native-tls / native-tls | MIT OR Apache-2.0 | PostgreSQL protocol; verified server TLS and client identities |
+| redis 1.7.1 | BSD-3-Clause | Native Redis RESP2 commands, bounded typed inspection and async transport; existing native TLS stack reused |
+| xxhash-rust 0.8.19 | Boost Software License 1.0 (BSL-1.0) | redis-rs hashing dependency; original license retained in bundled notices, scoped license-audit exception |
 | serde / serde_json / uuid / async-trait / thiserror / futures-util | MIT OR Apache-2.0 | Serialization and Rust foundations |
 | sqlparser | Apache-2.0 | SQL validation and safety checks |
 | keyring | MIT OR Apache-2.0 | OS credentials |

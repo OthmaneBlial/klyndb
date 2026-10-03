@@ -305,6 +305,7 @@ async fn open_session(
             let port = url.port().unwrap_or(match config.engine.as_str() {
                 "postgres" => 5432,
                 "mssql" => 1433,
+                "redis" => 6379,
                 "clickhouse"
                     if url
                         .query_pairs()
@@ -366,6 +367,16 @@ async fn open_session(
             ) as Arc<dyn Session>),
             "clickhouse" => Ok(Arc::new(
                 klyndb_clickhouse::ClickHouse::connect_via(
+                    &address,
+                    password,
+                    config.read_only,
+                    identity_password,
+                    endpoint,
+                )
+                .await?,
+            ) as Arc<dyn Session>),
+            "redis" => Ok(Arc::new(
+                klyndb_redis::Redis::connect_via(
                     &address,
                     password,
                     config.read_only,
@@ -616,6 +627,24 @@ impl Engine {
             .get(id)
             .map(|c| c.driver.clone())
             .ok_or_else(|| Error::new("Connect to this database first"))
+    }
+    pub async fn key_command(&self, id: &str, text: &str, confirmed: bool) -> Result<KeyValue> {
+        let sessions = self.sessions.lock().await;
+        let open = sessions
+            .get(id)
+            .ok_or_else(|| Error::new("Connect to the database first"))?;
+        let info = open.driver.key_command_info(text)?;
+        if info.writes && open.config.read_only {
+            return Err(Error::new("This Redis connection is read-only"));
+        }
+        if info.writes && open.config.environment == "production" && !confirmed {
+            return Err(Error::new(
+                "Confirmation required: this Redis command writes to production",
+            ));
+        }
+        let driver = open.driver.clone();
+        drop(sessions);
+        driver.key_command(text).await
     }
     pub async fn table_query_sql(
         &self,

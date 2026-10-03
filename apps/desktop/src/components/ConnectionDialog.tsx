@@ -202,6 +202,7 @@ export function ConnectionDialog({
               "mysql",
               "clickhouse",
               "mssql",
+              "redis",
             ].map((engine) => (
               <button
                 type="button"
@@ -222,17 +223,19 @@ export function ConnectionDialog({
               >
                 <Database size={20} />
                 <strong>
-                  {engine === "sqlite"
-                    ? "SQLite"
-                    : engine === "duckdb"
-                      ? "DuckDB"
-                      : engine === "mysql"
-                        ? "MySQL / MariaDB"
-                        : engine === "mssql"
-                          ? "SQL Server"
-                          : engine === "clickhouse"
-                            ? "ClickHouse"
-                            : "PostgreSQL"}
+                  {engine === "redis"
+                    ? "Redis"
+                    : engine === "sqlite"
+                      ? "SQLite"
+                      : engine === "duckdb"
+                        ? "DuckDB"
+                        : engine === "mysql"
+                          ? "MySQL / MariaDB"
+                          : engine === "mssql"
+                            ? "SQL Server"
+                            : engine === "clickhouse"
+                              ? "ClickHouse"
+                              : "PostgreSQL"}
                 </strong>
                 <span>
                   {["sqlite", "duckdb"].includes(engine)
@@ -295,13 +298,15 @@ export function ConnectionDialog({
                     setSshPassword("");
                   }}
                   placeholder={
-                    form.engine === "mysql"
-                      ? "mysql://user@localhost:3306/database"
-                      : form.engine === "mssql"
-                        ? "mssql://user@localhost:1433/database"
-                        : form.engine === "clickhouse"
-                          ? "clickhouse://default@localhost:9000/default?tls=disabled"
-                          : "postgresql://user@localhost:5432/database"
+                    form.engine === "redis"
+                      ? "redis://default@localhost:6379/0"
+                      : form.engine === "mysql"
+                        ? "mysql://user@localhost:3306/database"
+                        : form.engine === "mssql"
+                          ? "mssql://user@localhost:1433/database"
+                          : form.engine === "clickhouse"
+                            ? "clickhouse://default@localhost:9000/default?tls=disabled"
+                            : "postgresql://user@localhost:5432/database"
                   }
                   required
                   autoComplete="off"

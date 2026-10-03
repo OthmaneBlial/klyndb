@@ -20,6 +20,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | ar_archive_writer | 0.5.3 | Apache-2.0 WITH LLVM-exception |
 | Cargo | arbitrary | 1.4.2 | MIT OR Apache-2.0 |
 | Cargo | arc-swap | 1.9.2 | MIT OR Apache-2.0 |
+| Cargo | arcstr | 1.2.0 | Apache-2.0 OR MIT OR Zlib |
 | Cargo | argon2 | 0.6.0 | MIT OR Apache-2.0 |
 | Cargo | arrow | 58.4.0 | Apache-2.0 |
 | Cargo | arrow-arith | 58.4.0 | Apache-2.0 |
@@ -457,6 +458,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | raw-window-handle | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
 | Cargo | recursive | 0.1.1 | MIT |
 | Cargo | recursive-proc-macro-impl | 0.1.1 | MIT |
+| Cargo | redis | 1.7.1 | BSD-3-Clause |
 | Cargo | redox_syscall | 0.5.18 | MIT |
 | Cargo | redox_users | 0.5.3 | MIT |
 | Cargo | ref-cast | 1.0.27 | MIT OR Apache-2.0 |
@@ -725,6 +727,7 @@ Run cargo deny check licenses and review npm obligations before releases.
 | Cargo | x11-dl | 2.21.0 | MIT |
 | Cargo | xattr | 1.6.1 | MIT OR Apache-2.0 |
 | Cargo | xdg-home | 1.3.0 | MIT |
+| Cargo | xxhash-rust | 0.8.19 | BSL-1.0 |
 | Cargo | yoke | 0.8.3 | Unicode-3.0 |
 | Cargo | yoke-derive | 0.8.4 | Unicode-3.0 |
 | Cargo | zbus | 4.4.0 | MIT |
