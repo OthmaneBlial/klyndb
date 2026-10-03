@@ -63,8 +63,7 @@ it("loads only requested alias columns, shares in-flight reads and caches metada
     );
     const first = labels(source, "SELECT u.| FROM public.users AS u", dialect);
     const second = labels(source, "SELECT u.| FROM public.users u", dialect);
-    await Promise.resolve();
-    expect(load).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     expect(load).toHaveBeenCalledWith(users);
     resolve(["id", "display_name"]);
     expect(await first).toEqual(["id", "display_name"]);
@@ -151,4 +150,164 @@ it("reconfigures SQL metadata without losing document, selection or undo history
   expect(state.doc.toString()).toBe("SELECT 42");
   expect(state.selection.main.head).toBe(9);
   expect(undoDepth(state)).toBe(1);
+});
+
+it("completes CTE and derived output aliases across SQL dialects without metadata reads", async () => {
+  for (const dialect of [PostgreSQL, MySQL, MSSQL, SQLite, ClickHouseSQL]) {
+    const load = vi.fn();
+    const source = tableCompletion(
+      { tables: [users], columns: {} },
+      dialect,
+      load,
+    );
+    expect(
+      await labels(
+        source,
+        "WITH recent AS (SELECT id, COUNT(*) AS total FROM public.users GROUP BY id) SELECT r.| FROM recent r",
+        dialect,
+      ),
+    ).toEqual(["id", "total"]);
+    expect(
+      await labels(
+        source,
+        "SELECT r.| FROM (SELECT id AS user_id, COALESCE(display_name, 'unknown') label FROM public.users) r",
+        dialect,
+      ),
+    ).toEqual(["user_id", "label"]);
+    expect(
+      await labels(
+        source,
+        "WITH recent(user_id, total) AS (SELECT 1, 2) SELECT recent.| FROM recent",
+        dialect,
+      ),
+    ).toEqual(["user_id", "total"]);
+    expect(
+      await labels(
+        source,
+        "WITH recent AS (SELECT 1 AS total) SELECT * FROM |",
+        dialect,
+      ),
+    ).toContain("recent");
+    expect(load).not.toHaveBeenCalled();
+  }
+});
+
+it("expands scoped wildcards lazily and shares the existing metadata cache", async () => {
+  const load = vi.fn(async (table: Table) =>
+    table.schema === "audit" ? ["audit_id"] : ["id", "display_name"],
+  );
+  const source = tableCompletion(
+    { tables: [users, audit], columns: {} },
+    PostgreSQL,
+    load,
+  );
+  expect(
+    await labels(
+      source,
+      "WITH recent AS (SELECT u.* FROM public.users u), report AS (SELECT *, 42 AS total FROM recent) SELECT r.| FROM report r",
+    ),
+  ).toEqual(["id", "display_name", "total"]);
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(load).toHaveBeenLastCalledWith(users);
+  expect(
+    await labels(source, "SELECT r.| FROM (SELECT * FROM audit.users) r"),
+  ).toEqual(["audit_id"]);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(await labels(source, "SELECT u.| FROM public.users u")).toEqual([
+    "id",
+    "display_name",
+  ]);
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
+it("keeps CTEs and nested aliases in their query scope, including shadowing and recursive names", async () => {
+  const load = vi.fn(async () => ["native_id"]);
+  const source = tableCompletion(
+    { tables: [users], columns: {} },
+    PostgreSQL,
+    load,
+  );
+  expect(
+    await labels(
+      source,
+      "WITH users AS (SELECT 1 AS local_id) SELECT users.| FROM users",
+    ),
+  ).toEqual(["local_id"]);
+  expect(
+    await labels(
+      source,
+      "SELECT x.| FROM (SELECT 1 AS outer_id) x WHERE EXISTS (SELECT 1 FROM (SELECT 2 AS inner_id) x)",
+    ),
+  ).toEqual(["outer_id"]);
+  expect(
+    await labels(
+      source,
+      "SELECT 1 FROM (SELECT 1 AS outer_id) x WHERE EXISTS (SELECT x.| FROM (SELECT 2 AS inner_id) x)",
+    ),
+  ).toEqual(["inner_id"]);
+  expect(
+    await labels(
+      source,
+      "WITH recent AS (SELECT 1 AS id) SELECT recent.id FROM recent; SELECT recent.|",
+    ),
+  ).toEqual([]);
+  expect(
+    await labels(
+      source,
+      "WITH RECURSIVE counter(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM counter WHERE n < 3) SELECT c.| FROM counter c",
+    ),
+  ).toEqual(["n"]);
+  expect(
+    await labels(
+      source,
+      "WITH recent AS (SELECT 1 AS total) SELECT r.| FROM (WITH recent AS (SELECT 2 AS inside) SELECT * FROM recent) r",
+    ),
+  ).toEqual(["inside"]);
+  expect(load).not.toHaveBeenCalled();
+});
+
+it("quotes projected names and refuses ambiguous or unsupported expression labels", async () => {
+  const load = vi.fn();
+  const source = tableCompletion(
+    { tables: [users, audit], columns: {} },
+    PostgreSQL,
+    load,
+  );
+  expect(
+    await labels(
+      source,
+      'WITH "a.b" AS (SELECT 1 AS "日本語", 2 AS "a""b") SELECT r."|" FROM "a.b" r',
+    ),
+  ).toEqual(['"日本語"', '"a""b"']);
+  expect(
+    await labels(
+      source,
+      'WITH RECENT AS (SELECT ID AS USER_ID, 2 AS "MixedCase" FROM public.users) SELECT R.| FROM RECENT R',
+    ),
+  ).toEqual(["user_id", "MixedCase"]);
+  expect(
+    await labels(
+      source,
+      'WITH recent(USER_ID, "MixedCase") AS (SELECT 1, 2) SELECT recent.| FROM recent',
+    ),
+  ).toEqual(["user_id", "MixedCase"]);
+  expect(
+    await labels(
+      source,
+      "SELECT r.| FROM (SELECT COUNT(*), id + 1, id AS retained FROM users) r",
+    ),
+  ).toEqual(["retained"]);
+  expect(
+    await labels(
+      source,
+      "WITH recent AS (SELECT * FROM users) SELECT recent.| FROM recent",
+    ),
+  ).toEqual([]);
+  for (const text of [
+    "WITH r AS (SELECT 1 AS id) SELECT 'r.|'",
+    "WITH r AS (SELECT 1 AS id) SELECT 1 -- r.|",
+    "/* WITH r AS (SELECT 1 AS id) SELECT r.| */",
+  ])
+    expect(await labels(source, text)).toEqual([]);
+  expect(load).not.toHaveBeenCalled();
 });

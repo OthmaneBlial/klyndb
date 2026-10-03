@@ -6,6 +6,7 @@ import {
 } from "@codemirror/lang-sql";
 import type { Table } from "./api";
 import { tableKey } from "./diagram";
+import { projectedCompletion } from "./projectedCompletion";
 
 export interface CompletionSchema {
   tables: Table[];
@@ -44,25 +45,50 @@ export function tableCompletion(
     source = schemaCompletionSource({ schema: namespace, dialect });
   }
   rebuild();
+  async function loadColumns(table: Table) {
+    const id = tableKey(table);
+    if (columns.has(id)) return columns.get(id)!;
+    let request = pending.get(id);
+    if (!request) {
+      request = load(table)
+        .then((names) => {
+          columns.set(id, names);
+          rebuild();
+        })
+        .finally(() => pending.delete(id));
+      pending.set(id, request);
+    }
+    await request;
+    return columns.get(id)!;
+  }
   return ifNotIn(["String", "LineComment", "BlockComment"], async (context) => {
+    const local = await projectedCompletion(
+      context,
+      dialect,
+      schema.tables,
+      loadColumns,
+    );
+    if (context.aborted) return null;
+    if (local?.qualified) return local.result;
     let result = await source(context);
+    if (local && result) {
+      const labels = new Set(
+        local.result.options.map((option) => option.label),
+      );
+      result = {
+        ...result,
+        options: [
+          ...local.result.options,
+          ...result.options.filter((option) => !labels.has(option.label)),
+        ],
+      };
+    } else if (local) result = local.result;
     if (!result || context.aborted) return null;
     const requested = result.options.flatMap((option) =>
       "klyndbTable" in option ? [option.klyndbTable as Table] : [],
     );
     for (const table of requested) {
-      const id = tableKey(table);
-      let request = pending.get(id);
-      if (!request) {
-        request = load(table)
-          .then((names) => {
-            columns.set(id, names);
-            rebuild();
-          })
-          .finally(() => pending.delete(id));
-        pending.set(id, request);
-      }
-      await request;
+      await loadColumns(table);
       if (context.aborted) return null;
     }
     if (requested.length) result = await source(context);

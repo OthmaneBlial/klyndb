@@ -24,3 +24,15 @@ Run `python3 scripts/bench_stream.py --output benchmarks/history/<date>-stream.j
 | 1,000,000 | 2,837 ms | 352,393 | 16 ms | 293 us | 13.50 MiB |
 
 Measured on Apple M2 / arm64, release code at `0277fa8`. Raw samples and metadata: [history/2026-10-02-stream.json](history/2026-10-02-stream.json). These are backend-only measurements; they do not establish application idle RAM, desktop startup/scrolling targets or superiority to another database client.
+
+## SQL completion baseline — 2026-10-03
+
+After `npm ci` in apps/desktop, run `node scripts/bench_completion.mjs > completion.json` from the repository root. The script loads the production completion source through the installed Vite tooling, verifies a chained wildcard's output names and records five index-construction samples plus 50 warm completion samples after five warmups. The statement is already parsed and metadata is cached; no server request, WebView rendering or app startup is measured.
+
+| Catalog tables | Median construction | Median warm completion | Warm p95 |
+| --- | --- | --- | --- |
+| 10 | 0.097 ms | 0.059 ms | 0.185 ms |
+| 1,000 | 10.578 ms | 0.151 ms | 0.198 ms |
+| 10,000 | 897.045 ms | 0.921 ms | 0.987 ms |
+
+Apple M2/arm64, Node 25.9.0; configured local CI was running concurrently, so the samples include ambient load. [Raw samples, machine and exact source hashes](history/2026-10-03-completion.json) identify the measured source beyond its base commit. Large-catalog index construction is a concrete remaining performance target. These numbers do not prove native typing responsiveness, desktop startup, scrolling or any advantage over another client.
