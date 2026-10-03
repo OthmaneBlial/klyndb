@@ -1,0 +1,11 @@
+# PostgreSQL Structure and definitions
+
+Current source builds add PostgreSQL structural DDL to the existing **Structure** view. Open a table and choose Structure to inspect columns, indexes, foreign keys, constraints, user triggers and the definition. Inspection reads catalogs only; it never runs the definition or changes the connection's transaction/search path. Downloadable Preview 1 is unchanged.
+
+Ordinary tables show quoted schema/table/column names, exact native types and modifiers, defaults, NOT NULL, explicit collations, stored/virtual generated expressions, identity generation/options and named primary/unique/foreign/check/exclusion constraints. Dropped columns are excluded. Unlogged/temporary persistence is retained. Row-level security enable/force flags are retained; policy definitions must be supplied separately.
+
+Views show native SELECT definitions, explicit output names and view options, including security barriers/invoker and check options. Materialized views now appear in the lazy PostgreSQL catalog with native columns and read-only row inspection. Their DDL uses **WITH NO DATA**, so creating a copy never automatically runs its SELECT. Refresh it explicitly before browsing a newly created unpopulated view.
+
+This is a structural definition, not a database backup: referenced types/functions/sequences must already exist. Owners, grants, policy definitions, sequence state, table/materialized-view storage options, view-column defaults and dependency ordering are excluded. Indexes and triggers remain in their separate Structure sections. Partitioned, inherited and foreign-table DDL currently shows an explicit unavailable notice; their ordinary metadata remains accessible. Definitions above the 2 MiB viewer limit show a notice instead of a truncated SQL script. Use PostgreSQL's dump tools for full recreation/migration.
+
+Implementation independently uses [native PostgreSQL definition functions](https://www.postgresql.org/docs/16/functions-info.html), [column catalogs](https://www.postgresql.org/docs/16/catalog-pg-attribute.html) and [view options](https://www.postgresql.org/docs/16/sql-createview.html). No reference implementation or commercial source is copied. Actual validation and platform/package scope belong in [VALIDATION.md](VALIDATION.md).

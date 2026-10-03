@@ -16,6 +16,189 @@ async fn query(db: Arc<Postgres>, sql: &str) -> Vec<Batch> {
     task.await.unwrap().unwrap();
     batches
 }
+
+#[tokio::test]
+#[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
+async fn postgres_structure_ddl_roundtrip_views_and_materialized_catalog() {
+    use klyndb_driver_api::Table;
+    let url = std::env::var("KLYNDB_TEST_POSTGRES_URL").unwrap();
+    let db = Arc::new(Postgres::connect(&url, None, false, None).await.unwrap());
+    let schema = format!("klyndb_ddl_{}", uuid::Uuid::new_v4().simple());
+    let table = Table {
+        schema: schema.clone(),
+        name: "odd \" customers".into(),
+        kind: "base table".into(),
+    };
+    let qualified = format!("{schema}.\"odd \"\" customers\"");
+    query(db.clone(), &format!(r#"
+        CREATE SCHEMA {schema};
+        CREATE TYPE {schema}."order type" AS ENUM ('new', 'ready');
+        CREATE TABLE {schema}.parents(id bigint PRIMARY KEY);
+        CREATE UNLOGGED TABLE {qualified} (
+            id bigint GENERATED ALWAYS AS IDENTITY (START WITH 7 INCREMENT BY 3 MINVALUE 1 MAXVALUE 10000 CACHE 4),
+            "label "" text" varchar(40) COLLATE "C" DEFAULT 'quoted '' value' NOT NULL,
+            amount numeric(30,18) DEFAULT 0.000000000000000001 NOT NULL,
+            tags text[] DEFAULT ARRAY['local','native'],
+            state {schema}."order type" DEFAULT 'new',
+            doubled numeric GENERATED ALWAYS AS (amount * 2) STORED,
+            parent_id bigint REFERENCES {schema}.parents(id) DEFERRABLE INITIALLY DEFERRED,
+            obsolete text,
+            PRIMARY KEY(id), UNIQUE("label "" text"), CHECK (amount >= 0)
+        );
+        ALTER TABLE {qualified} DROP COLUMN obsolete;
+        ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE {qualified} FORCE ROW LEVEL SECURITY;
+    "#)).await;
+    let original = db.inspect(&table).await.unwrap();
+    assert!(original.editable);
+    assert_eq!(original.columns.len(), 7);
+    assert_eq!(original.columns[2].data_type, "numeric(30,18)");
+    assert!(original.columns[0].primary_key && original.columns[0].generated);
+    assert!(original.columns[5].generated);
+    let ddl = original.ddl.as_ref().unwrap();
+    assert!(ddl.contains("CREATE UNLOGGED TABLE"));
+    assert!(ddl.contains("START WITH 7 INCREMENT BY 3 MINVALUE 1 MAXVALUE 10000 CACHE 4 NO CYCLE"));
+    assert!(ddl.contains("COLLATE pg_catalog.\"C\""));
+    assert!(ddl.contains("GENERATED ALWAYS AS") && ddl.contains("STORED"));
+    assert!(ddl.contains("ENABLE ROW LEVEL SECURITY") && ddl.contains("FORCE ROW LEVEL SECURITY"));
+    assert!(!ddl.contains("obsolete"));
+    assert!(ddl.contains("REFERENCES") && ddl.contains("DEFERRABLE INITIALLY DEFERRED"));
+    query(db.clone(), &format!("DROP TABLE {qualified}; {ddl}")).await;
+    let recreated = db.inspect(&table).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&original.columns).unwrap(),
+        serde_json::to_value(&recreated.columns).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&original.constraints).unwrap(),
+        serde_json::to_value(&recreated.constraints).unwrap()
+    );
+    assert_eq!(recreated.ddl.as_ref(), Some(ddl));
+    query(db.clone(), &format!(r#"
+        CREATE VIEW {schema}.visible (customer_id, balance) WITH (security_barrier=true, security_invoker=true) AS SELECT id, amount FROM {qualified} WHERE amount > 0 WITH LOCAL CHECK OPTION;
+        CREATE MATERIALIZED VIEW {schema}.cached (customer_id, balance) AS SELECT id, amount FROM {qualified} WITH NO DATA;
+        CREATE TABLE {schema}.partitioned(id bigint) PARTITION BY RANGE(id);
+        CREATE TABLE {schema}.child PARTITION OF {schema}.partitioned FOR VALUES FROM (0) TO (100);
+    "#)).await;
+    let ro = Postgres::connect(&url, None, true, None).await.unwrap();
+    let tables = ro.tables().await.unwrap();
+    for (name, kind) in [("visible", "view"), ("cached", "materialized view")] {
+        let target = tables
+            .iter()
+            .find(|t| t.schema == schema && t.name == name)
+            .unwrap();
+        assert_eq!(target.kind, kind);
+        let info = ro.inspect(target).await.unwrap();
+        assert_eq!(info.columns.len(), 2);
+        assert!(!info.editable);
+        let definition = info.ddl.unwrap();
+        assert!(definition.contains("customer_id, balance"));
+        if name == "visible" {
+            assert!(
+                definition.contains("security_barrier=true")
+                    && definition.contains("security_invoker=true")
+                    && definition.contains("check_option=local")
+            );
+        } else {
+            assert!(
+                definition.contains("CREATE MATERIALIZED VIEW")
+                    && definition.contains("WITH NO DATA")
+            );
+        }
+        query(
+            db.clone(),
+            &format!(
+                "DROP {} {schema}.{name}; {definition}",
+                if name == "cached" {
+                    "MATERIALIZED VIEW"
+                } else {
+                    "VIEW"
+                }
+            ),
+        )
+        .await;
+        assert_eq!(ro.inspect(target).await.unwrap().ddl, Some(definition));
+    }
+    for name in ["partitioned", "child"] {
+        let target = tables
+            .iter()
+            .find(|t| t.schema == schema && t.name == name)
+            .unwrap();
+        let info = ro.inspect(target).await.unwrap();
+        assert_eq!(info.columns.len(), 1);
+        assert!(info.ddl.unwrap().contains("unavailable for partitioned"));
+    }
+    // Reading definitions must not execute even volatile view expressions.
+    query(db.clone(), &format!("CREATE SEQUENCE {schema}.inspect_probe; CREATE VIEW {schema}.volatile_view AS SELECT nextval('{schema}.inspect_probe') AS value; CREATE MATERIALIZED VIEW {schema}.volatile_cached AS SELECT nextval('{schema}.inspect_probe') AS value WITH NO DATA")).await;
+    for name in ["volatile_view", "volatile_cached"] {
+        let info = ro
+            .inspect(&Table {
+                schema: schema.clone(),
+                name: name.into(),
+                kind: "view".into(),
+            })
+            .await
+            .unwrap();
+        assert!(info.ddl.unwrap().contains("nextval"));
+    }
+    assert!(
+        query(
+            db.clone(),
+            &format!("SELECT is_called::text FROM {schema}.inspect_probe")
+        )
+        .await
+        .iter()
+        .any(|b| matches!(b, Batch::Rows(rows) if rows[0] == vec![Cell::Text("false".into())]))
+    );
+    query(
+        db.clone(),
+        &format!(
+            "CREATE VIEW {schema}.oversized AS SELECT '{}'::text AS value",
+            "x".repeat(2 * 1024 * 1024)
+        ),
+    )
+    .await;
+    let oversized = ro
+        .inspect(&Table {
+            schema: schema.clone(),
+            name: "oversized".into(),
+            kind: "view".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(oversized.columns.len(), 1);
+    assert!(oversized.ddl.unwrap().contains("2 MiB viewer limit"));
+    // Inspection leaves the caller's transaction, search path and uncommitted work intact.
+    query(db.clone(), "BEGIN; SET LOCAL search_path = pg_catalog; CREATE TEMP TABLE ddl_session_guard(v int); INSERT INTO ddl_session_guard VALUES(42)").await;
+    assert!(
+        db.inspect(&table)
+            .await
+            .unwrap()
+            .ddl
+            .unwrap()
+            .contains("CREATE UNLOGGED TABLE")
+    );
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Active
+    );
+    let session_rows = query(
+        db.clone(),
+        "SHOW search_path; SELECT * FROM ddl_session_guard",
+    )
+    .await;
+    for value in ["pg_catalog", "42"] {
+        assert!(
+            session_rows.iter().any(
+                |b| matches!(b, Batch::Rows(rows) if rows[0] == vec![Cell::Text(value.into())])
+            )
+        );
+    }
+    query(db.clone(), "ROLLBACK").await;
+    ro.disconnect().await.unwrap();
+    query(db.clone(), &format!("DROP SCHEMA {schema} CASCADE")).await;
+    db.disconnect().await.unwrap();
+}
 #[tokio::test]
 #[ignore = "requires a disposable PostgreSQL server and KLYNDB_TEST_POSTGRES_URL"]
 async fn backpressure_cancellation_and_consumer_close() {
