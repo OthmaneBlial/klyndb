@@ -262,6 +262,24 @@ mod tests {
                 .attributes
                 .contains(&("Actual Loops".into(), "1".into()))
         );
+        let raw = r#"[{"Plan":{"Node Type":"ReadFromMergeTree","Node Id":"ReadFromMergeTree_0","Indexes":[{"Type":"PrimaryKey","Condition":"id > 1","Granules":1}]}}]"#;
+        let plan = decode(
+            PlanFormat::ClickHouseJson,
+            &["explain".into()],
+            &[vec![Cell::Text(raw.into())]],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(plan.raw, raw);
+        assert_eq!(
+            serde_json::to_value(plan.format).unwrap(),
+            "click_house_json"
+        );
+        assert!(
+            plan.nodes[0].children[0].children[0]
+                .label
+                .contains("ReadFromMergeTree")
+        );
         let plan = decode(
             PlanFormat::MysqlTree,
             &[],

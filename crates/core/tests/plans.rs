@@ -60,6 +60,7 @@ async fn real_plan_workflow() {
         ("KLYNDB_TEST_MYSQL_URL", "mysql"),
         ("KLYNDB_TEST_MARIADB_URL", "mysql"),
         ("KLYNDB_TEST_MSSQL_URL", "mssql"),
+        ("KLYNDB_TEST_CLICKHOUSE_URL", "clickhouse"),
     ] {
         if let Ok(url) = std::env::var(name) {
             servers.push((engine, url));
@@ -87,7 +88,17 @@ async fn real_plan_workflow() {
             .await
             .unwrap();
         let table = format!("klyndb_plan_{}", uuid::Uuid::new_v4().simple());
-        run(&engine, &connection, &format!("CREATE TABLE {table}(id INTEGER PRIMARY KEY, value INTEGER); INSERT INTO {table} VALUES(1,10),(2,20)")).await;
+        let ddl = if kind == "clickhouse" {
+            format!("CREATE TABLE {table}(id UInt64, value Int64) ENGINE=MergeTree ORDER BY id")
+        } else {
+            format!("CREATE TABLE {table}(id INTEGER PRIMARY KEY, value INTEGER)")
+        };
+        run(
+            &engine,
+            &connection,
+            &format!("{ddl}; INSERT INTO {table} VALUES(1,10),(2,20)"),
+        )
+        .await;
         let select = format!(
             "SELECT * FROM {table} WHERE value > 1 /* inner comment */ ORDER BY id; -- trailing é\n"
         );
@@ -101,6 +112,18 @@ async fn real_plan_workflow() {
         assert!(plan.raw.contains(&table), "{}", plan.raw);
         assert!(!job.status().unwrap().plan_analyze);
         let format = plan.format;
+        if kind == "clickhouse" {
+            assert!(plan.raw.contains("ReadFromMergeTree"));
+            assert!(plan.raw.contains("Indexes"));
+            assert!(has_attribute(&plan.nodes, "Type", "PrimaryKey"));
+            let mut exported = vec![];
+            assert_eq!(job.export(&mut exported, 0, "json", "").unwrap(), 1);
+            assert!(
+                String::from_utf8(exported)
+                    .unwrap()
+                    .contains("ReadFromMergeTree")
+            );
+        }
         if format == PlanFormat::MysqlJson {
             assert!(!plan.warnings.is_empty());
         }
@@ -109,6 +132,15 @@ async fn real_plan_workflow() {
             format!("UPDATE {table} SET value=99"),
             format!("DELETE FROM {table}"),
         ] {
+            if kind == "clickhouse" {
+                assert!(
+                    engine
+                        .start_plan(connection.id.clone(), statement, false, 5, false)
+                        .await
+                        .is_err()
+                );
+                continue;
+            }
             let id = engine
                 .start_plan(connection.id.clone(), statement, false, 5, false)
                 .await
@@ -274,7 +306,10 @@ async fn real_plan_workflow() {
                 "42"
             );
         } else {
-            assert_eq!(format, PlanFormat::Sqlite);
+            assert!(matches!(
+                format,
+                PlanFormat::Sqlite | PlanFormat::ClickHouseJson
+            ));
             assert!(
                 engine
                     .start_plan(connection.id.clone(), "SELECT 1".into(), true, 5, true)
@@ -437,26 +472,28 @@ async fn real_plan_workflow() {
             .unwrap();
         completed(&engine, &id).await.plan().unwrap();
         engine.release(&id).unwrap();
-        let id = engine
-            .start_plan(
-                readonly.id.clone(),
-                format!("UPDATE {table} SET value=99"),
-                false,
-                5,
-                false,
-            )
-            .await
-            .unwrap();
-        let result = completed(&engine, &id).await.plan();
-        // Native read-only modes can reject DML planning even without executing the write.
-        match result {
-            Err(error) if kind == "mysql" => assert!(error.message.contains("READ ONLY")),
-            Err(error) if kind == "duckdb" => assert!(error.message.contains("read-only mode")),
-            result => {
-                result.unwrap();
+        if kind != "clickhouse" {
+            let id = engine
+                .start_plan(
+                    readonly.id.clone(),
+                    format!("UPDATE {table} SET value=99"),
+                    false,
+                    5,
+                    false,
+                )
+                .await
+                .unwrap();
+            let result = completed(&engine, &id).await.plan();
+            // Native read-only modes can reject DML planning even without executing the write.
+            match result {
+                Err(error) if kind == "mysql" => assert!(error.message.contains("READ ONLY")),
+                Err(error) if kind == "duckdb" => assert!(error.message.contains("read-only mode")),
+                result => {
+                    result.unwrap();
+                }
             }
+            engine.release(&id).unwrap();
         }
-        engine.release(&id).unwrap();
         assert!(
             engine
                 .start_plan(readonly.id.clone(), "SELECT 1".into(), true, 5, true)
@@ -494,4 +531,87 @@ fn has_attribute(nodes: &[klyndb_query::plan::PlanNode], name: &str, value: &str
         node.attributes.iter().any(|(n, v)| n == name && v == value)
             || has_attribute(&node.children, name, value)
     })
+}
+
+#[tokio::test]
+#[ignore = "Requires ClickHouse and a server-reachable KLYNDB_TEST_CLICKHOUSE_DELAY_HOST for HTTP schema inference"]
+async fn clickhouse_plan_cancellation_and_deadline_during_schema_inference() {
+    let address = std::env::var("KLYNDB_TEST_CLICKHOUSE_URL").unwrap();
+    let host = std::env::var("KLYNDB_TEST_CLICKHOUSE_DELAY_HOST").unwrap();
+    assert!(!host.contains(['\'', '/', '\\']));
+    let directory = tempfile::tempdir().unwrap();
+    let engine = Engine::new(Store::open(&directory.path().join("state.db")).unwrap());
+    let mut connection = Connection {
+        id: String::new(),
+        name: "ClickHouse plan cancellation".into(),
+        engine: "clickhouse".into(),
+        address,
+        environment: "development".into(),
+        group: String::new(),
+        color: "#93d4b5".into(),
+        favorite: false,
+        read_only: false,
+        create_file: false,
+    };
+    connection.validate().unwrap();
+    engine.store.save(&connection).unwrap();
+    engine
+        .connect(&connection.id, None, None, None)
+        .await
+        .unwrap();
+    for deadline in [false, true] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted, received) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            accepted.send(()).unwrap();
+            std::future::pending::<()>().await;
+            drop(socket);
+        });
+        let sql = format!("SELECT * FROM url('http://{host}:{port}/schema.csv','CSVWithNames')");
+        let id = engine
+            .start_plan(
+                connection.id.clone(),
+                sql,
+                false,
+                if deadline { 1 } else { 5 },
+                false,
+            )
+            .await
+            .unwrap();
+        // Native EXPLAIN is actively waiting for source schema, rather than executing SELECT rows.
+        tokio::time::timeout(Duration::from_secs(4), received)
+            .await
+            .unwrap()
+            .unwrap();
+        if !deadline {
+            engine.cancel(&id).unwrap();
+        }
+        let job = completed(&engine, &id).await;
+        let error = job.status().unwrap().error.unwrap();
+        assert!(
+            error.contains("cancelled")
+                || error.contains("timed out")
+                || error.contains("connection closed"),
+            "{error}"
+        );
+        assert!(job.plan().is_err());
+        engine.release(&id).unwrap();
+        server.abort();
+        let _ = server.await;
+        let closed = error.contains("connection closed");
+        eprintln!("ClickHouse schema planning: deadline={deadline}, closed_session={closed}");
+        if closed {
+            engine
+                .reconnect(&connection.id, None, None, None, true)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            run(&engine, &connection, "SELECT 42 AS answer").await[0][0].text(),
+            "42"
+        );
+    }
+    engine.disconnect(&connection.id).await.unwrap();
 }

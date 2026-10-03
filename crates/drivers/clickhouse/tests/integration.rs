@@ -311,6 +311,15 @@ async fn real_clickhouse_verified_tls_and_native_readonly_profile() {
             .text(),
         "42"
     );
+    let (sql, format) = db.explain_sql("SELECT 42 AS answer", false).unwrap();
+    assert_eq!(format, PlanFormat::ClickHouseJson);
+    assert!(db.capabilities().explain && !db.capabilities().explain_analyze);
+    assert!(db.explain_sql("SELECT 42", true).is_err());
+    let (_, native, truncated) = query(db.clone(), &sql, 100).await.unwrap();
+    assert!(!truncated);
+    assert_eq!(native.len(), 1);
+    let plan: serde_json::Value = serde_json::from_str(&native[0][0].text()).unwrap();
+    assert!(plan[0]["Plan"].is_object());
     assert!(query(db.clone(), "SET readonly=0", 1).await.is_err());
     let token = CancellationToken::new();
     let (sender, mut receiver) = mpsc::channel(2);

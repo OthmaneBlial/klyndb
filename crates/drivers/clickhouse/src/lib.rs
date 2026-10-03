@@ -433,7 +433,7 @@ impl Session for ClickHouse {
             diagrams: false,
             transactions: false,
             schemas: true,
-            explain: false,
+            explain: true,
             explain_analyze: false,
             edit_rows: false,
             import_rows: false,
@@ -441,6 +441,18 @@ impl Session for ClickHouse {
             cancel: true,
             tls: true,
         }
+    }
+    fn explain_sql(&self, sql: &str, analyze: bool) -> Result<(String, PlanFormat)> {
+        if analyze {
+            return Err(Error::new(
+                "ClickHouse runtime ANALYZE is not supported by this driver",
+            ));
+        }
+        klyndb_query::clickhouse_plan_target(sql)?;
+        Ok((
+            format!("EXPLAIN PLAN json=1, indexes=1 {sql}"),
+            PlanFormat::ClickHouseJson,
+        ))
     }
     fn quote_identifier(&self, name: &str) -> String {
         quote_clickhouse_identifier(name)

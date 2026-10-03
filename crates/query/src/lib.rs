@@ -138,6 +138,27 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
     if engine == "mysql" && leading == ["ANALYZE", "FORMAT", "=", "JSON"] {
         tokens.insert(0, TokenWithSpan::wrap(Token::make_word("EXPLAIN", None)));
     }
+    // sqlparser lacks ClickHouse's native EXPLAIN options. Normalize only our
+    // fixed, non-executing prefix; the entire original query is still validated.
+    if engine == "clickhouse" {
+        let prefix: Vec<_> = tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| !matches!(t.token, Token::Whitespace(_)))
+            .take(9)
+            .map(|(i, t)| (i, t.token.to_string().to_ascii_uppercase()))
+            .collect();
+        if prefix
+            .iter()
+            .map(|(_, word)| word.as_str())
+            .collect::<Vec<_>>()
+            == [
+                "EXPLAIN", "PLAN", "JSON", "=", "1", ",", "INDEXES", "=", "1",
+            ]
+        {
+            tokens.drain(prefix[1].0..=prefix[8].0);
+        }
+    }
     let statements = Parser::new(dialect)
         .with_tokens_with_locations(tokens)
         .parse_statements()
@@ -186,6 +207,15 @@ pub fn sql_server_plan_target(sql: &str) -> DriverResult<()> {
         return Err(Error::new(
             "SQL Server plans support one SELECT, INSERT, UPDATE or DELETE statement",
         ));
+    }
+    Ok(())
+}
+pub fn clickhouse_plan_target(sql: &str) -> DriverResult<()> {
+    let (statements, _) = parse(sql, "clickhouse")?;
+    if !matches!(statements.as_slice(), [Statement::Query(_)])
+        || !analyze_statements(&statements).read_only
+    {
+        return Err(Error::new("ClickHouse plans support one SELECT query"));
     }
     Ok(())
 }
@@ -309,6 +339,36 @@ pub fn analyze_script(sql: &str, engine: &str) -> DriverResult<Option<Analysis>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clickhouse_native_plan_prefix_validates_the_complete_query() {
+        let native = "/* before */ EXPLAIN PLAN json=1, indexes=1 WITH x AS (SELECT 1 AS id) SELECT * FROM x; -- after";
+        assert!(analyze(native, "clickhouse").unwrap().read_only);
+        assert!(explain_target(native, "clickhouse").is_err());
+        clickhouse_plan_target("WITH x AS (SELECT 1 AS id) SELECT * FROM x").unwrap();
+        for target in [
+            "UPDATE t SET x=1",
+            "SELECT 1; DELETE FROM t",
+            "SET readonly=0",
+            "EXPLAIN SELECT 1",
+        ] {
+            assert!(clickhouse_plan_target(target).is_err());
+        }
+        for sql in [
+            "EXPLAIN PLAN json=1, indexes=1 SELECT 1; DROP TABLE t",
+            "EXPLAIN PLAN json=1, indexes=1 SELECT 1; DELETE FROM t",
+        ] {
+            let parsed = analyze(sql, "clickhouse").unwrap();
+            assert!(!parsed.read_only);
+            assert!(!parsed.warnings.is_empty());
+        }
+        for sql in [
+            "EXPLAIN PLAN json=1, indexes=0 SELECT 1",
+            "EXPLAIN PLAN json=1, indexes=1, extra=1 SELECT 1",
+            "EXPLAIN PLAN json=1, indexes=1 SELECT 1; broken syntax",
+        ] {
+            assert!(analyze(sql, "clickhouse").is_err());
+        }
+    }
     #[test]
     fn mssql_preserves_batch_and_checks_native_writes() {
         let sql =

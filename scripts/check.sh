@@ -50,6 +50,11 @@ else
 fi
 if [[ -n "${KLYNDB_TEST_CLICKHOUSE_URL:-}" ]]; then
   workspace_test crates/drivers/clickhouse/tests/integration.rs real_clickhouse_workflow --ignored
+  if [[ -n "${KLYNDB_TEST_CLICKHOUSE_DELAY_HOST:-}" ]]; then
+    workspace_test crates/core/tests/plans.rs clickhouse_plan_cancellation_and_deadline_during_schema_inference --ignored --nocapture
+  else
+    echo 'ClickHouse planning HTTP deadline skipped: set KLYNDB_TEST_CLICKHOUSE_DELAY_HOST to a server-reachable local fixture host.'
+  fi
 else
   echo 'ClickHouse integration skipped: set KLYNDB_TEST_CLICKHOUSE_URL to a disposable native TCP server.'
 fi

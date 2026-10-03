@@ -30,12 +30,16 @@ Results use 256-row / 256 KiB output batches and the existing bounded disk spool
 
 Cancel, timeout, row-limit interruption and consumer loss target a UUID-prefixed statement belonging to the authenticated user, using a separate native control connection. The driver keeps draining the original stream before reusing the session. If interruption cannot be confirmed within three seconds, it closes the session and asks you to verify any writes before retrying. Cancellation does not roll back completed writes or cancel asynchronous mutations already launched by SQL. See [ClickHouse's KILL semantics](https://clickhouse.com/docs/reference/statements/kill).
 
-ClickHouse transactions, reviewed grid editing, file imports, diagrams and the structured Explain/Analyze panel remain disabled in this slice. Native EXPLAIN statements can still be run in the SQL editor. Affected-row counts are not exposed by this native client; the results and messages display “Affected-row count unavailable” rather than a measured number of changed rows. Wider types, multi-database navigation, native desktop acceptance, platform packages and performance measurements remain on the roadmap.
+Choose **Explain** for a single SELECT statement or selection, including native WITH/UNION queries. The driver requests native JSON operators and index details through `EXPLAIN PLAN json=1, indexes=1`, retaining original SQL and reusing the collapsible tree, raw output, copy and result exports. Index conditions/parts/granules are shown when the server reports them; no runtime timings or cost estimates are invented. Read-only native profiles support the same plans. Planning can contact table-function sources to infer their schema, so normal permissions, Cancel and job deadlines still apply. Unconfirmed interruption closes the session with a warning; reconnect before retrying. The verified ClickHouse 26.3.39.7 server rejects ANALYZE, and runtime profiling remains disabled in this driver. Native desktop plan interaction remains pending. See [execution plans](EXPLAIN.md).
+
+ClickHouse transactions, reviewed grid editing, file imports and diagrams remain disabled in this slice. Affected-row counts are not exposed by this native client; the results and messages display “Affected-row count unavailable” rather than a measured number of changed rows. Wider types, multi-database navigation, native desktop acceptance, platform packages and performance measurements remain on the roadmap.
 
 Real-server contracts run against a disposable native server:
 
 ```sh
 export KLYNDB_TEST_CLICKHOUSE_URL='clickhouse://default@127.0.0.1:19000/default?tls=disabled'
+# Optional: a native local server can reach the loopback HTTP schema-delay fixture.
+export KLYNDB_TEST_CLICKHOUSE_DELAY_HOST='127.0.0.1'
 ./scripts/check.sh
 ```
 

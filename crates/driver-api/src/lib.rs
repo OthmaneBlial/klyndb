@@ -126,6 +126,7 @@ pub enum PlanFormat {
     MysqlTree,
     MariaJson,
     DuckDbJson,
+    ClickHouseJson,
     SqlServerTabular,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
