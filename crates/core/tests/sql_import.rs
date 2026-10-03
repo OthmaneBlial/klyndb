@@ -73,15 +73,26 @@ async fn run_file(
 #[tokio::test]
 async fn streaming_sql_import_real_engines() {
     let directory = tempfile::tempdir().unwrap();
-    let mut fixtures = vec![(
-        "sqlite",
-        "sqlite",
-        directory
-            .path()
-            .join("sql.db")
-            .to_string_lossy()
-            .into_owned(),
-    )];
+    let mut fixtures = vec![
+        (
+            "sqlite",
+            "sqlite",
+            directory
+                .path()
+                .join("sql.db")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        (
+            "duckdb",
+            "duckdb",
+            directory
+                .path()
+                .join("sql.duckdb")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    ];
     for (name, engine, variable) in [
         ("postgres", "postgres", "KLYNDB_TEST_POSTGRES_URL"),
         ("mysql", "mysql", "KLYNDB_TEST_MYSQL_URL"),
@@ -105,7 +116,7 @@ async fn streaming_sql_import_real_engines() {
             color: "#93d4b5".into(),
             favorite: false,
             read_only: false,
-            create_file: dialect == "sqlite",
+            create_file: matches!(dialect, "sqlite" | "duckdb"),
         };
         config.validate().unwrap();
         engine.store.save(&config).unwrap();
@@ -401,6 +412,9 @@ async fn streaming_sql_import_real_engines() {
             "postgres" => "SELECT pg_sleep(30);",
             "mysql" => "SELECT SLEEP(30);",
             "mssql" => "EXEC(N'WAITFOR DELAY ''00:00:30''');",
+            "duckdb" => {
+                "SELECT sum(a.i+b.i) FROM range(1000000000) a(i) CROSS JOIN range(1000000000) b(i);"
+            }
             _ => {
                 "WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT sum(x) FROM n;"
             }
@@ -434,6 +448,82 @@ async fn streaming_sql_import_real_engines() {
             "42"
         );
 
+        if dialect == "duckdb" {
+            // Discarded SELECTs do not need display decoding or the editor's retained-row cap.
+            let native = format!(
+                "SELECT ['340282366920938463463374607431768211455'::UHUGEINT]; INSERT INTO {quote}(id) VALUES(2010); SELECT * FROM range(6001);"
+            );
+            let status = run_file(&engine, &config, &path, native.as_bytes()).await;
+            assert!(status.error.is_none(), "{:?}", status.error);
+            assert_eq!(status.completed_statements, 3);
+            assert_eq!(
+                sql(
+                    driver.as_ref(),
+                    format!("SELECT id FROM {quote} WHERE id=2010")
+                )
+                .await
+                .unwrap()[0][0]
+                    .text(),
+                "2010"
+            );
+            let failed = format!(
+                "BEGIN; INSERT INTO {quote}(id) VALUES(2011); INSERT INTO {quote}(id) VALUES(0);"
+            );
+            let status = run_file(&engine, &config, &path, failed.as_bytes()).await;
+            assert_eq!(status.completed_statements, 2);
+            assert!(status.error.is_some());
+            assert_eq!(status.transaction, Some(TransactionState::Failed));
+            sql(driver.as_ref(), "ROLLBACK".into()).await.unwrap();
+            assert!(
+                sql(
+                    driver.as_ref(),
+                    format!("SELECT id FROM {quote} WHERE id=2011")
+                )
+                .await
+                .unwrap()
+                .is_empty()
+            );
+
+            // Cancellation releases a session held while the producer is still waiting for input.
+            let (send, input) = mpsc::channel(1);
+            let (output, mut results) = mpsc::channel(2);
+            let drain = tokio::spawn(async move { while results.recv().await.is_some() {} });
+            let cancel = CancellationToken::new();
+            let completed = Arc::new(AtomicU64::new(0));
+            let worker = driver.clone();
+            let token = cancel.clone();
+            let count = completed.clone();
+            let task =
+                tokio::spawn(
+                    async move { worker.execute_script(input, output, token, count).await },
+                );
+            send.send(Ok(ScriptBatch::Statement("SELECT 42".into())))
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while completed.load(Ordering::Relaxed) != 1 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            cancel.cancel();
+            assert!(
+                tokio::time::timeout(Duration::from_secs(2), task)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap_err()
+                    .message
+                    .contains("cancelled")
+            );
+            drop(send);
+            drain.await.unwrap();
+            assert_eq!(
+                driver.transaction_state().await.unwrap(),
+                TransactionState::Idle
+            );
+        }
         if dialect == "mssql" {
             // Native GO boundaries preserve variables within a batch and reset their scope afterwards.
             let native = format!(
@@ -523,6 +613,11 @@ async fn streaming_sql_import_real_engines() {
                 .unwrap();
         }
 
+        // Close the writable file instance before reopening DuckDB in native read-only mode.
+        sql(driver.as_ref(), format!("DROP TABLE {quote}"))
+            .await
+            .unwrap();
+        engine.disconnect(&config.id).await.unwrap();
         let mut read_only = config.clone();
         read_only.id.clear();
         read_only.read_only = true;
@@ -539,10 +634,6 @@ async fn streaming_sql_import_real_engines() {
                 .is_err()
         );
         engine.disconnect(&read_only.id).await.unwrap();
-        sql(driver.as_ref(), format!("DROP TABLE {quote}"))
-            .await
-            .unwrap();
-        engine.disconnect(&config.id).await.unwrap();
         eprintln!(
             "{name}: streamed SQL/export roundtrip, snapshot, partial error, transaction/serialization, deadline/cancel and read-only checks passed"
         );

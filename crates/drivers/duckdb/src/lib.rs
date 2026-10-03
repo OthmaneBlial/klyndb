@@ -315,7 +315,7 @@ fn stream(
                 continue;
             }
             let schema = stmt.stream_arrow([]).map_err(err)?.get_schema();
-            let types = (0..schema.fields().len())
+            let types = (0..if limit == 0 { 0 } else { schema.fields().len() })
                 .map(|i| {
                     let logical = stmt.column_logical_type(i);
                     validate_type(&logical, false)?;
@@ -399,7 +399,7 @@ impl Session for DuckDb {
             explain_analyze: !self.read_only,
             edit_rows: false,
             import_rows: false,
-            import_sql: false,
+            import_sql: !self.read_only,
             cancel: true,
             tls: false,
         }
@@ -427,6 +427,26 @@ impl Session for DuckDb {
     ) -> Result<()> {
         self.with(move |conn| stream(conn, sql, output, cancel, limit))
             .await
+    }
+    async fn execute_script(
+        &self,
+        mut input: mpsc::Receiver<Result<ScriptBatch>>,
+        output: mpsc::Sender<Batch>,
+        cancel: CancellationToken,
+        completed: Arc<std::sync::atomic::AtomicU64>,
+    ) -> Result<()> {
+        if self.read_only {
+            return Err(Error::new("This connection is read-only"));
+        }
+        let runtime = tokio::runtime::Handle::current();
+        self.with(move |conn| {
+            while let Some(sql) = runtime.block_on(next_script_statement(&mut input, &cancel))? {
+                stream(conn, sql, output.clone(), cancel.clone(), 0)?;
+                completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            Ok(())
+        })
+        .await
     }
     async fn transaction_state(&self) -> Result<TransactionState> {
         self.with(transaction_state).await

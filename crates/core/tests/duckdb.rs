@@ -54,7 +54,8 @@ async fn duckdb_saved_session_spool_exports_test_isolation_and_reconnect() {
     engine.store.save(&config).unwrap();
     let caps = engine.connect(&config.id, None, None, None).await.unwrap();
     assert!(caps.table_browse && caps.cancel && caps.transactions && caps.affected_rows);
-    assert!(!caps.edit_rows && !caps.import_rows && !caps.import_sql);
+    assert!(caps.import_sql);
+    assert!(!caps.edit_rows && !caps.import_rows);
     let writes = query(&engine,&config,"CREATE TABLE t(id UBIGINT PRIMARY KEY, label VARCHAR, exact DECIMAL(38,18), payload BLOB); INSERT INTO t VALUES(18446744073709551615,'é;''\\next',12345678901234567890.123456789012345678,from_hex('00ff'))").await;
     assert_eq!(
         engine.job(&writes).unwrap().status().unwrap().sets[1].affected,
