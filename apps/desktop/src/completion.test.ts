@@ -152,6 +152,44 @@ it("reconfigures SQL metadata without losing document, selection or undo history
   expect(undoDepth(state)).toBe(1);
 });
 
+it("merges large catalogs without losing global ambiguity or lazy metadata across pools", async () => {
+  const tables = [
+    users,
+    ...Array.from({ length: 257 }, (_, i) => ({
+      schema: "public",
+      name: `table_${i}`,
+      kind: "table" as const,
+    })),
+    audit,
+  ];
+  const load = vi.fn(async (table: Table) =>
+    table === audit ? ["audit_id"] : ["user_id"],
+  );
+  const source = tableCompletion({ tables, columns: {} }, PostgreSQL, load);
+  const root = await labels(source, "SELECT * FROM |");
+  expect(root).toEqual([
+    "public",
+    ...tables.slice(1, -1).map((t) => t.name),
+    "audit",
+  ]);
+  expect(await labels(source, "SELECT * FROM public.|")).toEqual(
+    tables.slice(0, -1).map((t) => t.name),
+  );
+  expect(await labels(source, "SELECT users.| FROM users")).toEqual([]);
+  expect(load).not.toHaveBeenCalled();
+  const results = await Promise.all([
+    labels(source, "SELECT u.| FROM public.users u"),
+    labels(source, "SELECT a.| FROM audit.users a"),
+    labels(source, "SELECT a.| FROM audit.users a"),
+  ]);
+  expect(results).toEqual([["user_id"], ["audit_id"], ["audit_id"]]);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(load.mock.calls.map(([table]) => table)).toEqual([users, audit]);
+  expect(await labels(source, "SELECT audit.users.|")).toEqual(["audit_id"]);
+  expect(await labels(source, "SELECT users.| FROM users")).toEqual([]);
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
 it("completes CTE and derived output aliases across SQL dialects without metadata reads", async () => {
   for (const dialect of [PostgreSQL, MySQL, MSSQL, SQLite, ClickHouseSQL]) {
     const load = vi.fn();

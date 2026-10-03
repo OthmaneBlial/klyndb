@@ -1,4 +1,10 @@
-import { ifNotIn, type CompletionSource } from "@codemirror/autocomplete";
+import {
+  ifNotIn,
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+  type CompletionSource,
+} from "@codemirror/autocomplete";
 import {
   schemaCompletionSource,
   type SQLDialect,
@@ -25,10 +31,19 @@ export function tableCompletion(
   for (const table of schema.tables)
     names.set(table.name, (names.get(table.name) ?? 0) + 1);
   const schemas = new Set(schema.tables.map((table) => table.schema));
-  let source: CompletionSource;
-  function rebuild() {
+  // ponytail: bounded namespaces avoid CodeMirror's quadratic name scans;
+  // lookup fans out over pools, so measure before replacing its SQL resolver.
+  const pools: Table[][] = [];
+  const tablePools = new Map<string, number>();
+  for (let i = 0; i < schema.tables.length; i += 64) {
+    const pool = schema.tables.slice(i, i + 64);
+    for (const table of pool) tablePools.set(tableKey(table), pools.length);
+    pools.push(pool);
+  }
+  if (!pools.length) pools.push([]);
+  function rebuild(pool: Table[]) {
     const namespace: Record<string, SQLNamespace> = Object.create(null);
-    for (const table of schema.tables) {
+    for (const table of pool) {
       // Private resolution markers never reach the menu. CodeMirror resolves
       // qualified names and aliases before we load only the requested table.
       const fields = columns.get(tableKey(table)) ?? [
@@ -42,9 +57,29 @@ export function tableCompletion(
       if (names.get(table.name) === 1 && !schemas.has(table.name))
         namespace[escape(table.name)] = fields;
     }
-    source = schemaCompletionSource({ schema: namespace, dialect });
+    return schemaCompletionSource({ schema: namespace, dialect });
   }
-  rebuild();
+  const sources = pools.map(rebuild);
+  async function completeCatalog(
+    context: CompletionContext,
+  ): Promise<CompletionResult | null> {
+    let result: CompletionResult | null = null;
+    const options = new Map<string, Completion>();
+    for (const source of sources) {
+      const found = await source(context);
+      if (context.aborted) return null;
+      if (!found) continue;
+      result ??= found;
+      for (const option of found.options) {
+        const key =
+          "klyndbTable" in option
+            ? `table:${tableKey(option.klyndbTable as Table)}`
+            : `label:${option.label}`;
+        if (!options.has(key)) options.set(key, option);
+      }
+    }
+    return result ? { ...result, options: [...options.values()] } : null;
+  }
   async function loadColumns(table: Table) {
     const id = tableKey(table);
     if (columns.has(id)) return columns.get(id)!;
@@ -53,7 +88,8 @@ export function tableCompletion(
       request = load(table)
         .then((names) => {
           columns.set(id, names);
-          rebuild();
+          const pool = tablePools.get(id);
+          if (pool !== undefined) sources[pool] = rebuild(pools[pool]);
         })
         .finally(() => pending.delete(id));
       pending.set(id, request);
@@ -70,7 +106,17 @@ export function tableCompletion(
     );
     if (context.aborted) return null;
     if (local?.qualified) return local.result;
-    let result = await source(context);
+    let result = await completeCatalog(context);
+    if ((!result && !local) || context.aborted) return null;
+    const requested =
+      result?.options.flatMap((option) =>
+        "klyndbTable" in option ? [option.klyndbTable as Table] : [],
+      ) ?? [];
+    for (const table of requested) {
+      await loadColumns(table);
+      if (context.aborted) return null;
+    }
+    if (requested.length) result = await completeCatalog(context);
     if (local && result) {
       const labels = new Set(
         local.result.options.map((option) => option.label),
@@ -83,15 +129,6 @@ export function tableCompletion(
         ],
       };
     } else if (local) result = local.result;
-    if (!result || context.aborted) return null;
-    const requested = result.options.flatMap((option) =>
-      "klyndbTable" in option ? [option.klyndbTable as Table] : [],
-    );
-    for (const table of requested) {
-      await loadColumns(table);
-      if (context.aborted) return null;
-    }
-    if (requested.length) result = await source(context);
     return result;
   });
 }
