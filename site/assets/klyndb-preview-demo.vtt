@@ -1,28 +1,34 @@
 WEBVTT
 
 00:00:00.000 --> 00:00:04.000
-Klyndb: a free, open-source alternative to DBeaver. Captioned screenshot walkthrough.
+Klyndb: a free, open-source alternative to DBeaver. Edited native screenshot walkthrough.
 
 00:00:04.000 --> 00:00:14.000
-SQL tabs. Real results. Your workspace. Actual native macOS screenshot / SQLite + MySQL / 10,000 synthetic rows
+SQL tabs. Real results. Actual native macOS source, read-only SQLite and synthetic customers/orders.
 
 00:00:14.000 --> 00:00:20.000
-Filter MongoDB documents. Keep exact BSON. Actual native macOS debug app / real MongoDB 8.0.32 / synthetic records
+Filter MongoDB documents. Actual native app, real MongoDB and synthetic records.
 
 00:00:20.000 --> 00:00:26.000
-Group documents with a real aggregation pipeline. Actual native macOS debug app / EU 102 + US 103 / read-only pipeline
+Aggregate documents. EU 102 and US 103 from a real native read-only MongoDB pipeline.
 
 00:00:26.000 --> 00:00:32.000
-Review production writes before they run. Actual native macOS debug app / original BSON conflict guard / canceled without writing
+Review production writes. Native MongoDB review, canceled without writing.
 
 00:00:32.000 --> 00:00:42.000
-Explore Redis keys, types and TTLs. Actual native macOS debug app / real Redis 7.4.11 / synthetic records
+Explore Redis keys, types and TTLs. Native app, real Redis and synthetic values.
 
 00:00:42.000 --> 00:00:49.000
-Inspect the original bytes. Actual native macOS debug app / real Redis 7.4.11 / synthetic records
+Inspect original bytes. The native Redis string is exactly 0x6100ff.
 
 00:00:49.000 --> 00:00:58.000
-Review native data commands. Actual native macOS debug app / exact production arguments / canceled without writing
+Review native Redis data commands. Exact production arguments, canceled without execution.
 
-00:00:58.000 --> 00:01:04.000
-Nine engines in current source builds. Preview 1 includes PostgreSQL, MySQL, MariaDB and SQLite. Star github.com/OthmaneBlial/klyndb.
+00:00:58.000 --> 00:01:08.000
+Your SQL. Your confirmation rules. Native source Settings, production review and four destructive SQL categories.
+
+00:01:08.000 --> 00:01:18.000
+Make the keyboard yours. Twelve customizable workspace and SQL bindings in native source Settings.
+
+00:01:18.000 --> 00:01:24.000
+Nine engines. One workspace. Preview 2 is available for macOS Apple Silicon; the new Settings shown here require the current source build. Star github.com/OthmaneBlial/klyndb.

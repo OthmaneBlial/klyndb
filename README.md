@@ -46,15 +46,15 @@
 
 ## 🎬 Meet your next database client
 
-[![Watch the 64-second Klyndb preview walkthrough](site/assets/demo-poster.jpg)](https://othmaneblial.github.io/klyndb/#demo)
+[![Watch the 84-second Klyndb preview walkthrough](site/assets/demo-poster.jpg)](https://othmaneblial.github.io/klyndb/#demo)
 
 <p align="center">
-  <a href="https://othmaneblial.github.io/klyndb/#demo"><strong>▶ Watch the 64-second demo</strong></a> ·
+  <a href="https://othmaneblial.github.io/klyndb/#demo"><strong>▶ Watch the 84-second demo</strong></a> ·
   <a href="https://othmaneblial.github.io/klyndb/assets/klyndb-preview-demo.mp4">Download MP4</a> ·
   <a href="docs/DEMO.md">Scene guide</a>
 </p>
 
-A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and aggregation**, **Redis key inspection**, and **production-write review**. **All SQL, MongoDB and Redis scenes are real native macOS captures**, using synthetic data and real database requests. Redis now shows the native key explorer, original bytes and production-write review.
+A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and aggregation**, **Redis key inspection**, and **production-write review**, **customizable shortcuts** and **SQL confirmation settings**. **All SQL, MongoDB and Redis scenes are real native macOS captures**, using synthetic data and real database requests. The updated SQL and Settings scenes use the current native source build. The new controls are not in the older Preview 2 download.
 
 <details>
 <summary>📸 See the native macOS workspace</summary>
