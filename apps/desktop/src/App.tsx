@@ -50,6 +50,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import type { EditorHandle } from "./components/SqlEditor";
+import { tableKey } from "./diagram";
 const SqlEditor = lazy(() =>
   import("./components/SqlEditor").then((m) => ({ default: m.SqlEditor })),
 );
@@ -195,14 +196,22 @@ export default function App() {
     [],
   );
   const schema = useMemo(
-    () =>
-      Object.fromEntries(
-        (tables[current?.connection ?? ""] ?? []).map((t) => [
-          t.name,
-          columns[current?.connection ?? ""]?.[`${t.schema}.${t.name}`] ?? [],
-        ]),
-      ),
+    () => ({
+      tables: tables[current?.connection ?? ""] ?? [],
+      columns: columns[current?.connection ?? ""] ?? {},
+    }),
     [tables, columns, current?.connection],
+  );
+  const completionConnection = current?.connection ?? "";
+  const loadCompletionColumns = useCallback(
+    async (table: Table) => {
+      const info = await api("inspect_table", {
+        id: completionConnection,
+        table,
+      });
+      return info.columns.map((column) => column.name);
+    },
+    [completionConnection],
   );
   useEffect(() => {
     Promise.all([
@@ -423,6 +432,7 @@ export default function App() {
   }
   async function refresh(id: string) {
     setTables((t) => ({ ...t, [id]: [] }));
+    setColumns((s) => ({ ...s, [id]: {} }));
     try {
       const result = await api("tables", { id });
       setTables((t) => ({ ...t, [id]: result }));
@@ -679,7 +689,7 @@ export default function App() {
         ...s,
         [c.id]: {
           ...s[c.id],
-          [`${table.schema}.${table.name}`]: info.columns.map((c) => c.name),
+          [tableKey(table)]: info.columns.map((c) => c.name),
         },
       }));
       const browse: TableQuery = {
@@ -1364,6 +1374,8 @@ export default function App() {
                   value={current.sql}
                   engine={connection?.engine ?? "sqlite"}
                   schema={schema}
+                  loadColumns={loadCompletionColumns}
+                  onError={report}
                   onChange={(sql) => updateTab(current.id, { sql })}
                   onRun={(sql) => void run(sql)}
                   editorRef={editorRef}

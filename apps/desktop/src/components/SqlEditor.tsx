@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { useEffect, useMemo, useRef } from "react";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -22,6 +22,8 @@ import {
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { sql, SQLite, PostgreSQL, MySQL, MSSQL } from "@codemirror/lang-sql";
 import { ClickHouseSQL, currentStatement, replaceDocument } from "../sql";
+import { tableCompletion, type CompletionSchema } from "../completion";
+import type { Table } from "../api";
 export interface EditorHandle {
   runText: () => string;
   allText: () => string;
@@ -31,21 +33,50 @@ export function SqlEditor({
   value,
   engine,
   schema,
+  loadColumns,
+  onError,
   onChange,
   onRun,
   editorRef,
 }: {
   value: string;
   engine: string;
-  schema: Record<string, string[]>;
+  schema: CompletionSchema;
+  loadColumns: (table: Table) => Promise<string[]>;
+  onError: (message: string) => void;
   onChange: (s: string) => void;
   onRun: (s: string) => void;
   editorRef: React.RefObject<EditorHandle | null>;
 }) {
   const element = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null);
-  const callbacks = useRef({ onChange, onRun });
-  callbacks.current = { onChange, onRun };
+  const callbacks = useRef({ onChange, onRun, onError });
+  callbacks.current = { onChange, onRun, onError };
+  const language = useRef(new Compartment());
+  const dialect =
+    engine === "sqlite"
+      ? SQLite
+      : engine === "mysql"
+        ? MySQL
+        : engine === "mssql"
+          ? MSSQL
+          : engine === "clickhouse"
+            ? ClickHouseSQL
+            : PostgreSQL;
+  const completion = useMemo(() => {
+    const source = tableCompletion(schema, dialect, loadColumns);
+    return async (...args: Parameters<typeof source>) => {
+      try {
+        return await source(...args);
+      } catch (error) {
+        if (!args[0].aborted)
+          callbacks.current.onError(
+            `Column completion failed: ${String(error)}`,
+          );
+        return null;
+      }
+    };
+  }, [schema, dialect, loadColumns]);
   useEffect(() => {
     const state = EditorState.create({
       doc: value,
@@ -60,19 +91,10 @@ export function SqlEditor({
         highlightSelectionMatches(),
         syntaxHighlighting(defaultHighlightStyle),
         autocompletion(),
-        sql({
-          dialect:
-            engine === "sqlite"
-              ? SQLite
-              : engine === "mysql"
-                ? MySQL
-                : engine === "mssql"
-                  ? MSSQL
-                  : engine === "clickhouse"
-                    ? ClickHouseSQL
-                    : PostgreSQL,
-          schema,
-        }),
+        language.current.of([
+          sql({ dialect }),
+          dialect.language.data.of({ autocomplete: completion }),
+        ]),
         keymap.of([
           {
             key: "Mod-Enter",
@@ -131,7 +153,15 @@ export function SqlEditor({
     };
     // Each tab owns its editor; callbacks retain the current handlers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, schema]);
+  }, []);
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: language.current.reconfigure([
+        sql({ dialect }),
+        dialect.language.data.of({ autocomplete: completion }),
+      ]),
+    });
+  }, [dialect, completion]);
   useEffect(() => {
     if (view.current) replaceDocument(view.current, value);
   }, [value]);
