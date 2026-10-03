@@ -79,6 +79,15 @@ A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and a
   <br /><sub>PostgreSQL Structure, replayed through the native editor and inspected again. Synthetic data in a source debug build.</sub>
 </p>
 
+<p align="center">
+  <img src="docs/assets/sqlserver-macos.jpg" alt="Actual native Klyndb macOS SQL Server table after a reviewed Unicode edit, retaining exact BIGINT, decimal and binary values" width="100%" />
+  <br /><sub>SQL Server: reviewed edits over verified TLS. Synthetic data in a source debug build.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/clickhouse-macos.jpg" alt="Actual native Klyndb macOS ClickHouse table showing an exact UInt64 maximum, decimal and hexadecimal payload" width="100%" />
+  <br /><sub>ClickHouse: precise SQL results, native plans, CSV export and cancellation. Synthetic data in a source debug build.</sub>
+</p>
 </details>
 
 <a id="features"></a>
@@ -113,8 +122,8 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
 | DuckDB · source builds | ✓ | ✓ · scalar base tables; finish SQL transactions first | Embedded DuckDB 1.5.6 · native macOS query workflow; source editing/imports/ER diagrams |
-| ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
-| SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts; native UI acceptance pending |
+| ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts and native macOS query/plan/export/cancel checks |
+| SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts and native macOS TLS/query/catalog/edit/plan/import/export/cancel checks |
 | Redis · source builds | Native keys, TTLs, six value types and data commands | Native data commands; production/read-only guards | Redis 7.4.11 · real backend/TLS/mTLS contracts and native macOS source UI acceptance |
 | MongoDB · source builds | Native documents, JSON filters, aggregation, indexes and JSON/tree views | Reviewed single-document writes; production/read-only/conflict guards | MongoDB 8.0.32 · real backend/TLS/mTLS contracts; macOS debug browse/aggregation/CRUD verified |
 

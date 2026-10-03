@@ -21,6 +21,17 @@ shasum -a 256 -c SHA256SUMS
 
 Read the release notes and [compatibility matrix](COMPATIBILITY.md) before using the preview. Additional engines, broader native coverage and full DBeaver parity remain on the roadmap.
 
+## Preview 2 candidate — native acceptance pending
+
+An optimized nine-engine macOS arm64 candidate was built locally on 2026-10-03 from source `12787947d414d523bd15ac506fd064f51c432d0d`. It is not published as a release. The ignored candidate directory is `artifacts/release-candidates/0.1.0-20261003T123334Z`.
+
+| Candidate package | Bytes | SHA-256 |
+| --- | ---: | --- |
+| macOS arm64 app ZIP | 24,892,268 | `bb56d756809b9725d3b77411b31582771463c151f2ac80426280b08165a5d911` |
+| macOS arm64 DMG | 28,834,307 | `a3b253f362364e8a7123ec5b8079516ede9f489414d51d320a6e6756afe2b470` |
+
+Archive, ad-hoc signature, architecture, notices/resources, checksum and read-only mounted-DMG checks pass. The separately ZIP-extracted executable matches the packaged build byte for byte. Its process starts, but native window access is unavailable; packaged UI acceptance remains pending. The [native SQL Server and ClickHouse checks](VALIDATION.md#native-sql-server-and-clickhouse-source-workflows--2026-10-03) describe the separately tested source debug app. They do not substitute for acceptance of this optimized artifact. Preview 1 remains the current public download; no platform/signing scope has expanded.
+
 ## Build another candidate locally
 
 GitHub Actions remains disabled. Run the configured local `scripts/check.sh` against disposable database fixtures before creating a candidate.
