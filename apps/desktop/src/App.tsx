@@ -91,6 +91,11 @@ import { TableControls } from "./components/TableControls";
 import { ImportDialog } from "./components/ImportDialog";
 import { SqlImportDialog } from "./components/SqlImportDialog";
 import { Modal } from "./components/Modal";
+import {
+  QueryHistory,
+  SavedQueries,
+  type SavedQuery,
+} from "./components/QueryLibrary";
 const DiagramDialog = lazy(() =>
   import("./components/DiagramDialog").then((m) => ({
     default: m.DiagramDialog,
@@ -112,13 +117,6 @@ import {
   type NativeDraft,
 } from "./workspace";
 
-interface SavedQuery {
-  id: string;
-  name: string;
-  sql: string;
-  connection: string;
-  favorite: boolean;
-}
 export default function App() {
   const [connections, setConnections] = useState<Connection[]>([]),
     [connected, setConnected] = useState<Record<string, Capabilities>>({}),
@@ -2033,27 +2031,19 @@ export default function App() {
       )}
       {history && (
         <Modal title="Query history" onClose={() => setHistory(null)} wide>
-          <div className="query-library">
-            {history.map((h) => (
-              <button
-                key={h.id}
-                onClick={() => {
-                  newTab(h.connection_id, h.sql);
-                  setHistory(null);
-                }}
-              >
-                <span>{h.sql}</span>
-                <small>
-                  {h.created_at} · {h.elapsed_ms} ms{h.error ? " · failed" : ""}
-                </small>
-              </button>
-            ))}
-            {!history.length && (
-              <p className="muted">
-                Executed SQL will appear here. History stays on this machine.
-              </p>
-            )}
-          </div>
+          <QueryHistory
+            history={history}
+            connections={connections}
+            onOpen={(h) => {
+              if (newTab(h.connection_id, h.sql)) setHistory(null);
+            }}
+            onSave={(h) => {
+              if (newTab(h.connection_id, h.sql)) {
+                setHistory(null);
+                setSaveName("");
+              }
+            }}
+          />
           <footer>
             <button
               className="danger"
@@ -2076,55 +2066,28 @@ export default function App() {
       )}
       {savedOpen && (
         <Modal title="Saved queries" onClose={() => setSavedOpen(false)} wide>
-          <div className="query-library">
-            {[...saved]
-              .sort((a, b) => Number(b.favorite) - Number(a.favorite))
-              .map((q) => (
-                <div className="saved-query" key={q.id}>
-                  <button
-                    onClick={() => {
-                      newTab(q.connection, q.sql, q.name);
-                      setSavedOpen(false);
-                    }}
-                  >
-                    <strong>{q.name}</strong>
-                    <span>{q.sql}</span>
-                  </button>
-                  <button
-                    className="icon"
-                    aria-label={`Favorite ${q.name}`}
-                    onClick={() =>
-                      void changeSaved(
-                        saved.map((s) =>
-                          s.id === q.id ? { ...s, favorite: !s.favorite } : s,
-                        ),
-                      )
-                    }
-                  >
-                    {q.favorite ? "★" : "☆"}
-                  </button>
-                  <button
-                    className="icon"
-                    aria-label={`Delete saved query ${q.name}`}
-                    onClick={() =>
-                      setConfirm({
-                        title: "Delete saved query",
-                        message: `Remove ${q.name}?`,
-                        action: () =>
-                          void changeSaved(saved.filter((s) => s.id !== q.id)),
-                      })
-                    }
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            {!saved.length && (
-              <p className="muted">
-                Save a query from the editor with Cmd/Ctrl+S.
-              </p>
-            )}
-          </div>
+          <SavedQueries
+            queries={saved}
+            connections={connections}
+            onOpen={(q) => {
+              if (newTab(q.connection, q.sql, q.name)) setSavedOpen(false);
+            }}
+            onFavorite={(q) =>
+              void changeSaved(
+                saved.map((s) =>
+                  s.id === q.id ? { ...s, favorite: !s.favorite } : s,
+                ),
+              )
+            }
+            onDelete={(q) =>
+              setConfirm({
+                title: "Delete saved query",
+                message: `Remove ${q.name}?`,
+                action: () =>
+                  void changeSaved(saved.filter((s) => s.id !== q.id)),
+              })
+            }
+          />
         </Modal>
       )}
       {saveName !== null && (

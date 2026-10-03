@@ -1305,6 +1305,18 @@ small {
   max-height: 60vh;
   overflow: auto;
 }
+.query-library-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.query-library-filters > label {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.query-library-error {
+  color: var(--danger);
+}
 .query-library > button,
 .saved-query > button:first-child {
   display: flex;

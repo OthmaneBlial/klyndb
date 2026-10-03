@@ -4,7 +4,7 @@ import {
   type CompletionSource,
 } from "@codemirror/autocomplete";
 import { Compartment, EditorState } from "@codemirror/state";
-import { ensureSyntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { history, undoDepth } from "@codemirror/commands";
 import { sql, PostgreSQL, MySQL, MSSQL, SQLite } from "@codemirror/lang-sql";
 import { tableCompletion } from "./completion";
@@ -16,12 +16,16 @@ const users: Table = { schema: "public", name: "users", kind: "table" };
 const audit: Table = { schema: "audit", name: "users", kind: "table" };
 function context(text: string, dialect = PostgreSQL) {
   const pos = text.indexOf("|");
-  const state = EditorState.create({
+  let state = EditorState.create({
     doc: text.replace("|", ""),
     extensions: [sql({ dialect })],
   });
   // Headless states have no EditorView to finish the time-sliced parse.
   expect(ensureSyntaxTree(state, state.doc.length, 1000)).not.toBeNull();
+  // ensureSyntaxTree advances the parser context; a transaction publishes it
+  // to the immutable state tree that schemaCompletionSource actually reads.
+  state = state.update({}).state;
+  expect(syntaxTree(state).length).toBe(state.doc.length);
   return new CompletionContext(state, pos, true);
 }
 async function labels(

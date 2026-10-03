@@ -160,6 +160,8 @@ npm run tauri dev
 
 Then create a connection, open a table or SQL tab, and run a real query.
 
+Current source builds add [searchable saved queries and history](docs/QUERY_LIBRARY.md), with connection/favorite/failed-run filters and exact history-to-saved-query copies. Preview 2 retains the earlier library.
+
 | Shortcut | Action |
 | --- | --- |
 | `Cmd/Ctrl + Enter` | Run the selected SQL or current statement |

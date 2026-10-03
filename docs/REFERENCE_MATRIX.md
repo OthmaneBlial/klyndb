@@ -29,3 +29,7 @@ Routine workflow review: [Beekeeper's public functions/procedures announcement](
 MySQL/MariaDB and SQL Server routine catalogs independently use native INFORMATION_SCHEMA / sys catalog metadata and native definition reads, as linked in [ROUTINES.md](ROUTINES.md). The existing capability-gated browser is reused; no additional reference implementation or commercial source was read.
 
 PostgreSQL structural definitions independently use native PostgreSQL catalogs and decompilation functions, linked in [the PostgreSQL guide](POSTGRES.md). Materialized-view discovery reuses the existing table-opening and Structure workflow. No additional reference implementation or commercial source is read or reused.
+
+## Query library reference — 2026-10-03
+
+Reviewed only Beekeeper Studio's public [saved-query workflow](https://docs.beekeeperstudio.io/user_guide/sql_editor/saving_queries/) and [editor/history workflow](https://docs.beekeeperstudio.io/user_guide/sql_editor/editor/). The reference names saved SQL and retains connection-scoped execution history. Klyndb independently reuses its existing local saved-query document and 500-entry history, adding literal search, explicit original-connection filters, favorite/failed-run filters and named history-to-saved copies. No implementation source or commercial directory was read or reused. Preview 2's earlier library remains separate from these newer source controls.
