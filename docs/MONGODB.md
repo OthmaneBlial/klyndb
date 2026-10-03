@@ -60,7 +60,7 @@ Run `./scripts/check.sh` locally with disposable MongoDB fixture variables. The 
 
 TLS fixture variables are `KLYNDB_TEST_TLS_MONGODB_URL`, `KLYNDB_TEST_MTLS_MONGODB_URL`, `KLYNDB_TEST_TLS_CERT_DIR` (containing `ca.pem`/`other-ca.pem`), `KLYNDB_TEST_MONGODB_IDENTITY_DIR` (containing `client.pem`, `wrong-client.pem`, `encrypted-client.pem`) and `KLYNDB_TEST_MONGODB_IDENTITY_PASSWORD`. Use separately owned disposable servers with matching writer credentials and required client-certificate verification.
 
-Current validation status is recorded in [VALIDATION.md](VALIDATION.md). Native desktop acceptance, replica-set/SRV acceptance, cancellation controls, index editing, collection creation/drop, imports/exports, document transactions and broader platform acceptance remain unfinished.
+Current validation status is recorded in [VALIDATION.md](VALIDATION.md). The macOS source debug app has real native connection, 205-document paging, tab retention, exact BSON, indexes, grouping/tree inspection, reviewed insert/replace/delete and Cancel and failed session-only reconnect checks. Broader native desktop acceptance, replica-set/SRV acceptance, cancellation controls, index editing, collection creation/drop, imports/exports, document transactions and broader platform acceptance remain unfinished.
 
 ## Provenance
 

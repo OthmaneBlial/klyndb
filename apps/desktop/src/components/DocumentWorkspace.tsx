@@ -487,6 +487,9 @@ export function DocumentWorkspace({
                 Sort · 1 ascending, -1 descending
                 <input
                   aria-label="Document sort"
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="off"
                   value={sort}
                   maxLength={16384}
                   disabled={busy || blocked}

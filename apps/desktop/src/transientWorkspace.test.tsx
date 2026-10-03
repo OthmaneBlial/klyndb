@@ -138,6 +138,9 @@ test("MongoDB restores exact results, authored query and page position; pending 
   expect(html).toContain("Offset 100");
   expect(html).toContain("{&quot;z&quot;:1,&quot;a&quot;:-1}");
   expect(html).toContain("Document filter");
+  expect(html).toContain(
+    'aria-label="Document sort" spellCheck="false" autoCorrect="off" autoCapitalize="off"',
+  );
   const blocked = renderToStaticMarkup(
     <DocumentWorkspace
       connection={connection}
