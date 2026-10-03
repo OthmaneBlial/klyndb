@@ -17,7 +17,7 @@ use crate::{
     EncryptionLevel, SqlReadBytes,
 };
 use asynchronous_codec::Framed;
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 #[cfg(any(windows, feature = "integrated-auth-gssapi", feature = "sspi-rs"))]
 use codec::TokenSspi;
 use futures_util::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -66,6 +66,9 @@ where
     flushed: bool,
     context: Context,
     buf: BytesMut,
+    // Keep the current token's wire bytes until its decoder completes. Dropping
+    // a pending decoder must not leave Attention parsing in the token's body.
+    token_read: Option<usize>,
     /// Set for the duration of a multi-packet write. A message is only partly
     /// on the wire while this is `true`; if the writing future is dropped
     /// (a cancelled `query`/`execute`, a `select!` losing the race, a
@@ -173,6 +176,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context,
             flushed: false,
             buf: BytesMut::new(),
+            token_read: None,
             poisoned: false,
             command_desync: Arc::new(AtomicBool::new(false)),
         };
@@ -479,6 +483,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         // if a previous result stream was dropped part-way through a value
         // (the lost bytes belonged to a packet we are discarding anyway).
         self.buf.truncate(0);
+        self.token_read = None;
 
         if self.flushed {
             return Ok(());
@@ -512,6 +517,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     pub(crate) fn continue_attention_response(&mut self) {
         self.flushed = false;
+    }
+
+    pub(crate) fn begin_token_read(&mut self) {
+        // A new stream rewinds any token abandoned by the previous future.
+        self.token_read = Some(0);
+    }
+
+    pub(crate) fn commit_token_read(&mut self) {
+        if let Some(consumed) = self.token_read.take() {
+            self.buf.advance(consumed);
+            // Release a large token's allocation, retaining only its small
+            // unread packet tail rather than growing the idle session footprint.
+            if consumed > 64 * 1024 {
+                self.buf = BytesMut::from(self.buf.as_ref());
+            }
+        }
     }
 
     /// True if the underlying stream has no more data and is consumed
@@ -899,6 +920,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     context,
                     flushed: false,
                     buf: BytesMut::new(),
+                    token_read: None,
                     poisoned: false,
                     command_desync,
                 })
@@ -945,6 +967,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             flushed: false,
             context: Context::new(),
             buf: BytesMut::new(),
+            token_read: None,
             poisoned,
             command_desync: Arc::new(AtomicBool::new(false)),
         }
@@ -1231,16 +1254,47 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> futures_util::io::AsyncRead for C
     ) -> Poll<io::Result<usize>> {
         let mut this = self.get_mut();
         let size = buf.len();
+        let start = this.token_read.unwrap_or(0);
+        let Some(end) = start.checked_add(size) else {
+            this.poisoned = true;
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TDS read size overflow",
+            )));
+        };
+        // Klyndb retains at most one token, not a response/result set. This
+        // ceiling accommodates the existing 8 MiB row limit even in UTF-16.
+        if this.token_read.is_some() && end > 32 * 1024 * 1024 {
+            this.poisoned = true;
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TDS token exceeds 32 MiB",
+            )));
+        }
 
-        if this.buf.len() < size {
+        if this.buf.len() < end {
+            if this.token_read.is_some() && this.flushed {
+                this.poisoned = true;
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "TDS token crosses a response boundary",
+                )));
+            }
             while let Some(item) = ready!(Pin::new(&mut this).try_poll_next(cx)) {
                 match item {
                     Ok(packet) => {
                         let (_, payload) = packet.into_parts();
                         this.buf.extend(payload);
 
-                        if this.buf.len() >= size {
+                        if this.buf.len() >= end {
                             break;
+                        }
+                        if this.token_read.is_some() && this.flushed {
+                            this.poisoned = true;
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "TDS token crosses a response boundary",
+                            )));
                         }
                     }
                     Err(e) => {
@@ -1253,7 +1307,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> futures_util::io::AsyncRead for C
             }
 
             // Got EOF before having all the data.
-            if this.buf.len() < size {
+            if this.buf.len() < end {
                 return Poll::Ready(Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "No more packets in the wire",
@@ -1261,7 +1315,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> futures_util::io::AsyncRead for C
             }
         }
 
-        buf.copy_from_slice(this.buf.split_to(size).as_ref());
+        buf.copy_from_slice(&this.buf[start..end]);
+        if let Some(cursor) = &mut this.token_read {
+            *cursor = end;
+        } else {
+            this.buf.advance(size);
+        }
         Poll::Ready(Ok(size))
     }
 }
@@ -1368,6 +1427,51 @@ mod poison_tests {
 
     fn poisoned_connection() -> Connection<NullIo> {
         connection_over(NullIo, true)
+    }
+
+    #[tokio::test]
+    async fn token_checkpoint_rewinds_and_releases_large_allocation() {
+        use futures_util::io::AsyncReadExt;
+        let mut conn = connection_over(NullIo, false);
+        let size = 70 * 1024;
+        conn.buf = BytesMut::from(vec![42; size + 3].as_slice());
+        conn.begin_token_read();
+        let mut data = vec![0; size];
+        conn.read_exact(&mut data).await.unwrap();
+        assert_eq!(conn.buf.len(), size + 3, "pending token retains its bytes");
+        conn.begin_token_read();
+        assert_eq!(
+            conn.read_u8().await.unwrap(),
+            42,
+            "abandoned decode rewinds"
+        );
+        conn.read_exact(&mut data[1..]).await.unwrap();
+        conn.commit_token_read();
+        assert_eq!(conn.buf.as_ref(), &[42; 3]);
+        assert!(
+            conn.buf.capacity() < 64 * 1024,
+            "large token allocation released"
+        );
+        assert_eq!(conn.token_read, None);
+    }
+
+    #[tokio::test]
+    async fn malformed_token_boundary_and_oversize_checkpoint_poison_connection() {
+        let mut conn = connection_over(NullIo, false);
+        conn.flushed = true;
+        conn.begin_token_read();
+        assert_eq!(
+            conn.read_u8().await.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+        assert!(conn.ensure_not_poisoned().is_err());
+        let mut conn = connection_over(NullIo, false);
+        conn.token_read = Some(32 * 1024 * 1024);
+        assert_eq!(
+            conn.read_u8().await.unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert!(conn.ensure_not_poisoned().is_err());
     }
 
     fn is_poison_error(err: &crate::Error) -> bool {

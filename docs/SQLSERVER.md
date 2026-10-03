@@ -20,7 +20,7 @@ SELECT @maximum AS exact_integer;
 SELECT CAST('-0.000000000000000001' AS decimal(38,18)) AS exact_decimal;
 ```
 
-Use Execute all or select the complete batch for variables used across statements. Execute current statement submits just that statement. `GO` is a client batch directive and is not supported. SQL must pass the shared T-SQL validator; some vendor DDL, including computed-column declarations, remains unsupported by its grammar. Unsupported SQL fails before submission.
+Use Execute all or select the complete batch for variables used across statements. Execute current statement submits just that statement. Standalone `GO` separates client batches; variables do not survive between batches. SQL must pass the shared T-SQL validator; some vendor DDL, including computed-column declarations, remains unsupported by its grammar. Unsupported SQL fails before submission.
 
 Native SELECT/OUTPUT result sets share the bounded Rust result spool, virtualized grid and CSV/typed JSON/JSONL/SQL/Markdown exporters. Empty SELECT sets are retained. The native stream does not expose DONE affected counts, so the UI says **Affected-row count unavailable**; it does not invent a zero. DML without a rowset produces an empty completion, and DML between SELECT sets does not create a separate artificial rowset.
 
@@ -28,7 +28,7 @@ BIGINT and DECIMAL/NUMERIC values remain exact text tokens in Rust, including pr
 
 Query deadlines follow the configured Klyndb timeout, without an additional SDK 30-second timer. Metadata has a separate 30-second driver bound; the inspector has its shared shorter deadline.
 
-The configured result limit applies per native result set. Reaching it stops the remainder of the original batch; later writes may already have executed. Cancellation sends native TDS Attention and drains its acknowledgement before reuse. If synchronization cannot be confirmed within three seconds, the connection closes and asks you to reconnect and verify writes. Cancellation never promises rollback.
+The configured result limit applies per native result set. Reaching it stops the remainder of the original batch; later writes may already have executed. Cancellation sends native TDS Attention and drains its acknowledgement before reuse. If synchronization cannot be confirmed within three seconds, the connection closes and asks you to reconnect and verify writes. Cancellation never promises rollback. Current source builds also recover cancellation during packet-spanning responses, preserving reusable sessions after a confirmed interruption. This fix is absent from the older Preview 2 packages.
 
 ## Tables and transactions
 

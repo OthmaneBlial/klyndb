@@ -1,6 +1,6 @@
 # Contributing
 
-Use Rust stable and Node 22.12+. Run the commands in the README before committing. Keep changes narrow and complete: working behavior, a focused test, honest compatibility documentation, then a commit.
+Use Rust stable and Node 22.12+. Validate each change with focused local checks covering the affected behavior before committing. Use the full local suite for broad changes and release preparation. Keep changes narrow and complete: working behavior, a focused test, honest compatibility documentation, then a commit.
 
 Development uses `main`; do not force-push or rewrite another contributor's history. External contributions may use pull requests. Avoid new dependencies where existing libraries/native platform features suffice.
 
@@ -12,4 +12,4 @@ See ARCHITECTURE.md for the driver contract. Add a real-server test and update d
 
 Update `ROADMAP.md` in every meaningful implementation commit with completed behavior, validation and the next unfinished milestone. Keep its evidence consistent with `docs/VALIDATION.md`.
 
-GitHub Actions is disabled by owner instruction. Run `./scripts/check.sh` locally before each working commit. Do not re-enable Actions or add automated workflow triggers without a new explicit owner instruction. Configure real integration test URLs only for disposable databases.
+GitHub Actions is disabled by owner instruction. Use `./scripts/check.sh` for the full local suite; routine commits need focused checks, not every engine and platform test. Do not re-enable Actions or add automated workflow triggers without a new explicit owner instruction. Configure real integration test URLs only for disposable databases.

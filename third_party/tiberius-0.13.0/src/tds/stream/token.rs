@@ -469,6 +469,7 @@ where
                 }
             }
 
+            this.conn.begin_token_read();
             let ty_byte = this.conn.read_u8().await?;
 
             let ty = TokenType::try_from(ty_byte)
@@ -503,6 +504,7 @@ where
                 // are already rejected by the `TokenType::try_from` above.
             };
 
+            this.conn.commit_token_read();
             Ok(Some((token, this)))
         });
 
@@ -672,6 +674,115 @@ mod tests {
 
     fn conn_over(payload: &[u8]) -> Connection<MockStream> {
         Connection::test_over(MockStream::new(packet_bytes(payload)), false)
+    }
+
+    #[tokio::test]
+    async fn dropped_partial_token_can_drain_attention_and_reuse_connection() {
+        use super::ReceivedToken;
+        use futures_util::{FutureExt, TryStreamExt};
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+
+        // ReturnStatus's tag is consumed before its four-byte value is ready.
+        // Only the Attention write releases the remainder, as on a slow peer.
+        struct SplitResponse {
+            prefix: std::io::Cursor<Vec<u8>>,
+            suffix: std::io::Cursor<Vec<u8>>,
+            attention: Arc<AtomicBool>,
+        }
+        impl AsyncRead for SplitResponse {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut TaskContext<'_>,
+                buf: &mut [u8],
+            ) -> Poll<io::Result<usize>> {
+                if self.prefix.position() < self.prefix.get_ref().len() as u64 {
+                    return Pin::new(&mut futures_util::io::AllowStdIo::new(&mut self.prefix))
+                        .poll_read(cx, buf);
+                }
+                if !self.attention.load(Ordering::Relaxed) {
+                    return Poll::Pending;
+                }
+                Pin::new(&mut futures_util::io::AllowStdIo::new(&mut self.suffix))
+                    .poll_read(cx, buf)
+            }
+        }
+        impl AsyncWrite for SplitResponse {
+            fn poll_write(
+                self: Pin<&mut Self>,
+                _: &mut TaskContext<'_>,
+                buf: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                assert!(matches!(buf[0], 0x06 | 0x01), "Attention or next SQL batch");
+                if buf[0] == 0x06 {
+                    self.attention.store(true, Ordering::Relaxed);
+                }
+                Poll::Ready(Ok(buf.len()))
+            }
+            fn poll_flush(self: Pin<&mut Self>, _: &mut TaskContext<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+            fn poll_close(self: Pin<&mut Self>, _: &mut TaskContext<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+        // One INT4 column named x, needed by both ordinary and null-compressed rows.
+        let metadata = [0x81, 1, 0, 0, 0, 0, 0, 0, 0, 0x38, 1, b'x', 0];
+        for token in [
+            &[0x79, 0x12, 0x34, 0x56, 0x78][..],
+            &[0xd1, 42, 0, 0, 0][..],
+            &[0xd2, 0, 42, 0, 0, 0][..],
+        ] {
+            for split in 1..token.len() {
+                let mut remainder = token[split..].to_vec();
+                remainder.extend(done_token(0x20, 0, 0));
+                let mut suffix = packet_bytes(&remainder);
+                suffix.extend(packet_bytes(&done_token(0, 0, 0)));
+                let attention = Arc::new(AtomicBool::new(false));
+                let mut prefix = vec![];
+                if token[0] != 0x79 {
+                    prefix.extend(normal_packet_bytes(&metadata));
+                }
+                prefix.extend(normal_packet_bytes(&token[..split]));
+                let mut conn = Connection::test_over(
+                    SplitResponse {
+                        prefix: std::io::Cursor::new(prefix),
+                        suffix: std::io::Cursor::new(suffix),
+                        attention: attention.clone(),
+                    },
+                    false,
+                );
+                if token[0] != 0x79 {
+                    assert!(matches!(
+                        TokenStream::new(&mut conn)
+                            .try_unfold()
+                            .try_next()
+                            .await
+                            .unwrap(),
+                        Some(ReceivedToken::NewResultset(_))
+                    ));
+                }
+                assert!(TokenStream::new(&mut conn)
+                    .try_unfold()
+                    .try_next()
+                    .now_or_never()
+                    .is_none());
+                conn.cancel_request()
+                    .await
+                    .expect("a partial decode must not lose the token boundary");
+                assert!(attention.load(Ordering::Relaxed));
+                conn.write_to_wire(PacketHeader::batch(1), BytesMut::new())
+                    .await
+                    .expect("send the next request");
+                conn.flush_sink().await.expect("flush the next request");
+                TokenStream::new(&mut conn)
+                    .flush_done()
+                    .await
+                    .expect("next response must remain synchronized");
+            }
+        }
     }
 
     // --- (a) flush_done precedence -----------------------------------------

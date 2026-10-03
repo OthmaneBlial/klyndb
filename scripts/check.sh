@@ -81,6 +81,11 @@ fi
 if [[ -n "${KLYNDB_TEST_MSSQL_URL:-}" ]]; then
   : "${KLYNDB_TEST_MSSQL_PASSWORD:?Set KLYNDB_TEST_MSSQL_PASSWORD for the disposable SQL Server}"
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_workflow --ignored
+  if [[ -n "${KLYNDB_TEST_MSSQL_FRAGMENTED_URL:-}" ]]; then
+    workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_partial_token_cancellation --ignored
+  else
+    echo 'SQL Server fragmented-response integration skipped: set KLYNDB_TEST_MSSQL_FRAGMENTED_URL to a disposable loopback tls=disabled fixture.'
+  fi
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_catalog --ignored
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_editing --ignored
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_imports --ignored

@@ -38,6 +38,149 @@ async fn answer(db: Arc<SqlServer>) {
     );
 }
 
+#[tokio::test]
+#[ignore = "Requires the disposable tls=disabled SQL Server; fragments real TDS responses before cancellation"]
+async fn real_sql_server_partial_token_cancellation() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::Notify;
+
+    async fn packet(reader: &mut (impl AsyncRead + Unpin)) -> std::io::Result<Option<Vec<u8>>> {
+        let first = match reader.read_u8().await {
+            Ok(byte) => byte,
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let mut header = [0u8; 8];
+        header[0] = first;
+        reader.read_exact(&mut header[1..]).await?;
+        let length = u16::from_be_bytes([header[2], header[3]]) as usize;
+        assert!(length >= 8, "invalid fixture TDS packet length");
+        let mut frame = vec![0; length];
+        frame[..8].copy_from_slice(&header);
+        reader.read_exact(&mut frame[8..]).await?;
+        Ok(Some(frame))
+    }
+    fn set_length(frame: &mut [u8]) {
+        let length = u16::try_from(frame.len()).unwrap().to_be_bytes();
+        frame[2..4].copy_from_slice(&length);
+    }
+
+    let address = std::env::var("KLYNDB_TEST_MSSQL_FRAGMENTED_URL").unwrap();
+    let password = std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap();
+    let url = url::Url::parse(&address).unwrap();
+    assert!(
+        url.query_pairs()
+            .any(|(key, value)| key == "tls" && value == "disabled"),
+        "packet-shaping uses only the disposable plaintext fixture; verified TLS has a separate contract"
+    );
+    let host = url.host_str().unwrap().to_owned();
+    assert!(
+        host == "localhost"
+            || host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback()),
+        "fragmentation fixture must stay on loopback"
+    );
+    let port = url.port().unwrap_or(1433);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = listener.local_addr().unwrap();
+    let split_at = Arc::new(AtomicUsize::new(0));
+    let prefix_sent = Arc::new(Notify::new());
+    let attention = Arc::new(Notify::new());
+    let proxy = {
+        let split_at = split_at.clone();
+        let prefix_sent = prefix_sent.clone();
+        let attention = attention.clone();
+        tokio::spawn(async move {
+            let (client, _) = listener.accept().await?;
+            let server = TcpStream::connect((host.as_str(), port)).await?;
+            let (mut client_read, mut client_write) = client.into_split();
+            let (mut server_read, mut server_write) = server.into_split();
+            let requests = async {
+                while let Some(frame) = packet(&mut client_read).await? {
+                    server_write.write_all(&frame).await?;
+                    if frame[0] == 0x06 {
+                        attention.notify_one();
+                    }
+                }
+                server_write.shutdown().await
+            };
+            let responses = async {
+                let mut id_shift = 0u8;
+                while let Some(mut frame) = packet(&mut server_read).await? {
+                    let final_packet = frame[1] & 1 != 0;
+                    frame[6] = frame[6].wrapping_add(id_shift);
+                    let cut = split_at.swap(0, Ordering::SeqCst);
+                    if cut != 0 {
+                        assert_eq!(frame[0], 0x04, "shape only a native server response");
+                        assert!(frame.len() > 8 + cut);
+                        let mut prefix = frame[..8 + cut].to_vec();
+                        prefix[1] &= !1; // The token continues in the next TDS packet.
+                        set_length(&mut prefix);
+                        client_write.write_all(&prefix).await?;
+                        prefix_sent.notify_one();
+                        attention.notified().await;
+                        frame.drain(8..8 + cut);
+                        set_length(&mut frame);
+                        frame[6] = frame[6].wrapping_add(1);
+                        id_shift = id_shift.wrapping_add(1);
+                    }
+                    client_write.write_all(&frame).await?;
+                    if final_packet {
+                        id_shift = 0;
+                    }
+                }
+                client_write.shutdown().await
+            };
+            tokio::try_join!(requests, responses)?;
+            Ok::<_, std::io::Error>(())
+        })
+    };
+    let db = Arc::new(
+        SqlServer::connect_via(&address, Some(&password), false, Some(endpoint))
+            .await
+            .unwrap(),
+    );
+    for cut in [1, 2, 5, 7] {
+        eprintln!("fragmented response: prefix {cut}");
+        split_at.store(cut, Ordering::SeqCst);
+        let token = CancellationToken::new();
+        let (sender, _receiver) = mpsc::channel(1);
+        let worker = {
+            let db = db.clone();
+            let token = token.clone();
+            tokio::spawn(async move {
+                db.execute("SELECT 1 AS value".into(), sender, token, 10)
+                    .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(5), prefix_sent.notified())
+            .await
+            .unwrap();
+        // The reader has a complete short packet and waits on the next field;
+        // only the outgoing Attention unlocks the rest of that actual response.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        token.cancel();
+        let error = tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.message, "Query cancelled", "partial token at {cut}");
+        answer(db.clone()).await;
+    }
+    db.disconnect().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), proxy)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}
+
 async fn import_batches(
     db: Arc<SqlServer>,
     table: Table,

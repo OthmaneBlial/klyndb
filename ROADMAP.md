@@ -2,7 +2,9 @@
 
 This roadmap preserves the full scope in docs/PRODUCT_SPEC.md. Checked implementation entries are not public release claims. Keep coding through the backlog after each tested, committed slice.
 
-**Current validation policy:** GitHub Actions is disabled at the owner's request (2026-10-02). Run `./scripts/check.sh` locally for every working milestone. Keep remote Actions disabled and do not add workflow triggers without a new explicit instruction. Historical CI results below describe completed runs before this policy change.
+**Current validation policy:** GitHub Actions is disabled at the owner's request (2026-10-02). Following the owner's delivery-speed request (2026-10-03), run focused local checks for routine changes and `./scripts/check.sh` for broad changes and release preparation. Keep remote Actions disabled and do not add workflow triggers without a new explicit instruction. Historical CI results below describe completed runs before this policy change.
+
+SQL Server partial-token cancellation recovery now preserves wire-byte checkpoints and reuses the same connection after confirmed interruption. The real split-response regression fails against the original decoder and passes at four prefixes with the fix; the existing verified-TLS SQL Server workflow passes too. All 976 retained SDK unit tests pass. Frontend checks, Rust formatting/Clippy and workspace test compilation pass; the broad run is intentionally stopped at the owner's request and is not claimed as a complete CI pass. The original recovery deadline remains unchanged; updated native acceptance and new packages remain pending. See [validation](docs/VALIDATION.md#sql-server-partial-token-cancellation-recovery--2026-10-03).
 
 ## Current source milestone — 2026-10-03
 

@@ -176,6 +176,8 @@ Build a native package with `npm run tauri build`. Platform targets are macOS, W
 
 ## 🧪 Local checks
 
+Use focused checks for the behavior you change. Run the full local suite for broad changes and release preparation:
+
 ```sh
 ./scripts/check.sh
 ```
