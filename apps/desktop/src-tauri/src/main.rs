@@ -6,7 +6,8 @@ use klyndb_core::import::{
 };
 use klyndb_core::{Engine, QueryStatus};
 use klyndb_driver_api::{
-    Capabilities, Change, MutationResult, Row, Table, TableInfo, TableQuery, TransactionState,
+    Capabilities, Change, MutationResult, RoutinePage, Row, Table, TableInfo, TableQuery,
+    TransactionState,
 };
 use std::sync::Arc;
 use tauri::{Manager, State};
@@ -169,6 +170,35 @@ async fn tables(engine: State<'_, Arc<Engine>>, id: String) -> ApiResult<Vec<Tab
         .await
         .map_err(api)?
         .tables()
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn routines(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    search: String,
+    offset: u32,
+) -> ApiResult<RoutinePage> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .routines(&search, offset)
+        .await
+        .map_err(api)
+}
+#[tauri::command]
+async fn routine_definition(
+    engine: State<'_, Arc<Engine>>,
+    id: String,
+    routine_id: String,
+) -> ApiResult<String> {
+    engine
+        .driver(&id)
+        .await
+        .map_err(api)?
+        .routine_definition(&routine_id)
         .await
         .map_err(api)
 }
@@ -541,6 +571,8 @@ fn main() {
             disconnect,
             tables,
             inspect_table,
+            routines,
+            routine_definition,
             table_select_sql,
             table_query_sql,
             diagram_tables,

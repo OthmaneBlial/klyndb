@@ -113,6 +113,7 @@ pub type Row = Vec<Cell>;
 pub struct Capabilities {
     pub affected_rows: bool,
     pub table_browse: bool,
+    pub routines: bool,
     pub diagrams: bool,
     pub transactions: bool,
     pub schemas: bool,
@@ -141,6 +142,22 @@ pub struct Table {
     pub schema: String,
     pub name: String,
     pub kind: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Routine {
+    /// Opaque identifier scoped to this native connection.
+    pub id: String,
+    pub schema: String,
+    pub name: String,
+    pub kind: String,
+    pub arguments: String,
+    pub returns: Option<String>,
+    pub language: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RoutinePage {
+    pub routines: Vec<Routine>,
+    pub has_more: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Column {
@@ -531,6 +548,16 @@ pub trait Session: Send + Sync {
         self.execute(sql, output, cancel, limit).await
     }
     async fn tables(&self) -> Result<Vec<Table>>;
+    /// On-demand, fixed-size catalog pages. Definitions are fetched separately.
+    async fn routines(&self, _search: &str, _offset: u32) -> Result<RoutinePage> {
+        Err(Error::new("This driver does not support routine browsing"))
+    }
+    async fn routine_definition(&self, _id: &str) -> Result<String> {
+        Err(Error::new(
+            "This driver does not support routine definitions",
+        ))
+    }
+
     async fn inspect(&self, table: &Table) -> Result<TableInfo>;
     async fn relationships(&self, _table: &Table) -> Result<Vec<ForeignKey>> {
         Err(Error::new(

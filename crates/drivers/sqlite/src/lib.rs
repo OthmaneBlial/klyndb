@@ -174,6 +174,7 @@ impl Session for Sqlite {
         Capabilities {
             affected_rows: true,
             table_browse: true,
+            routines: false,
             diagrams: true,
             transactions: true,
             schemas: false,

@@ -430,6 +430,7 @@ impl Session for ClickHouse {
         Capabilities {
             affected_rows: false,
             table_browse: true,
+            routines: false,
             diagrams: false,
             transactions: false,
             schemas: true,

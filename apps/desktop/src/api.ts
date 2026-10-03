@@ -14,6 +14,7 @@ export interface Connection {
 export interface Capabilities {
   affected_rows: boolean;
   table_browse: boolean;
+  routines: boolean;
   diagrams: boolean;
   transactions: boolean;
   schemas: boolean;
@@ -24,6 +25,19 @@ export interface Capabilities {
   import_sql: boolean;
   cancel: boolean;
   tls: boolean;
+}
+export interface Routine {
+  id: string;
+  schema: string;
+  name: string;
+  kind: string;
+  arguments: string;
+  returns: string | null;
+  language: string;
+}
+export interface RoutinePage {
+  routines: Routine[];
+  has_more: boolean;
 }
 export interface Table {
   schema: string;
@@ -250,6 +264,15 @@ interface Commands {
   };
   disconnect: { args: { id: string }; result: void };
   tables: { args: { id: string }; result: Table[] };
+  routines: {
+    args: { id: string; search: string; offset: number };
+    result: RoutinePage;
+  };
+  routine_definition: {
+    args: { id: string; routineId: string };
+    result: string;
+  };
+
   diagram_tables: { args: { id: string; tables: Table[] }; result: Diagram };
   export_diagram: {
     args: {

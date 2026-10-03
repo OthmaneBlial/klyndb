@@ -420,6 +420,7 @@ impl Session for SqlServer {
         Capabilities {
             affected_rows: false,
             table_browse: true,
+            routines: false,
             diagrams: true,
             transactions: true,
             schemas: true,

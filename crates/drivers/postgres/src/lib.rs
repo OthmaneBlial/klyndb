@@ -387,6 +387,7 @@ impl Session for Postgres {
         Capabilities {
             affected_rows: true,
             table_browse: true,
+            routines: true,
             diagrams: true,
             transactions: true,
             schemas: true,
@@ -452,6 +453,58 @@ impl Session for Postgres {
     async fn tables(&self) -> Result<Vec<Table>> {
         let _guard = self.serial.lock().await;
         self.client.query("SELECT table_schema,table_name,lower(table_type) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema,table_name", &[]).await.map_err(err).map(|rows| rows.iter().map(|r| Table { schema:r.get(0), name:r.get(1), kind:r.get(2) }).collect())
+    }
+    async fn routines(&self, search: &str, offset: u32) -> Result<RoutinePage> {
+        if search.len() > 1024 || offset > 1_000_000 {
+            return Err(Error::new(
+                "Routine search is limited to 1024 bytes and 1,000,000 rows of paging",
+            ));
+        }
+        let _guard = self.serial.lock().await;
+        let pattern = format!(
+            "%{}%",
+            search
+                .replace('!', "!!")
+                .replace('%', "!%")
+                .replace('_', "!_")
+        );
+        let rows = self.client.query(
+            "SELECT p.oid,n.nspname,p.proname,CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END,pg_catalog.pg_get_function_identity_arguments(p.oid),pg_catalog.pg_get_function_result(p.oid),l.lanname FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace JOIN pg_catalog.pg_language l ON l.oid=p.prolang WHERE p.prokind IN ('f','p','w') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND pg_catalog.has_schema_privilege(n.oid,'USAGE') AND (n.nspname || '.' || p.proname) ILIKE $1 ESCAPE '!' ORDER BY n.nspname,p.proname,p.oid LIMIT 101 OFFSET $2",
+            &[&pattern, &(offset as i64)],
+        ).await.map_err(err)?;
+        Ok(RoutinePage {
+            has_more: rows.len() > 100,
+            routines: rows
+                .into_iter()
+                .take(100)
+                .map(|row| Routine {
+                    id: row.get::<_, u32>(0).to_string(),
+                    schema: row.get(1),
+                    name: row.get(2),
+                    kind: row.get(3),
+                    arguments: row.get(4),
+                    returns: row.get(5),
+                    language: row.get(6),
+                })
+                .collect(),
+        })
+    }
+    async fn routine_definition(&self, id: &str) -> Result<String> {
+        let oid = id
+            .parse::<u32>()
+            .map_err(|_| Error::new("Invalid routine identifier"))?;
+        let _guard = self.serial.lock().await;
+        let row = self.client.query_opt(
+            "SELECT pg_catalog.pg_get_functiondef(p.oid) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE p.oid=$1 AND p.prokind IN ('f','p','w') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND pg_catalog.has_schema_privilege(n.oid,'USAGE')",
+            &[&oid],
+        ).await.map_err(err)?.ok_or_else(|| Error::new("Routine is no longer visible. Refresh the catalog."))?;
+        let definition: String = row.get(0);
+        if definition.len() > 2 * 1024 * 1024 {
+            return Err(Error::new(
+                "Routine definition exceeds the 2 MiB viewer limit",
+            ));
+        }
+        Ok(definition)
     }
     async fn execute_script(
         &self,

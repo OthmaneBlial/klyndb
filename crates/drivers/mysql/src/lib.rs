@@ -340,6 +340,7 @@ impl Session for Mysql {
         Capabilities {
             affected_rows: true,
             table_browse: true,
+            routines: false,
             diagrams: true,
             transactions: true,
             schemas: true,

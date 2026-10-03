@@ -73,6 +73,11 @@ const DiagramDialog = lazy(() =>
     default: m.DiagramDialog,
   })),
 );
+const RoutineBrowser = lazy(() =>
+  import("./components/RoutineBrowser").then((m) => ({
+    default: m.RoutineBrowser,
+  })),
+);
 import {
   defaults,
   restoreWorkspace,
@@ -103,6 +108,9 @@ export default function App() {
   const [dialog, setDialog] = useState<Connection | true | null>(null),
     [settings, setSettings] = useState(false),
     [diagramConnection, setDiagramConnection] = useState<Connection | null>(
+      null,
+    ),
+    [routineConnection, setRoutineConnection] = useState<Connection | null>(
       null,
     ),
     [palette, setPalette] = useState(false),
@@ -500,6 +508,7 @@ export default function App() {
     }
   }
   function clearConnection(id: string) {
+    setRoutineConnection((current) => (current?.id === id ? null : current));
     setConnected((s) => {
       const next = { ...s };
       delete next[id];
@@ -536,6 +545,7 @@ export default function App() {
       importDialogRef.current ||
       sqlImportRef.current ||
       diagramRef.current ||
+      routineConnection ||
       tabsRef.current.some(
         (t) =>
           t.connection === c.id &&
@@ -547,7 +557,7 @@ export default function App() {
       )
     ) {
       report(
-        "Finish the current operation, apply or discard staged changes, and close open import/diagram dialogs before reconnecting.",
+        "Finish the current operation, apply or discard staged changes, and close open import/diagram/routine dialogs before reconnecting.",
       );
       return;
     }
@@ -934,6 +944,15 @@ export default function App() {
           );
       },
     },
+    ...(connection && connected[connection.id]?.routines
+      ? [
+          {
+            name: "Browse functions & procedures",
+            key: "",
+            action: () => setRoutineConnection(connection),
+          },
+        ]
+      : []),
     { name: "Saved queries", key: "", action: () => setSavedOpen(true) },
     {
       name: "Query history",
@@ -969,7 +988,12 @@ export default function App() {
   ];
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (importDialogRef.current || sqlImportRef.current || diagramRef.current)
+      if (
+        importDialogRef.current ||
+        sqlImportRef.current ||
+        diagramRef.current ||
+        routineConnection
+      )
         return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
@@ -1159,6 +1183,14 @@ export default function App() {
                         </div>
                         {expanded[c.id] && connected[c.id] && (
                           <div className="tables-list">
+                            {connected[c.id]?.routines && (
+                              <button
+                                className="diagram-open"
+                                onClick={() => setRoutineConnection(c)}
+                              >
+                                <FileCode2 size={13} /> Functions & procedures
+                              </button>
+                            )}
                             {connected[c.id]?.diagrams && (
                               <button
                                 className="diagram-open"
@@ -1603,6 +1635,23 @@ export default function App() {
           </div>
         )}
       </main>
+      {routineConnection && connected[routineConnection.id]?.routines && (
+        <Suspense fallback={null}>
+          <RoutineBrowser
+            key={routineConnection.id}
+            connection={routineConnection}
+            onClose={() => setRoutineConnection(null)}
+            onOpen={(routine, definition) => {
+              const tab = newTab(
+                routineConnection.id,
+                definition,
+                `${routine.schema}.${routine.name}`,
+              );
+              if (tab) setRoutineConnection(null);
+            }}
+          />
+        </Suspense>
+      )}
       {dialog && (
         <ConnectionDialog
           initial={dialog === true ? undefined : dialog}

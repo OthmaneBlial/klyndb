@@ -490,6 +490,7 @@ impl Session for DuckDb {
         Capabilities {
             affected_rows: true,
             table_browse: true,
+            routines: false,
             diagrams: true,
             transactions: true,
             schemas: true,
