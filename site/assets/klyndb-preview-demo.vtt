@@ -6,14 +6,23 @@ Klyndb: a free, open-source alternative to DBeaver. Captioned screenshot walkthr
 00:00:04.000 --> 00:00:14.000
 SQL tabs. Real results. Your workspace. Actual native macOS screenshot / SQLite + MySQL / 10,000 synthetic rows
 
-00:00:14.000 --> 00:00:24.000
+00:00:14.000 --> 00:00:20.000
+Filter MongoDB documents. Keep exact BSON. Actual native macOS debug app / real MongoDB 8.0.32 / synthetic records
+
+00:00:20.000 --> 00:00:26.000
+Group documents with a real aggregation pipeline. Actual native macOS debug app / EU 102 + US 103 / read-only pipeline
+
+00:00:26.000 --> 00:00:32.000
+Review production writes before they run. Actual native macOS debug app / original BSON conflict guard / canceled without writing
+
+00:00:32.000 --> 00:00:42.000
 Explore Redis keys, types and TTLs. Browser component preview / captured Redis fixture values / simulated IPC
 
-00:00:24.000 --> 00:00:31.000
+00:00:42.000 --> 00:00:49.000
 Inspect the original bytes. Browser component preview / captured Redis fixture values / simulated IPC
 
-00:00:31.000 --> 00:00:40.000
-Review production writes before they run. Browser component preview / simulated IPC / no write executed in this scene
+00:00:49.000 --> 00:00:58.000
+Review native data commands. Browser component preview / simulated IPC / no write executed in this scene
 
-00:00:40.000 --> 00:00:46.000
-Eight engines in current source builds. Preview 1 includes PostgreSQL, MySQL, MariaDB and SQLite. Star github.com/OthmaneBlial/klyndb.
+00:00:58.000 --> 00:01:04.000
+Nine engines in current source builds. Preview 1 includes PostgreSQL, MySQL, MariaDB and SQLite. Star github.com/OthmaneBlial/klyndb.

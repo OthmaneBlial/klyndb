@@ -1,22 +1,25 @@
-# Klyndb preview walkthrough
+# 🎬 Klyndb in 64 seconds
 
-[Watch the 46-second video](https://othmaneblial.github.io/klyndb/#demo) · [Download MP4](https://othmaneblial.github.io/klyndb/assets/klyndb-preview-demo.mp4)
+[▶ Watch the demo](https://othmaneblial.github.io/klyndb/#demo) · [Download MP4](https://othmaneblial.github.io/klyndb/assets/klyndb-preview-demo.mp4)
 
-This silent, captioned **screenshot walkthrough** was assembled on 2026-10-03. It is not a continuous desktop screen recording and does not establish desktop acceptance of the Redis driver.
+A silent, captioned **screenshot walkthrough**, refreshed on 2026-10-03. SQL and MongoDB scenes are actual native macOS captures. Redis scenes use the production React component with captured disposable-server values and **simulated presentation IPC**. This is an edited screenshot tour rather than a continuous screen recording.
 
-| Time | Scene | What is shown |
+| Time | Scene | What you see |
 | --- | --- | --- |
-| 00:00–00:04 | Your databases. Your rules. | Original Klyndb title card. Free, open-source alternative to DBeaver. |
-| 00:04–00:14 | SQL tabs. Real results. Your workspace. | Existing actual native macOS screenshot: SQLite and MySQL connections, SQL tabs and a 10,000-row SQLite result with synthetic records. |
-| 00:14–00:24 | Explore Redis keys, types and TTLs. | Production `KeyValueWorkspace` React component displaying catalog/hash values captured from the disposable Redis 7.4.11 integration fixture. |
-| 00:24–00:31 | Inspect the original bytes. | The same component displaying the captured binary string exactly as `0x6100ff`. |
-| 00:31–00:40 | Review production writes before they run. | Production-write confirmation and exact JSON argument array; canceled without execution. |
-| 00:40–00:46 | Eight engines. One workspace. | Current source-build engines, downloadable Preview 1's four-engine scope and the project star link. |
+| 00:00–00:04 | Your databases. Your rules. | Original Klyndb title card: free, open-source alternative to DBeaver. |
+| 00:04–00:14 | SQL tabs. Real results. | Native macOS workspace with SQLite/MySQL connections and a 10,000-row SQLite result of synthetic records. |
+| 00:14–00:20 | Filter MongoDB documents. | Native JSON filter and ordered sort against a real MongoDB 8.0.32 disposable database. |
+| 00:20–00:26 | Aggregate documents. | Native grouping pipeline returns EU=102 and US=103 from 205 synthetic documents. |
+| 00:26–00:32 | Review production writes. | Actual native production review with original BSON conflict protection and exact 64-bit integer text; canceled without submitting a write. |
+| 00:32–00:42 | Explore Redis keys. | Production component showing captured Redis 7.4.11 hash values, types and TTLs with simulated IPC. |
+| 00:42–00:49 | Inspect original bytes. | Captured binary string represented exactly as `0x6100ff`. |
+| 00:49–00:58 | Review data commands. | Component preview of production confirmation and exact JSON arguments; canceled without execution. |
+| 00:58–01:04 | Nine engines. One workspace. | Source-build engines, downloadable Preview 1 scope and the GitHub star link. |
 
-Redis scenes use **simulated Tauri IPC** for presentation, including the scan cursor and command classification. Values come from actual disposable-server contract artifacts. Backend integration separately verifies native commands, six value types, cursor paging, ACL/read-only and production guards, verified TLS/mTLS and bounded replies; see [validation evidence](VALIDATION.md) and [Redis workflow](REDIS.md). No live Redis command reply is presented as a successful native desktop write.
+The MongoDB scenes come from the actual embedded `tauri://localhost` source debug app at `2cb5488`, with real native IPC. Separate native acceptance includes paging, indexes, insert/replace/delete, independent tabs and session invalidation; see [validation evidence](VALIDATION.md). They do not establish optimized-release or broader platform acceptance. Redis backend/transport contracts are independently verified; its native desktop acceptance remains pending.
 
-The native screenshot is [workbench-macos.jpg](assets/workbench-macos.jpg). Original title/closing cards use the existing local IBM Plex font assets. New browser frames were captured through CUA; the raw frames and FFmpeg build recipe remain in ignored `artifacts/demo-2026-10-03/`. Original branding and synthetic records only; no credentials or user databases are included.
+The native images are [SQL workspace](assets/workbench-macos.jpg) and [MongoDB aggregation](assets/mongodb-macos.jpg). All records are synthetic. No credentials or user databases appear. Original title/closing/poster cards reuse the local IBM Plex fonts. Raw CUA captures and FFmpeg recipes remain in ignored `artifacts/demo-2026-10-03/` and `artifacts/demo-native-mongodb/`.
 
-Delivery: H.264/MP4, 1920 × 1080, 30 fps, YUV 4:2:0, fast-start metadata, 46 seconds, no audio. The website provides native video controls, inline mobile playback, a downloadable MP4, a poster and English WebVTT captions. README links to the website player because portable Markdown video rendering varies.
+Delivery: H.264/MP4, 1920 × 1080, 30 fps, YUV 4:2:0, fast-start metadata, 64 seconds, no audio. The website has native playback controls, mobile inline playback, English WebVTT captions, a poster and direct download. README links to the player because portable Markdown video rendering varies.
 
-A fresh continuous native-app recording remains pending until native window capture is available. This walkthrough keeps the present evidence visible without claiming broader platform or release readiness.
+A continuous native recording and broader Redis/platform acceptance remain on the roadmap.

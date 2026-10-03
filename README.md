@@ -46,15 +46,15 @@
 
 ## 🎬 Meet your next database client
 
-[![Watch the 46-second Klyndb preview walkthrough](site/assets/demo-poster.jpg)](https://othmaneblial.github.io/klyndb/#demo)
+[![Watch the 64-second Klyndb preview walkthrough](site/assets/demo-poster.jpg)](https://othmaneblial.github.io/klyndb/#demo)
 
 <p align="center">
-  <a href="https://othmaneblial.github.io/klyndb/#demo"><strong>▶ Watch the 46-second demo</strong></a> ·
+  <a href="https://othmaneblial.github.io/klyndb/#demo"><strong>▶ Watch the 64-second demo</strong></a> ·
   <a href="https://othmaneblial.github.io/klyndb/assets/klyndb-preview-demo.mp4">Download MP4</a> ·
   <a href="docs/DEMO.md">Scene guide</a>
 </p>
 
-A captioned screenshot walkthrough of **SQL tabs and results**, **Redis key inspection**, and **production-write review**. SQL footage is an actual native macOS screenshot; Redis scenes show the production React component with captured test-server values and simulated IPC.
+A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and aggregation**, **Redis key inspection**, and **production-write review**. SQL and MongoDB scenes are real native macOS captures with synthetic data. Redis scenes use captured test-server values and simulated IPC.
 
 <details>
 <summary>📸 See the native macOS workspace</summary>
@@ -62,6 +62,11 @@ A captioned screenshot walkthrough of **SQL tabs and results**, **Redis key insp
 <p align="center">
   <img src="docs/assets/workbench-macos.jpg" alt="Actual Klyndb macOS application with connected SQLite and MySQL databases, SQL tabs and a 10,000-row SQLite result" width="100%" />
   <br /><sub>Captured from the native macOS app with 10,000 synthetic test records in a local validation database.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/mongodb-macos.jpg" alt="Actual native Klyndb macOS MongoDB aggregation pipeline returning EU 102 and US 103 from a disposable database" width="100%" />
+  <br /><sub>Real MongoDB aggregation in the native source debug app. Synthetic records only.</sub>
 </p>
 
 </details>
