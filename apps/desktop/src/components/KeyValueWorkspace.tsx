@@ -18,6 +18,7 @@ import {
 } from "../api";
 import { formatKeyValue, keyLabel, ttlLabel } from "../keyValue";
 import { Modal } from "./Modal";
+import { keyResultBytes } from "../transientWorkspace";
 
 export function KeyReply({ value }: { value: KeyValue }) {
   return (
@@ -66,6 +67,7 @@ export function KeyValueWorkspace({
   workspaceRef,
   initialState,
   onRemember,
+  onBackground,
   blocked = false,
 }: {
   connection?: Connection;
@@ -80,53 +82,25 @@ export function KeyValueWorkspace({
     bytes: number,
     clear: typeof clearKeyResults,
   ) => void;
+  onBackground?: (patch: Partial<KeyWorkspaceState>) => void;
   blocked?: boolean;
 }) {
-  const [pattern, setPattern] = useState(initialState?.pattern ?? "*");
-  const [page, setPage] = useState<KeyScan | null>(initialState?.page ?? null);
-  const [applied, setApplied] = useState(initialState?.applied ?? "*");
-  const [selected, setSelected] = useState<Cell | null>(
-    initialState?.selected ?? null,
-  );
-  const [inspection, setInspection] = useState<KeyInspection | null>(
-    initialState?.inspection ?? null,
-  );
-  const [positions, setPositions] = useState<string[]>(
-    initialState?.positions ?? [],
-  );
-  const [reply, setReply] = useState<KeyValue | null>(
-    initialState?.reply ?? null,
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(initialState?.error ?? "");
-  const [message, setMessage] = useState(initialState?.message ?? "");
-  const [confirm, setConfirm] = useState<{
-    text: string;
-    info: KeyCommandInfo;
-  } | null>(null);
-  const retainedBytes = useMemo(
-    () => JSON.stringify({ page, inspection, reply, positions }).length * 2,
-    [page, inspection, reply, positions],
-  );
-  useEffect(() => {
-    onRemember?.(
-      {
+  const [state, setState] = useState<KeyWorkspaceState>(
+    () =>
+      initialState ?? {
         kind: "key_value",
-        pattern,
-        page,
-        applied,
-        selected,
-        inspection,
-        positions,
-        reply,
-        error,
-        message,
+        pattern: "*",
+        page: null,
+        applied: "*",
+        selected: null,
+        inspection: null,
+        positions: [],
+        reply: null,
+        error: "",
+        message: "",
       },
-      retainedBytes,
-      clearKeyResults,
-    );
-  }, [
-    onRemember,
+  );
+  const {
     pattern,
     page,
     applied,
@@ -136,8 +110,19 @@ export function KeyValueWorkspace({
     reply,
     error,
     message,
-    retainedBytes,
-  ]);
+  } = state;
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<{
+    text: string;
+    info: KeyCommandInfo;
+  } | null>(null);
+  const retainedBytes = useMemo(
+    () => keyResultBytes({ page, inspection, reply, positions }),
+    [page, inspection, reply, positions],
+  );
+  useEffect(() => {
+    onRemember?.(state, retainedBytes, clearKeyResults);
+  }, [onRemember, state, retainedBytes]);
   const live = useRef(true),
     pending = useRef(false);
   useEffect(() => {
@@ -146,16 +131,20 @@ export function KeyValueWorkspace({
       live.current = false;
     };
   }, []);
+  function update(patch: Partial<KeyWorkspaceState>) {
+    if (live.current) setState((previous) => ({ ...previous, ...patch }));
+    else onBackground?.(patch);
+  }
   async function work(task: (id: string) => Promise<void>) {
     if (!connection || !ready || blocked || pending.current) return;
     pending.current = true;
     setBusy(true);
     onBusy(true);
-    setError("");
+    update({ error: "" });
     try {
       await task(connection.id);
     } catch (error) {
-      if (live.current) setError(String(error));
+      update({ error: String(error) });
     } finally {
       pending.current = false;
       onBusy(false);
@@ -165,22 +154,18 @@ export function KeyValueWorkspace({
   function scan(cursor: string, query: string) {
     void work(async (id) => {
       const result = await api("scan_keys", { id, pattern: query, cursor });
-      if (live.current) {
-        setPage(result);
-        setApplied(query);
-        setMessage("");
-      }
+      update({ page: result, applied: query, message: "" });
     });
   }
   function inspect(key: Cell, position: string, previous: string[]) {
     void work(async (id) => {
       const result = await api("inspect_key", { id, key, position });
-      if (live.current) {
-        setSelected(key);
-        setInspection(result);
-        setPositions(previous);
-        setMessage("");
-      }
+      update({
+        selected: key,
+        inspection: result,
+        positions: previous,
+        message: "",
+      });
     });
   }
   async function execute(text: string, confirmed = false) {
@@ -188,21 +173,21 @@ export function KeyValueWorkspace({
       const info = await api("key_command_info", { id, text });
       if (connection?.read_only && info.writes)
         throw new Error("This Redis connection is read-only");
-      if (!live.current) return;
       if (
         connection?.environment === "production" &&
         info.writes &&
         !confirmed
       ) {
-        setConfirm({ text, info });
+        if (live.current) setConfirm({ text, info });
+        else
+          update({
+            message:
+              "Production command not submitted. Return to this tab and run it again to review.",
+          });
         return;
       }
       const result = await api("key_command", { id, text, confirmed });
-      if (live.current) {
-        setReply(result);
-        setMessage("");
-        setInspection(null);
-      }
+      update({ reply: result, message: "", inspection: null });
     });
   }
   const disabled = !ready || busy || blocked;
@@ -233,7 +218,7 @@ export function KeyValueWorkspace({
               aria-label="Key search pattern"
               value={pattern}
               maxLength={1024}
-              onChange={(event) => setPattern(event.target.value)}
+              onChange={(event) => update({ pattern: event.target.value })}
               placeholder="cache:*"
               disabled={busy || blocked}
             />

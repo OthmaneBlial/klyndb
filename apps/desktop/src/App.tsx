@@ -59,7 +59,11 @@ import type {
   KeyWorkspaceHandle,
   KeyWorkspaceState,
 } from "./components/KeyValueWorkspace";
-import { TransientWorkspaceCache } from "./transientWorkspace";
+import {
+  TransientWorkspaceCache,
+  documentResultBytes,
+  keyResultBytes,
+} from "./transientWorkspace";
 import type { SqlSubmission } from "./sql";
 import { tableKey } from "./diagram";
 const KeyValueWorkspace = lazy(() =>
@@ -183,6 +187,9 @@ export default function App() {
   );
   const keyStates = useRef(
     new TransientWorkspaceCache<KeyWorkspaceState>(16 * 1024 * 1024),
+  );
+  const [nativeVersions, setNativeVersions] = useState<Record<string, number>>(
+    {},
   );
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const applyingRef = useRef(applying);
@@ -481,6 +488,11 @@ export default function App() {
     });
     documentStates.current.forget(id);
     keyStates.current.forget(id);
+    setNativeVersions((previous) => {
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
     setTabs((t) => t.filter((tab) => tab.id !== id));
     if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
   }
@@ -1600,11 +1612,20 @@ export default function App() {
                 }
               >
                 <DocumentWorkspace
-                  key={`${current.id}-${current.connection}-${!!connected[current.connection]}`}
+                  key={`${current.id}-${current.connection}-${!!connected[current.connection]}-${nativeVersions[current.id] ?? 0}`}
                   connection={connection}
                   ready={!!connected[current.connection]?.document_queries}
                   workspaceRef={documentWorkspaceRef}
                   initialState={documentStates.current.restore(current.id)}
+                  onBackground={documentStates.current.background(
+                    current.id,
+                    documentResultBytes,
+                    () =>
+                      setNativeVersions((previous) => ({
+                        ...previous,
+                        [current.id]: (previous[current.id] ?? 0) + 1,
+                      })),
+                  )}
                   onRemember={(state, bytes, clear) =>
                     documentStates.current.remember(
                       current.id,
@@ -1633,10 +1654,19 @@ export default function App() {
                 }
               >
                 <KeyValueWorkspace
-                  key={`${current.id}-${current.connection}-${!!connected[current.connection]}`}
+                  key={`${current.id}-${current.connection}-${!!connected[current.connection]}-${nativeVersions[current.id] ?? 0}`}
                   connection={connection}
                   workspaceRef={keyWorkspaceRef}
                   initialState={keyStates.current.restore(current.id)}
+                  onBackground={keyStates.current.background(
+                    current.id,
+                    keyResultBytes,
+                    () =>
+                      setNativeVersions((previous) => ({
+                        ...previous,
+                        [current.id]: (previous[current.id] ?? 0) + 1,
+                      })),
+                  )}
                   onRemember={(state, bytes, clear) =>
                     keyStates.current.remember(current.id, state, bytes, clear)
                   }

@@ -17,6 +17,7 @@ import {
   type Table,
 } from "../api";
 import { Modal } from "./Modal";
+import { documentResultBytes } from "../transientWorkspace";
 
 function JsonTree({
   value,
@@ -101,6 +102,7 @@ export function DocumentWorkspace({
   workspaceRef,
   initialState,
   onRemember,
+  onBackground,
   blocked = false,
 }: {
   connection?: Connection;
@@ -113,83 +115,39 @@ export function DocumentWorkspace({
     bytes: number,
     clear: typeof clearDocumentResults,
   ) => void;
+  onBackground?: (patch: Partial<DocumentWorkspaceState>) => void;
   blocked?: boolean;
 }) {
-  const [database, setDatabase] = useState(() => {
-    if (initialState) return initialState.database;
+  const [state, setState] = useState<DocumentWorkspaceState>(() => {
+    if (initialState) return initialState;
+    let database = "";
     try {
-      return decodeURIComponent(
+      database = decodeURIComponent(
         new URL(connection?.address ?? "").pathname.slice(1),
       );
     } catch {
-      return "";
+      /* Optional URL database. */
     }
+    return {
+      kind: "document",
+      database,
+      databases: [],
+      collections: [],
+      search: "",
+      collection: null,
+      text: "{}",
+      sort: "{}",
+      aggregate: false,
+      page: null,
+      applied: null,
+      selected: null,
+      indexes: null,
+      tree: false,
+      error: "",
+      message: "",
+    };
   });
-  const [databases, setDatabases] = useState<string[]>(
-    initialState?.databases ?? [],
-  );
-  const [collections, setCollections] = useState<Table[]>(
-    initialState?.collections ?? [],
-  );
-  const [search, setSearch] = useState(initialState?.search ?? "");
-  const [collection, setCollection] = useState<Table | null>(
-    initialState?.collection ?? null,
-  );
-  const [text, setText] = useState(initialState?.text ?? "{}");
-  const [sort, setSort] = useState(initialState?.sort ?? "{}");
-  const [aggregate, setAggregate] = useState(initialState?.aggregate ?? false);
-  const [page, setPage] = useState<DocumentPage | null>(
-    initialState?.page ?? null,
-  );
-  const [applied, setApplied] = useState<DocumentQuery | null>(
-    initialState?.applied ?? null,
-  );
-  const [selected, setSelected] = useState<DocumentRecord | null>(
-    initialState?.selected ?? null,
-  );
-  const [indexes, setIndexes] = useState<string[] | null>(
-    initialState?.indexes ?? null,
-  );
-  const [tree, setTree] = useState(initialState?.tree ?? false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(initialState?.error ?? "");
-  const [message, setMessage] = useState(initialState?.message ?? "");
-  const [edit, setEdit] = useState<{
-    change: DocumentChange;
-    review: boolean;
-    database: string;
-    collection: string;
-  } | null>(null);
-  // Estimate retained UTF-16 payload once per reply, not on every keystroke.
-  const retainedBytes = useMemo(
-    () => JSON.stringify({ databases, collections, page, indexes }).length * 2,
-    [databases, collections, page, indexes],
-  );
-  useEffect(() => {
-    onRemember?.(
-      {
-        kind: "document",
-        database,
-        databases,
-        collections,
-        search,
-        collection,
-        text,
-        sort,
-        aggregate,
-        page,
-        applied,
-        selected,
-        indexes,
-        tree,
-        error,
-        message,
-      },
-      retainedBytes,
-      clearDocumentResults,
-    );
-  }, [
-    onRemember,
+  const {
     database,
     databases,
     collections,
@@ -205,8 +163,22 @@ export function DocumentWorkspace({
     tree,
     error,
     message,
-    retainedBytes,
-  ]);
+  } = state;
+  const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState<{
+    change: DocumentChange;
+    review: boolean;
+    database: string;
+    collection: string;
+  } | null>(null);
+  // Estimate retained UTF-16 payload once per reply, not on every keystroke.
+  const retainedBytes = useMemo(
+    () => documentResultBytes({ databases, collections, page, indexes }),
+    [databases, collections, page, indexes],
+  );
+  useEffect(() => {
+    onRemember?.(state, retainedBytes, clearDocumentResults);
+  }, [onRemember, state, retainedBytes]);
   const pending = useRef(false),
     live = useRef(true);
   useEffect(() => {
@@ -215,16 +187,20 @@ export function DocumentWorkspace({
       live.current = false;
     };
   }, []);
+  function update(patch: Partial<DocumentWorkspaceState>) {
+    if (live.current) setState((previous) => ({ ...previous, ...patch }));
+    else onBackground?.(patch);
+  }
   async function work(task: (id: string) => Promise<void>) {
     if (!connection || !ready || blocked || pending.current) return;
     pending.current = true;
     setBusy(true);
     onBusy(true);
-    setError("");
+    update({ error: "" });
     try {
       await task(connection.id);
     } catch (error) {
-      if (live.current) setError(String(error));
+      update({ error: String(error) });
     } finally {
       pending.current = false;
       onBusy(false);
@@ -234,22 +210,20 @@ export function DocumentWorkspace({
   function loadCollections() {
     void work(async (id) => {
       const result = await api("document_collections", { id, database });
-      if (live.current) {
-        setCollections(result);
-        setCollection((previous) =>
-          previous
-            ? (result.find(
-                (item) =>
-                  item.schema === previous.schema &&
-                  item.name === previous.name,
-              ) ?? null)
-            : null,
-        );
-        setPage(null);
-        setSelected(null);
-        setIndexes(null);
-        setApplied(null);
-      }
+      update({
+        collections: result,
+        collection: collection
+          ? (result.find(
+              (item) =>
+                item.schema === collection.schema &&
+                item.name === collection.name,
+            ) ?? null)
+          : null,
+        page: null,
+        selected: null,
+        indexes: null,
+        applied: null,
+      });
     });
   }
   function run(
@@ -264,28 +238,26 @@ export function DocumentWorkspace({
   ) {
     void work(async (id) => {
       const result = await api("document_query", { id, query });
-      if (live.current) {
-        setPage(result);
-        setApplied(query);
-        setSelected(null);
-        setIndexes(null);
-        setMessage("");
-      }
+      update({
+        page: result,
+        applied: query,
+        selected: null,
+        indexes: null,
+        message: "",
+      });
     });
   }
   function choose(item: Table) {
-    setPage(null);
-    setApplied(null);
-    setCollection(item);
     const same =
       collection?.schema === item.schema && collection?.name === item.name;
-    if (!same) {
-      setText("{}");
-      setSort("{}");
-      setAggregate(false);
-    }
-    setSelected(null);
-    setIndexes(null);
+    update({
+      collection: item,
+      page: null,
+      applied: null,
+      selected: null,
+      indexes: null,
+      ...(same ? {} : { text: "{}", sort: "{}", aggregate: false }),
+    });
     run({
       database: item.schema,
       collection: item.name,
@@ -330,16 +302,15 @@ export function DocumentWorkspace({
         change: reviewed.change,
         confirmed: true,
       });
-      if (!live.current) return;
-      setMessage(
-        `${result.affected} document${result.affected === 1 ? "" : "s"} changed. Write acknowledged.`,
-      );
-      setSelected(null);
-      setPage(null);
+      update({
+        message: `${result.affected} document${result.affected === 1 ? "" : "s"} changed. Write acknowledged.`,
+        selected: null,
+        page: null,
+      });
       if (applied) {
         try {
           const result = await api("document_query", { id, query: applied });
-          if (live.current) setPage(result);
+          update({ page: result });
         } catch (error) {
           throw new Error(`Write acknowledged, but refresh failed. ${error}`);
         }
@@ -367,13 +338,15 @@ export function DocumentWorkspace({
               maxLength={255}
               disabled={busy || blocked}
               onChange={(e) => {
-                setDatabase(e.target.value);
-                setCollections([]);
-                setCollection(null);
-                setPage(null);
-                setSelected(null);
-                setApplied(null);
-                setIndexes(null);
+                update({
+                  database: e.target.value,
+                  collections: [],
+                  collection: null,
+                  page: null,
+                  selected: null,
+                  applied: null,
+                  indexes: null,
+                });
               }}
             />
           </label>
@@ -388,7 +361,7 @@ export function DocumentWorkspace({
               onClick={() =>
                 void work(async (id) => {
                   const result = await api("document_databases", { id });
-                  if (live.current) setDatabases(result);
+                  update({ databases: result });
                 })
               }
             >
@@ -402,7 +375,7 @@ export function DocumentWorkspace({
             aria-label="Filter collections"
             placeholder="Filter collections…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => update({ search: e.target.value })}
           />
         </div>
         <div className="key-list">
@@ -474,8 +447,7 @@ export function DocumentWorkspace({
                 value={aggregate ? "aggregate" : "find"}
                 onChange={(e) => {
                   const next = e.target.value === "aggregate";
-                  setAggregate(next);
-                  setText(next ? "[]" : "{}");
+                  update({ aggregate: next, text: next ? "[]" : "{}" });
                 }}
               >
                 <option value="find">Find documents</option>
@@ -493,7 +465,7 @@ export function DocumentWorkspace({
                   value={sort}
                   maxLength={16384}
                   disabled={busy || blocked}
-                  onChange={(e) => setSort(e.target.value)}
+                  onChange={(e) => update({ sort: e.target.value })}
                 />
               </label>
             )}
@@ -508,7 +480,7 @@ export function DocumentWorkspace({
               maxLength={1024 * 1024}
               spellCheck={false}
               disabled={busy || blocked}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => update({ text: e.target.value })}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                   e.preventDefault();
@@ -541,7 +513,7 @@ export function DocumentWorkspace({
                       database: collection!.schema,
                       collection: collection!.name,
                     });
-                    if (live.current) setIndexes(result);
+                    update({ indexes: result });
                   })
                 }
               >
@@ -549,7 +521,7 @@ export function DocumentWorkspace({
               </button>
               <button
                 disabled={disabled || !page}
-                onClick={() => setIndexes(null)}
+                onClick={() => update({ indexes: null })}
               >
                 Documents
               </button>
@@ -579,7 +551,7 @@ export function DocumentWorkspace({
                   <button
                     key={index}
                     className={`document-card ${row === selected ? "selected" : ""}`}
-                    onClick={() => setSelected(row)}
+                    onClick={() => update({ selected: row })}
                     disabled={disabled}
                   >
                     <small>Document {(applied?.offset ?? 0) + index + 1}</small>
@@ -626,10 +598,16 @@ export function DocumentWorkspace({
               aria-label="Selected document"
             >
               <div className="document-actions">
-                <button onClick={() => setTree(false)} aria-pressed={!tree}>
+                <button
+                  onClick={() => update({ tree: false })}
+                  aria-pressed={!tree}
+                >
                   JSON
                 </button>
-                <button onClick={() => setTree(true)} aria-pressed={tree}>
+                <button
+                  onClick={() => update({ tree: true })}
+                  aria-pressed={tree}
+                >
                   Tree
                 </button>
                 <button

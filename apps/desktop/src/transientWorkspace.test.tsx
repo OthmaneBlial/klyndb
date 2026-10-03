@@ -10,7 +10,11 @@ import {
   KeyValueWorkspace,
   type KeyWorkspaceState,
 } from "./components/KeyValueWorkspace";
-import { TransientWorkspaceCache } from "./transientWorkspace";
+import {
+  TransientWorkspaceCache,
+  documentResultBytes,
+  keyResultBytes,
+} from "./transientWorkspace";
 import type { Connection } from "./api";
 
 const connection = {
@@ -174,4 +178,84 @@ test("Redis restores scan cursor and exact reply, then clears server data on ses
   expect(cache.restore("redis")?.reply).toBeNull();
   expect(cache.restore("redis")?.positions).toEqual([]);
   expect(cache.restore("redis")?.selected).toBeNull();
+});
+
+test("late MongoDB replies merge into the current draft and retain acknowledged writes with refresh errors", () => {
+  const cache = new TransientWorkspaceCache<DocumentWorkspaceState>();
+  let renders = 0;
+  const receive = cache.background(
+    "mongo",
+    documentResultBytes,
+    () => renders++,
+  );
+  cache.remember(
+    "mongo",
+    document,
+    documentResultBytes(document),
+    clearDocumentResults,
+  );
+  cache.remember(
+    "mongo",
+    { ...document, search: "latest search", tree: true },
+    documentResultBytes(document),
+    clearDocumentResults,
+  );
+  receive({
+    message: "1 document changed. Write acknowledged.",
+    page: null,
+    selected: null,
+  });
+  receive({ error: "Write acknowledged, but refresh failed." });
+  const restored = cache.restore("mongo")!;
+  expect(restored.search).toBe("latest search");
+  expect(restored.tree).toBe(true);
+  expect(restored.text).toBe(document.text);
+  expect(restored.message).toContain("Write acknowledged");
+  expect(restored.error).toContain("refresh failed");
+  expect(restored.page).toBeNull();
+  expect(restored.selected).toBeNull();
+  expect(renders).toBe(2);
+});
+
+test("session changes, close and reassignment reject old replies without affecting other tabs", () => {
+  const cache = new TransientWorkspaceCache<KeyWorkspaceState>();
+  let renders = 0;
+  cache.remember("redis", key, keyResultBytes(key), clearKeyResults);
+  cache.remember("other", key, keyResultBytes(key), clearKeyResults);
+  const old = cache.background("redis", keyResultBytes, () => renders++);
+  const other = cache.background("other", keyResultBytes, () => renders++);
+  cache.invalidate("redis");
+  old({ reply: key.reply });
+  expect(cache.restore("redis")?.reply).toBeNull();
+  expect(renders).toBe(0);
+  const current = cache.background("redis", keyResultBytes, () => renders++);
+  current({ reply: key.reply });
+  expect(cache.restore("redis")?.reply).toEqual(key.reply);
+  cache.forget("redis");
+  current({ reply: key.reply });
+  expect(cache.restore("redis")).toBeUndefined();
+  cache.remember("redis", { ...key, reply: null }, 0, clearKeyResults);
+  current({ reply: key.reply });
+  expect(cache.restore("redis")?.reply).toBeNull();
+  other({ error: "Independent request failed" });
+  expect(cache.restore("other")?.error).toBe("Independent request failed");
+  expect(renders).toBe(2);
+});
+
+test("late replies obey the same payload budget and retain drafts after eviction", () => {
+  const bytes = keyResultBytes(key);
+  const cache = new TransientWorkspaceCache<KeyWorkspaceState>(bytes + 10);
+  cache.remember("first", key, bytes, clearKeyResults);
+  cache.remember(
+    "pending",
+    { ...key, page: null, reply: null },
+    0,
+    clearKeyResults,
+  );
+  const receive = cache.background("pending", keyResultBytes, () => {});
+  receive({ page: key.page, reply: key.reply });
+  expect(cache.restore("pending")?.reply).toEqual(key.reply);
+  expect(cache.restore("first")?.reply).toBeNull();
+  expect(cache.restore("first")?.pattern).toBe("cache:*");
+  expect(cache.restore("first")?.message).toContain("limit memory");
 });
