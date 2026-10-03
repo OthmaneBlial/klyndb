@@ -50,9 +50,16 @@ async fn real_constraint_and_trigger_inspection() {
             read_only: false,
             create_file: kind == "sqlite",
         };
-        c.validate().unwrap();
+        let password = c
+            .validate()
+            .unwrap()
+            .map(|secret| secret.to_string())
+            .unwrap_or_default();
         engine.store.save(&c).unwrap();
-        engine.connect(&c.id, None, None, None).await.unwrap();
+        engine
+            .connect(&c.id, Some(password), None, None)
+            .await
+            .unwrap();
         let driver = engine.driver(&c.id).await.unwrap();
         let base = format!("structure_{}", uuid::Uuid::new_v4().simple());
         let child = format!("{base}_child");
@@ -184,6 +191,24 @@ async fn real_constraint_and_trigger_inspection() {
         }
         run(&engine, &c.id, format!("DROP TABLE {}", q(&audit))).await;
         run(&engine, &c.id, format!("DROP TABLE {}", q(&parent))).await;
+        if kind == "postgres" {
+            // Recreate the displayed definition through the same SQL guard as the editor.
+            let identity = format!("{base}_identity");
+            run(&engine, &c.id, format!("CREATE TABLE {} (id bigint GENERATED ALWAYS AS IDENTITY (INCREMENT BY 3 MINVALUE 1 MAXVALUE 10000 START WITH 7 CACHE 4 NO CYCLE) PRIMARY KEY, amount numeric(30,18) DEFAULT 0.000000000000000001, doubled numeric GENERATED ALWAYS AS (amount * 2) STORED)", q(&identity))).await;
+            let tables = driver.tables().await.unwrap();
+            let target = tables.iter().find(|t| t.name == identity).unwrap();
+            let original = driver.inspect(target).await.unwrap();
+            let ddl = original.ddl.as_ref().unwrap();
+            run(&engine, &c.id, format!("DROP TABLE {}", q(&identity))).await;
+            run(&engine, &c.id, ddl.clone()).await;
+            let recreated = driver.inspect(target).await.unwrap();
+            assert_eq!(recreated.ddl.as_ref(), Some(ddl));
+            assert_eq!(
+                serde_json::to_value(&original.columns).unwrap(),
+                serde_json::to_value(&recreated.columns).unwrap()
+            );
+            run(&engine, &c.id, format!("DROP TABLE {}", q(&identity))).await;
+        }
         engine.disconnect(&c.id).await.unwrap();
     }
 }

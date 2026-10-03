@@ -118,10 +118,16 @@ async fn streaming_sql_import_real_engines() {
             read_only: false,
             create_file: matches!(dialect, "sqlite" | "duckdb"),
         };
-        config.validate().unwrap();
+        let embedded_password = config.validate().unwrap();
         engine.store.save(&config).unwrap();
-        let password =
-            (dialect == "mssql").then(|| std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap());
+        // Disposable SQL fixtures use session credentials, not the user's keychain.
+        let password = Some(if dialect == "mssql" {
+            std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap()
+        } else {
+            embedded_password
+                .map(|secret| secret.to_string())
+                .unwrap_or_default()
+        });
         engine
             .connect(&config.id, password.clone(), None, None)
             .await

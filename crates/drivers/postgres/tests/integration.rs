@@ -57,7 +57,7 @@ async fn postgres_structure_ddl_roundtrip_views_and_materialized_catalog() {
     assert!(original.columns[5].generated);
     let ddl = original.ddl.as_ref().unwrap();
     assert!(ddl.contains("CREATE UNLOGGED TABLE"));
-    assert!(ddl.contains("START WITH 7 INCREMENT BY 3 MINVALUE 1 MAXVALUE 10000 CACHE 4 NO CYCLE"));
+    assert!(ddl.contains("INCREMENT BY 3 MINVALUE 1 MAXVALUE 10000 START WITH 7 CACHE 4 NO CYCLE"));
     assert!(ddl.contains("COLLATE pg_catalog.\"C\""));
     assert!(ddl.contains("GENERATED ALWAYS AS") && ddl.contains("STORED"));
     assert!(ddl.contains("ENABLE ROW LEVEL SECURITY") && ddl.contains("FORCE ROW LEVEL SECURITY"));
