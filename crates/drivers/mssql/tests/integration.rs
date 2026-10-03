@@ -230,6 +230,93 @@ async fn real_sql_server_workflow() {
 }
 
 #[tokio::test]
+#[ignore = "Requires a disposable KLYNDB_TEST_MSSQL_URL server and KLYNDB_TEST_MSSQL_PASSWORD"]
+async fn real_sql_server_catalog() {
+    let address = std::env::var("KLYNDB_TEST_MSSQL_URL").unwrap();
+    let password = std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap();
+    let db = Arc::new(
+        SqlServer::connect(&address, Some(&password), false)
+            .await
+            .unwrap(),
+    );
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let parent = format!("klyndb_parent_{suffix}");
+    let child = format!("klyndb_child_{suffix}");
+    query(db.clone(), &format!("CREATE TABLE dbo.[{parent}](a int,b int,PRIMARY KEY(a,b)); CREATE TABLE dbo.[{child}](id int PRIMARY KEY,a int,b int,label nvarchar(30) DEFAULT N'hello',CONSTRAINT [fk_{suffix}] FOREIGN KEY(a,b) REFERENCES dbo.[{parent}](a,b),CONSTRAINT [ck_{suffix}] CHECK(id>0),CONSTRAINT [uq_{suffix}] UNIQUE(label))"), 10).await.unwrap();
+    query(db.clone(), &format!("EXEC(N'CREATE TRIGGER dbo.[tr_{suffix}] ON dbo.[{child}] AFTER INSERT AS BEGIN SET NOCOUNT ON; END;')"), 10).await.unwrap();
+    let table = Table {
+        schema: "dbo".into(),
+        name: child.clone(),
+        kind: "table".into(),
+    };
+    let info = db.inspect(&table).await.unwrap();
+    assert_eq!(info.foreign_keys.len(), 2);
+    for (index, column) in ["a", "b"].iter().enumerate() {
+        let key = &info.foreign_keys[index];
+        assert_eq!(key["name"], format!("fk_{suffix}"));
+        assert_eq!(key["column"], *column);
+        assert_eq!(key["target"], *column);
+        assert_eq!(key["table"], parent);
+        assert_eq!(key["schema"], "dbo");
+    }
+    let constraints = info.constraints.unwrap();
+    for kind in [
+        "PRIMARY_KEY_CONSTRAINT",
+        "UNIQUE_CONSTRAINT",
+        "FOREIGN_KEY_CONSTRAINT",
+        "CHECK_CONSTRAINT",
+        "DEFAULT_CONSTRAINT",
+    ] {
+        assert!(constraints.iter().any(|c| c.kind == kind), "Missing {kind}");
+    }
+    assert!(
+        constraints
+            .iter()
+            .find(|c| c.name == format!("ck_{suffix}"))
+            .unwrap()
+            .definition
+            .as_ref()
+            .unwrap()
+            .contains("id")
+    );
+    assert!(
+        constraints
+            .iter()
+            .find(|c| c.kind == "DEFAULT_CONSTRAINT")
+            .unwrap()
+            .definition
+            .as_ref()
+            .unwrap()
+            .contains("hello")
+    );
+    assert_eq!(info.triggers.len(), 1);
+    assert_eq!(info.triggers[0].name, format!("tr_{suffix}"));
+    assert_eq!(info.triggers[0].state.as_deref(), Some("enabled · AFTER"));
+    assert!(info.triggers[0].definition.contains("SET NOCOUNT ON"));
+    query(
+        db.clone(),
+        &format!("EXEC(N'DISABLE TRIGGER dbo.[tr_{suffix}] ON dbo.[{child}]')"),
+        10,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        db.inspect(&table).await.unwrap().triggers[0]
+            .state
+            .as_deref(),
+        Some("disabled · AFTER")
+    );
+    query(
+        db.clone(),
+        &format!("DROP TABLE dbo.[{child}]; DROP TABLE dbo.[{parent}]"),
+        10,
+    )
+    .await
+    .unwrap();
+    db.disconnect().await.unwrap();
+}
+
+#[tokio::test]
 #[ignore = "Requires KLYNDB_TEST_MSSQL_URL with verified TLS, password and KLYNDB_TEST_TLS_CERT_DIR"]
 async fn real_sql_server_verified_tls() {
     let address = std::env::var("KLYNDB_TEST_MSSQL_URL").unwrap();

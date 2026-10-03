@@ -30,7 +30,7 @@ The configured result limit applies per native result set. Reaching it stops the
 
 ## Tables and transactions
 
-The selected database exposes schema-qualified tables/views, columns, nullability, primary-key/generated flags and indexes. View definitions use the native catalog and follow permissions. Base-table CREATE scripts, foreign keys/constraints/triggers, statistics, additional database/routine/role browsing and schema editing remain pending. Browsing uses native TOP and ORDER BY/OFFSET/FETCH pages; the shared filter/sort controls are enabled.
+The selected database exposes schema-qualified tables/views, columns, nullability, primary-key/generated flags and indexes. Structure also shows ordered foreign-key column mappings, primary/unique/foreign/check/default constraint names and types, native CHECK/default definitions, and user trigger bodies with enabled/disabled and AFTER/INSTEAD OF state. Definitions follow server permissions and encrypted/CLR definitions can be unavailable. View definitions use the native catalog. Base-table CREATE scripts, complete key constraint scripts, statistics, additional database/routine/role browsing and schema editing remain pending. Browsing uses native TOP and ORDER BY/OFFSET/FETCH pages; the shared filter/sort controls are enabled.
 
 Execute explicit BEGIN TRANSACTION, COMMIT or ROLLBACK in SQL. The transaction indicator uses native XACT_STATE, including failed transactions. Confirmed reconnect drops the original session, rolling back its open transaction and removing temporary tables; retained result exports stay available.
 

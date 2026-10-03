@@ -34,6 +34,16 @@ fn identifier(s: &str) -> String {
 fn literal(s: &str) -> String {
     format!("N'{}'", s.replace('\'', "''"))
 }
+fn object_id(table: &Table) -> String {
+    format!(
+        "OBJECT_ID({})",
+        literal(&format!(
+            "{}.{}",
+            identifier(&table.schema),
+            identifier(&table.name)
+        ))
+    )
+}
 fn temporal<'a, T: tiberius::FromSql<'a> + std::fmt::Display>(
     v: &'a ColumnData<'static>,
 ) -> Result<Cell> {
@@ -315,6 +325,9 @@ impl SqlServer {
             ))
         })
     }
+    async fn foreign_key_rows(&self, table: &Table) -> Result<Vec<Row>> {
+        self.metadata(format!("SELECT TOP (50001) fk.name,pc.name,SCHEMA_NAME(t.schema_id),t.name,rc.name FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id=fk.object_id JOIN sys.columns pc ON pc.object_id=fkc.parent_object_id AND pc.column_id=fkc.parent_column_id JOIN sys.tables t ON t.object_id=fkc.referenced_object_id JOIN sys.columns rc ON rc.object_id=fkc.referenced_object_id AND rc.column_id=fkc.referenced_column_id WHERE fk.parent_object_id={} ORDER BY fk.name,fkc.constraint_column_id",object_id(table))).await
+    }
 }
 #[async_trait]
 impl Session for SqlServer {
@@ -413,14 +426,7 @@ impl Session for SqlServer {
         Ok(self.metadata("SELECT TOP (50001) SCHEMA_NAME(schema_id),name,type FROM sys.objects WHERE type IN ('U','V') AND is_ms_shipped=0 ORDER BY 1,2".into()).await?.into_iter().map(|r|Table {schema:r[0].text(),name:r[1].text(),kind:if r[2].text().trim()=="V" {"view"} else {"table"}.into()}).collect())
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
-        let object = format!(
-            "OBJECT_ID({})",
-            literal(&format!(
-                "{}.{}",
-                identifier(&table.schema),
-                identifier(&table.name)
-            ))
-        );
+        let object = object_id(table);
         let columns=self.metadata(format!("SELECT TOP (50001) c.name,t.name,CAST(c.is_nullable AS bit),CAST(CASE WHEN EXISTS(SELECT 1 FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id=i.object_id AND ic.index_id=i.index_id WHERE i.object_id=c.object_id AND i.is_primary_key=1 AND ic.column_id=c.column_id) THEN 1 ELSE 0 END AS bit),OBJECT_DEFINITION(c.default_object_id),CAST(CASE WHEN c.is_identity=1 OR c.is_computed=1 OR c.generated_always_type<>0 OR t.name='timestamp' THEN 1 ELSE 0 END AS bit) FROM sys.columns c JOIN sys.types t ON t.user_type_id=c.user_type_id WHERE c.object_id={object} ORDER BY c.column_id")).await?.into_iter().map(|r|Column {name:r[0].text(),data_type:r[1].text(),nullable:r[2].text()=="true",primary_key:r[3].text()=="true",default:if matches!(r[4],Cell::Null) {None} else {Some(r[4].text())},generated:r[5].text()=="true"}).collect();
         let ddl = self
             .metadata(format!("SELECT OBJECT_DEFINITION({object})"))
@@ -430,14 +436,21 @@ impl Session for SqlServer {
             .filter(|c| !matches!(c, Cell::Null))
             .map(Cell::text);
         let indexes=self.metadata(format!("SELECT TOP (50001) name,type_desc,is_unique,is_primary_key,filter_definition FROM sys.indexes WHERE object_id={object} AND index_id>0 ORDER BY index_id")).await?.into_iter().map(|r|serde_json::json!({"name":r[0].text(),"type":r[1].text(),"unique":r[2].text()=="true","primary":r[3].text()=="true","filter":r[4]})).collect();
+        let foreign_keys = self.foreign_key_rows(table).await?.into_iter().map(|r|serde_json::json!({"name":r[0].text(),"column":r[1].text(),"schema":r[2].text(),"table":r[3].text(),"target":r[4].text()})).collect();
+        let constraints = self.metadata(format!("SELECT TOP (50001) name,type_desc,OBJECT_DEFINITION(object_id) FROM sys.objects WHERE parent_object_id={object} AND type IN ('PK','UQ','F','C','D') ORDER BY name")).await?.into_iter().map(|r|Constraint {
+            name:r[0].text(),kind:r[1].text(),definition:if matches!(r[2],Cell::Null) {None} else {Some(r[2].text())}
+        }).collect();
+        let triggers = self.metadata(format!("SELECT TOP (50001) name,OBJECT_DEFINITION(object_id),CASE WHEN is_disabled=1 THEN N'disabled' ELSE N'enabled' END,CASE WHEN is_instead_of_trigger=1 THEN N'INSTEAD OF' ELSE N'AFTER' END FROM sys.triggers WHERE parent_id={object} AND parent_class=1 AND is_ms_shipped=0 ORDER BY name")).await?.into_iter().map(|r|Trigger {
+            name:r[0].text(),definition:if matches!(r[1],Cell::Null) {"Definition unavailable to this connection".into()} else {r[1].text()},state:Some(format!("{} · {}",r[2].text(),r[3].text()))
+        }).collect();
         Ok(TableInfo {
             editable: false,
             columns,
             ddl,
             indexes,
-            foreign_keys: vec![],
-            constraints: None,
-            triggers: vec![],
+            foreign_keys,
+            constraints: Some(constraints),
+            triggers,
         })
     }
     async fn transaction_state(&self) -> Result<TransactionState> {

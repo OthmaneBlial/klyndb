@@ -168,7 +168,12 @@ export function ResultPanel({
                   <tr key={c.name}>
                     <td>{c.name}</td>
                     <td>{c.kind}</td>
-                    <td>{c.definition ?? "See table DDL below"}</td>
+                    <td>
+                      {c.definition ??
+                        (inspector.info.ddl
+                          ? "See table DDL below"
+                          : "Definition unavailable")}
+                    </td>
                   </tr>
                 ))}
               </tbody>

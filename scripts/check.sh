@@ -56,6 +56,7 @@ fi
 if [[ -n "${KLYNDB_TEST_MSSQL_URL:-}" ]]; then
   : "${KLYNDB_TEST_MSSQL_PASSWORD:?Set KLYNDB_TEST_MSSQL_PASSWORD for the disposable SQL Server}"
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_workflow --ignored
+  workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_catalog --ignored
   if [[ -n "${KLYNDB_TEST_TLS_CERT_DIR:-}" ]]; then
     workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_verified_tls --ignored
   fi
