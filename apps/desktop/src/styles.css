@@ -1251,6 +1251,40 @@ small {
   font-size: 11px;
   line-height: 1.7;
 }
+.shortcut-settings {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.shortcut-settings summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.shortcut-settings > p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 155px 48px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.shortcut-row label {
+  margin: 0;
+  font-size: 12px;
+}
+.shortcut-row input {
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--accent);
+  cursor: pointer;
+}
+.shortcut-row button {
+  padding: 6px;
+  font-size: 11px;
+}
 .privacy-note svg {
   flex-shrink: 0;
   color: var(--accent);

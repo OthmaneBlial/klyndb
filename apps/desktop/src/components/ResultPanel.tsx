@@ -30,6 +30,7 @@ export function ResultPanel({
   editing,
   browsing,
   rowOffset,
+  runShortcut = "⌘/Ctrl ↵",
 }: {
   status?: QueryStatus;
   set: number;
@@ -46,6 +47,7 @@ export function ResultPanel({
   editing?: React.ReactNode;
   browsing?: React.ReactNode;
   rowOffset?: number;
+  runShortcut?: string;
 }) {
   return (
     <section className="result-area">
@@ -315,7 +317,15 @@ export function ResultPanel({
               <Table2 size={28} />
               <h3>A clear view of your data</h3>
               <p>
-                Run a statement or selection with <kbd>⌘ ↵</kbd>
+                Run a statement or selection
+                {runShortcut ? (
+                  <>
+                    {" "}
+                    with <kbd>{runShortcut}</kbd>
+                  </>
+                ) : (
+                  " using the Run button."
+                )}
               </p>
             </>
           )}

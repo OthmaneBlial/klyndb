@@ -166,8 +166,11 @@ Current source builds add [searchable saved queries and history](docs/QUERY_LIBR
 | --- | --- |
 | `Cmd/Ctrl + Enter` | Run the selected SQL or current statement |
 | `Cmd/Ctrl + K` | Open the command palette |
+| `Cmd/Ctrl + T` | New tab |
 | `Shift + Cmd/Ctrl + F` | Format SQL |
 | `Cmd/Ctrl + S` | Save a query |
+
+Current source builds let you customize twelve bindings in **Settings → Keyboard shortcuts**, including an optional Run All binding. Clear a shortcut, restore defaults, and keep hints in sync; preferences survive restart. Preview 2 predates this control. See the [keyboard guide](docs/KEYBOARD_SHORTCUTS.md).
 
 Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Preview 2 is available for macOS Apple Silicon; other platform downloads remain pending. macOS signing and notarization require Apple credentials. The [local release guide](docs/RELEASES.md) documents the optimized macOS DMG/ZIP candidate builder and acceptance checks.
 

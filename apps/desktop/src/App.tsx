@@ -66,6 +66,12 @@ import {
 } from "./transientWorkspace";
 import type { SqlSubmission } from "./sql";
 import { tableKey } from "./diagram";
+import {
+  dispatchShortcut,
+  shortcutDefinitions,
+  shortcutLabel,
+  type ShortcutAction,
+} from "./shortcuts";
 const KeyValueWorkspace = lazy(() =>
   import("./components/KeyValueWorkspace").then((m) => ({
     default: m.KeyValueWorkspace,
@@ -1006,6 +1012,38 @@ export default function App() {
       report(String(e));
     }
   }
+  const shortcuts = preferences.shortcuts;
+  const shortcutActions: Partial<
+    Record<ShortcutAction, () => void | Promise<void>>
+  > = {
+    palette: () => setPalette((p) => !p),
+    newTab: () => void newTab(),
+    newConnection: () => setDialog(true),
+    saved: () => setSavedOpen(true),
+    history: () =>
+      void api("history")
+        .then(setHistory)
+        .catch((e) => report(String(e))),
+    sidebar: () => setPreferences((p) => ({ ...p, sidebar: !p.sidebar })),
+    settings: () => setSettings(true),
+    ...(!nativeWorkspace && current
+      ? {
+          run: () => {
+            if (editorRef.current) void run(editorRef.current.runText());
+          },
+          runAll: () => {
+            if (editorRef.current) void run(editorRef.current.allText());
+          },
+          format: formatSql,
+          save: () => setSaveName(current.name),
+          ...(connection && connected[connection.id]
+            ? {
+                refresh: () => void refresh(connection.id),
+              }
+            : {}),
+        }
+      : {}),
+  };
   const commands = [
     ...(documentWorkspace
       ? [
@@ -1035,46 +1073,26 @@ export default function App() {
           },
         ]
       : []),
-    {
-      name: documentWorkspace
-        ? "New document tab"
-        : keyWorkspace
-          ? "New key explorer tab"
-          : "New SQL tab",
-      key: "⌘ T",
-      action: () => void newTab(),
-    },
-    { name: "New connection", key: "", action: () => setDialog(true) },
-    ...(!nativeWorkspace
-      ? [
-          {
-            name: "Run current statement or selection",
-            key: "⌘ ↵",
-            action: () => void run(),
-          },
-          {
-            name: "Run entire editor",
-            key: "",
-            action: () => void run(editorRef.current?.allText()),
-          },
-          { name: "Format SQL", key: "⇧ ⌘ F", action: formatSql },
-        ]
-      : []),
+    ...shortcutDefinitions
+      .filter(({ id }) => id !== "palette" && shortcutActions[id])
+      .map(({ id, name }) => ({
+        name:
+          id === "newTab"
+            ? documentWorkspace
+              ? "New document tab"
+              : keyWorkspace
+                ? "New key explorer tab"
+                : "New SQL tab"
+            : name,
+        key: shortcutLabel(shortcuts[id]),
+        action: shortcutActions[id]!,
+      })),
     ...(connection && connected[connection.id]?.import_sql
       ? [
           {
             name: "Import SQL file",
             key: "",
             action: () => setSqlImport(connection),
-          },
-        ]
-      : []),
-    ...(!nativeWorkspace
-      ? [
-          {
-            name: "Refresh schema",
-            key: "",
-            action: () => connection && void refresh(connection.id),
           },
         ]
       : []),
@@ -1096,21 +1114,6 @@ export default function App() {
           },
         ]
       : []),
-    { name: "Saved queries", key: "", action: () => setSavedOpen(true) },
-    {
-      name: "Query history",
-      key: "",
-      action: () =>
-        void api("history")
-          .then(setHistory)
-          .catch((e) => report(String(e))),
-    },
-    {
-      name: "Toggle sidebar",
-      key: "",
-      action: () => setPreferences((p) => ({ ...p, sidebar: !p.sidebar })),
-    },
-    { name: "Settings", key: "", action: () => setSettings(true) },
     ...connections.map((c) => ({
       name: `Connect · ${c.name}`,
       key: "",
@@ -1130,34 +1133,24 @@ export default function App() {
     })),
   ];
   useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (
-        importDialogRef.current ||
-        sqlImportRef.current ||
-        diagramRef.current ||
-        routineConnection
-      )
-        return;
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPalette((p) => !p);
-      }
-      if (e.key.toLowerCase() === "t") {
-        e.preventDefault();
-        newTab();
-      }
-      if (!nativeWorkspace && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        setSaveName(current?.name ?? "");
-      }
-      if (!nativeWorkspace && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        formatSql();
-      }
+    const key = (event: KeyboardEvent) => {
+      const modalOpen = !!document.querySelector(
+        'dialog[open], [role="dialog"][aria-modal="true"]',
+      );
+      dispatchShortcut(
+        event,
+        shortcuts,
+        shortcutActions,
+        modalOpen ||
+          !!routineConnection ||
+          !!importDialogRef.current ||
+          !!sqlImportRef.current ||
+          !!diagramRef.current,
+      );
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    // Capture before editor keymaps so remapped actions cannot also edit SQL.
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
   });
   const groups = [...new Set(connections.map((c) => c.group || "Personal"))];
   return (
@@ -1193,7 +1186,7 @@ export default function App() {
         >
           <Search size={14} />
           <span>Jump to anything</span>
-          <kbd>⌘ K</kbd>
+          {shortcuts.palette && <kbd>{shortcutLabel(shortcuts.palette)}</kbd>}
         </button>
         <button
           className="icon"
@@ -1539,13 +1532,13 @@ export default function App() {
               {!nativeWorkspace && (
                 <div>
                   <button
-                    title="Format SQL · Shift+Cmd/Ctrl+F"
+                    title={`Format SQL${shortcuts.format ? ` · ${shortcutLabel(shortcuts.format)}` : ""}`}
                     onClick={formatSql}
                   >
                     <WandSparkles size={14} /> Format
                   </button>
                   <button
-                    title="Save query · Cmd/Ctrl+S"
+                    title={`Save query${shortcuts.save ? ` · ${shortcutLabel(shortcuts.save)}` : ""}`}
                     onClick={() => setSaveName(current.name)}
                   >
                     <Bookmark size={14} />
@@ -1598,10 +1591,12 @@ export default function App() {
                         onClick={() => void run()}
                       >
                         <Play size={13} fill="currentColor" /> Run{" "}
-                        <kbd>⌘ ↵</kbd>
+                        {shortcuts.run && (
+                          <kbd>{shortcutLabel(shortcuts.run)}</kbd>
+                        )}
                       </button>
                       <button
-                        title="Run all statements"
+                        title={`Run all statements${shortcuts.runAll ? ` · ${shortcutLabel(shortcuts.runAll)}` : ""}`}
                         disabled={!connection || !connected[connection.id]}
                         onClick={() => void run(editorRef.current?.allText())}
                       >
@@ -1752,12 +1747,12 @@ export default function App() {
                       loadColumns={loadCompletionColumns}
                       onError={report}
                       onChange={(sql) => updateTab(current.id, { sql })}
-                      onRun={(sql) => void run(sql)}
                       editorRef={editorRef}
                     />
                   </Suspense>
                 </section>
                 <ResultPanel
+                  runShortcut={shortcutLabel(shortcuts.run)}
                   status={status}
                   onLocateError={
                     status?.error_offset != null &&

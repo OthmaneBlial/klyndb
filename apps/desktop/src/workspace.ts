@@ -1,4 +1,9 @@
 import type { Capabilities } from "./api";
+import {
+  defaultShortcuts,
+  restoreShortcuts,
+  type Shortcuts,
+} from "./shortcuts";
 export interface DocumentDraft {
   kind: "document";
   database: string;
@@ -30,6 +35,7 @@ export interface Preferences {
   fontSize: number;
   sidebar: boolean;
   restoreNativeDrafts: boolean;
+  shortcuts: Shortcuts;
 }
 export const defaults: Preferences = {
   theme: "dark",
@@ -38,6 +44,7 @@ export const defaults: Preferences = {
   fontSize: 13,
   sidebar: true,
   restoreNativeDrafts: false,
+  shortcuts: { ...defaultShortcuts },
 };
 function restoreDraft(
   value: unknown,
@@ -178,6 +185,7 @@ export function restoreWorkspace(value: unknown): {
           : defaults.fontSize,
       sidebar: p?.sidebar !== false,
       restoreNativeDrafts: p?.restoreNativeDrafts === true,
+      shortcuts: restoreShortcuts(p?.shortcuts),
     },
   };
 }

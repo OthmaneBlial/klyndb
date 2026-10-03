@@ -45,7 +45,6 @@ export function SqlEditor({
   loadColumns,
   onError,
   onChange,
-  onRun,
   editorRef,
 }: {
   value: string;
@@ -54,13 +53,12 @@ export function SqlEditor({
   loadColumns: (table: Table) => Promise<string[]>;
   onError: (message: string) => void;
   onChange: (s: string) => void;
-  onRun: (s: string) => void;
   editorRef: React.RefObject<EditorHandle | null>;
 }) {
   const element = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null);
-  const callbacks = useRef({ onChange, onRun, onError });
-  callbacks.current = { onChange, onRun, onError };
+  const callbacks = useRef({ onChange, onError });
+  callbacks.current = { onChange, onError };
   const language = useRef(new Compartment());
   const dialect =
     engine === "sqlite"
@@ -105,13 +103,6 @@ export function SqlEditor({
           dialect.language.data.of({ autocomplete: completion }),
         ]),
         keymap.of([
-          {
-            key: "Mod-Enter",
-            run: (view) => {
-              callbacks.current.onRun(currentStatement(view.state));
-              return true;
-            },
-          },
           ...defaultKeymap,
           ...historyKeymap,
           ...closeBracketsKeymap,
