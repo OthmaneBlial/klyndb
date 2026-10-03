@@ -1,6 +1,6 @@
 # MongoDB document workspace
 
-Source builds add a dedicated MongoDB workspace. Preview 1 does not contain this driver. The source implementation uses the official Apache-2.0 MongoDB Rust driver **3.9.1** and BSON 3.1; it does not translate MongoDB into SQL.
+Preview 2 and current source builds include a dedicated MongoDB workspace. Preview 1 does not contain this driver. The implementation uses the official Apache-2.0 MongoDB Rust driver **3.9.1** and BSON 3.1; it does not translate MongoDB into SQL.
 
 ## Connect
 
@@ -70,4 +70,4 @@ Replies, metadata, acknowledgements and errors remain with their tab even when t
 
 Actual macOS source debug-app restart checks restore independent exact 64-bit find/sort/namespace/search and pipeline drafts, with closed connections, empty catalogs/results and guarded Run/edit controls. Disabling preserves live text, removes saved draft keys from the native SQLite workspace and restores empty defaults on a later launch. See [VALIDATION.md](VALIDATION.md) for receipts and remaining platform scope.
 
-The exact optimized macOS Preview 2 candidate now passes a separate disposable MongoDB connection, lazy collection loading, 100/100/5 paging, exact BSON JSON/tree inspection, native indexes, a read-only aggregation and a reviewed BSON insert independently verified on the server. This loopback check explicitly disables TLS and uses session-only credentials. Replacement/deletion, production/read-only interactions, TLS/SSH/replica-set and platform checks remain separate; the candidate is unpublished. See [validation evidence](VALIDATION.md#preview-2-exact-package-sql-server-clickhouse-mongodb-and-redis-acceptance--2026-10-03).
+The exact optimized macOS Preview 2 candidate now passes a separate disposable MongoDB connection, lazy collection loading, 100/100/5 paging, exact BSON JSON/tree inspection, native indexes, a read-only aggregation and a reviewed BSON insert independently verified on the server. This loopback check explicitly disables TLS and uses session-only credentials. Replacement/deletion, production/read-only interactions, TLS/SSH/replica-set and platform checks remain separate; Preview 2 is published. See [validation evidence](VALIDATION.md#preview-2-exact-package-sql-server-clickhouse-mongodb-and-redis-acceptance--2026-10-03).

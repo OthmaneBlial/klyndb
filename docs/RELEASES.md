@@ -21,16 +21,22 @@ shasum -a 256 -c SHA256SUMS
 
 Read the release notes and [compatibility matrix](COMPATIBILITY.md) before using the preview. Additional engines, broader native coverage and full DBeaver parity remain on the roadmap.
 
-## Preview 2 candidate — native acceptance pending
+## Preview 2 — macOS Apple Silicon
 
-An optimized nine-engine macOS arm64 candidate was built locally on 2026-10-03 from source `12787947d414d523bd15ac506fd064f51c432d0d`. It is not published as a release. The ignored candidate directory is `artifacts/release-candidates/0.1.0-20261003T123334Z`.
+[Download v0.1.0-preview.2](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.2). This optimized nine-engine preview includes SQLite, PostgreSQL, MySQL, MariaDB, DuckDB, ClickHouse, SQL Server, MongoDB and Redis. Application version 0.1.0 comes from source `12787947d414d523bd15ac506fd064f51c432d0d`. PostgreSQL planner/storage statistics added afterward remain source-only.
 
-| Candidate package | Bytes | SHA-256 |
+| Package | Bytes | SHA-256 |
 | --- | ---: | --- |
 | macOS arm64 app ZIP | 24,892,268 | `bb56d756809b9725d3b77411b31582771463c151f2ac80426280b08165a5d911` |
 | macOS arm64 DMG | 28,834,307 | `a3b253f362364e8a7123ec5b8079516ede9f489414d51d320a6e6756afe2b470` |
 
-Archive, ad-hoc signature, architecture, notices/resources, checksum and read-only mounted-DMG checks pass. The separately ZIP-extracted executable matches the packaged build byte for byte. Native window access recovered. The exact ZIP-extracted app now passes its SQLite connection/schema/query, reviewed Unicode update, native CSV/JSON/SQL imports, independently verified CSV export, cancellation/session reuse, confirmed reconnect rollback and full quit/relaunch workspace restoration. Its PostgreSQL TLS/catalog/identity-generated DDL editor replay also passes, with identical recreated definitions and exact default/generated values. Exact-package DuckDB catalog/precise cells/DDL/CSV export/cancel-reuse and SQL Server verified-TLS connection/catalog/Structure/JSON import also pass. Additional exact-package checks now pass for SQL Server original batches/estimated and confirmed runtime plans/cancel-reuse, ClickHouse catalog/precise UInt256 cells/DDL/estimated plans/independently checked CSV/cancel-reuse, MongoDB 205-document paging/exact BSON/indexes/read-only aggregation/reviewed insert with independent server verification, and Redis all six types/TTL/production Cancel and confirmed write with independent server values. The remaining native workflows and broader platform gates are pending, so this candidate is still unpublished. Statistics added afterward in source builds are absent from this artifact. The [native SQL Server and ClickHouse checks](VALIDATION.md#native-sql-server-and-clickhouse-source-workflows--2026-10-03) describe the separately tested source debug app. They do not substitute for acceptance of this optimized artifact. Preview 1 remains the current public download; no platform/signing scope has expanded.
+The unchanged ZIP-extracted optimized app passes the complete SQLite preview workflow: isolated/saved connection, schema/query, reviewed Unicode update, native CSV/JSON/SQL imports, independently verified CSV export, cancellation/session reuse, confirmed reconnect rollback, disconnect and full quit/relaunch restoration without replay. Additional exact-package acceptance covers PostgreSQL verified TLS/catalog/identity-generated DDL replay, MySQL catalog/Structure/exact numeric multi-results, DuckDB precise cells/DDL/CSV/cancel-reuse and reviewed editing durable across a complete restart, SQL Server verified TLS/catalog/Structure/JSON append with independent server values/batches/plans/cancel-reuse, ClickHouse precise UInt256/DDL/plans/verified CSV/cancel-reuse, MongoDB 205-document paging/BSON/indexes/aggregation/independently checked reviewed insert, and Redis six types/TTL/production Cancel and confirmed write with independent server checks. Native NoSQL disconnect clears returned data and guards execution.
+
+Read the completed [NATIVE_ACCEPTANCE.json](releases/preview-2-native-acceptance.json) for the exact checked slices. MariaDB is included and has real-server local contracts; exact Preview 2 native MariaDB acceptance remains pending. Native MySQL/MariaDB TLS, NoSQL TLS/mTLS/SSH, remaining driver workflows and Windows/Linux/Intel Mac validation are separate pending gates. Source debug-app checks do not substitute for exact-artifact evidence.
+
+Both packages pass archive, ad-hoc signature, architecture, original notices/resources, checksums and read-only mounted-DMG verification. They are ad-hoc signed, without Developer ID signing or notarization; macOS may prevent opening them. Build from source if this distribution is unsuitable; no system security setting needs to be disabled. Acceptance covers macOS 26.6 arm64 only.
+
+The release assets include `SHA256SUMS`, original `BUILD_INFO.json` and completed `NATIVE_ACCEPTANCE.json`. The original manifest retains its build-time pending acceptance; the later record supplies completed native evidence. Preview 1 remains available at its original tag and unchanged asset bytes. Broader DBeaver parity remains on the roadmap.
 
 ## Build another candidate locally
 

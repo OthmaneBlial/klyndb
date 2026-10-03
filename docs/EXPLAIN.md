@@ -8,9 +8,9 @@ Choose **Explain** for the current statement or selected SQL. It asks the databa
 | MySQL | EXPLAIN FORMAT JSON | FORMAT TREE for read-only SELECT queries; server 8.0.18+ |
 | MariaDB | EXPLAIN FORMAT JSON | ANALYZE FORMAT JSON; supported native statements, including writes; server 10.1+ |
 | SQLite | EXPLAIN QUERY PLAN | No native runtime Analyze metrics |
-| SQL Server (source builds after Preview 1) | SHOWPLAN_ALL, non-executing native operator rows | STATISTICS PROFILE; actual Rows/Executes, including confirmed writes |
-| DuckDB (source builds after Preview 1) | EXPLAIN (FORMAT JSON), physical plan | EXPLAIN (ANALYZE, FORMAT JSON); native operators and runtime metrics, including writes |
-| ClickHouse (source builds after Preview 1) | EXPLAIN PLAN json=1, indexes=1; SELECT operators and native index details | Disabled in this driver; the verified 26.3 server rejects ANALYZE |
+| SQL Server (Preview 2 and source builds) | SHOWPLAN_ALL, non-executing native operator rows | STATISTICS PROFILE; actual Rows/Executes, including confirmed writes |
+| DuckDB (Preview 2 and source builds) | EXPLAIN (FORMAT JSON), physical plan | EXPLAIN (ANALYZE, FORMAT JSON); native operators and runtime metrics, including writes |
+| ClickHouse (Preview 2 and source builds) | EXPLAIN PLAN json=1, indexes=1; SELECT operators and native index details | Disabled in this driver; the verified 26.3 server rejects ANALYZE |
 
 The **Explain** result tab offers a collapsible tree, original server fields, **Raw** output and **Copy raw**. Timings, costs, rows, loops and buffer statistics appear when the server reports them. Names and units remain native; planner cost is separate from measured time. MySQL/MariaDB server messages are captured immediately with SHOW WARNINGS. The duration in the results toolbar includes client processing and transport.
 

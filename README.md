@@ -121,17 +121,17 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | MySQL | ✓ | ✓ · InnoDB | MySQL 8.4.11 |
 | MariaDB | ✓ | ✓ · InnoDB | MariaDB 13.0.2 |
 | SQLite | ✓ | ✓ | Real SQLite files |
-| DuckDB · source builds | ✓ | ✓ · scalar base tables; finish SQL transactions first | Embedded DuckDB 1.5.6 · native macOS query workflow; source editing/imports/ER diagrams |
-| ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts and native macOS query/plan/export/cancel checks |
-| SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts and native macOS TLS/query/catalog/edit/plan/import/export/cancel checks |
-| Redis · source builds | Native keys, TTLs, six value types and data commands | Native data commands; production/read-only guards | Redis 7.4.11 · real backend/TLS/mTLS contracts and native macOS source UI acceptance |
-| MongoDB · source builds | Native documents, JSON filters, aggregation, indexes and JSON/tree views | Reviewed single-document writes; production/read-only/conflict guards | MongoDB 8.0.32 · real backend/TLS/mTLS contracts; macOS debug browse/aggregation/CRUD verified |
+| DuckDB | ✓ | ✓ · scalar base tables; finish SQL transactions first | Embedded DuckDB 1.5.6 · native macOS query workflow and durable Preview 2 reviewed edit; source import/ER contracts |
+| ClickHouse | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts and native macOS query/plan/export/cancel checks |
+| SQL Server | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts and native macOS TLS/query/catalog/edit/plan/import/export/cancel checks |
+| Redis | Native keys, TTLs, six value types and data commands | Native data commands; production/read-only guards | Redis 7.4.11 · real backend/TLS/mTLS contracts and native macOS source UI acceptance |
+| MongoDB | Native documents, JSON filters, aggregation, indexes and JSON/tree views | Reviewed single-document writes; production/read-only/conflict guards | MongoDB 8.0.32 · real backend/TLS/mTLS contracts; macOS debug browse/aggregation/CRUD verified |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-DuckDB, ClickHouse, SQL Server, Redis and MongoDB are available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md), [SQL Server](docs/SQLSERVER.md), [Redis](docs/REDIS.md) and [MongoDB](docs/MONGODB.md) guides for setup and current limits.
+The downloadable Preview 2 includes all nine engines. Its exact-package acceptance covers the workflow slices in the [release guide](docs/RELEASES.md); broader platform and feature acceptance remain pending. See the [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md), [SQL Server](docs/SQLSERVER.md), [Redis](docs/REDIS.md) and [MongoDB](docs/MONGODB.md) guides for setup and current limits.
 
-**Development preview:** [Download Preview 1 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
+**Development preview:** [Download Preview 2 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.2), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 
 ## ⚡ Rust does the heavy lifting
 
@@ -145,7 +145,7 @@ A reproducible SQLite backend baseline retained **1 million rows** at a median *
 
 ## 🚀 Get started
 
-**macOS Apple Silicon:** [Download the DMG or app ZIP](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1). Preview 1 is ad-hoc signed, without Apple notarization; macOS may prevent opening it. The release includes checksums and exact-package validation evidence. Native acceptance covers SQLite on macOS 26.6; other platforms and broader desktop coverage remain pending. See the [release guide](docs/RELEASES.md).
+**macOS Apple Silicon:** [Download the DMG or app ZIP](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.2). Preview 2 is ad-hoc signed, without Apple notarization; macOS may prevent opening it. The release includes checksums and exact-package validation evidence. Native acceptance covers the complete SQLite preview workflow and additional PostgreSQL, MySQL, DuckDB, SQL Server, ClickHouse, MongoDB and Redis slices on macOS 26.6 arm64. MariaDB native and other platform checks remain pending. See the [release guide](docs/RELEASES.md).
 
 **Build from source:**
 
@@ -167,7 +167,7 @@ Then create a connection, open a table or SQL tab, and run a real query.
 | `Shift + Cmd/Ctrl + F` | Format SQL |
 | `Cmd/Ctrl + S` | Save a query |
 
-Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Preview 1 is available for macOS Apple Silicon; other platform downloads remain pending. macOS signing and notarization require Apple credentials. The [local release guide](docs/RELEASES.md) documents the optimized macOS DMG/ZIP candidate builder and acceptance checks.
+Build a native package with `npm run tauri build`. Platform targets are macOS, Windows and Linux. Current native workflows are verified on macOS; current driver/package verification on Windows and Linux remains pending. Preview 2 is available for macOS Apple Silicon; other platform downloads remain pending. macOS signing and notarization require Apple credentials. The [local release guide](docs/RELEASES.md) documents the optimized macOS DMG/ZIP candidate builder and acceptance checks.
 
 ## 🧪 Local checks
 

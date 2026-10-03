@@ -1,0 +1,100 @@
+{
+  "release": "v0.1.0-preview.2",
+  "source_commit": "12787947d414d523bd15ac506fd064f51c432d0d",
+  "application_version": "0.1.0",
+  "validated_platform": "macOS 26.6 arm64",
+  "signing": "ad-hoc; not notarized",
+  "status": "completed for the listed preview workflows; broader acceptance remains pending",
+  "artifact_executable_sha256": "cca639a605b98fcf7a7d96b8b8275d90797cd9104d5bd116d6101d959a7ba7dd",
+  "artifacts": {
+    "klyndb-0.1.0-macos-arm64.app.zip": {
+      "bytes": 24892268,
+      "sha256": "bb56d756809b9725d3b77411b31582771463c151f2ac80426280b08165a5d911"
+    },
+    "klyndb-0.1.0-macos-arm64.dmg": {
+      "bytes": 28834307,
+      "sha256": "a3b253f362364e8a7123ec5b8079516ede9f489414d51d320a6e6756afe2b470"
+    }
+  },
+  "artifact_attribution": "Actual native UI of the unchanged ZIP-extracted optimized app. Separately tested source debug builds are excluded from these checks.",
+  "checks": {
+    "SQLite": [
+      "Isolated connection, saved profile, schema and exact query values",
+      "Reviewed Unicode grid update with independent stored-value check",
+      "Native CSV, JSON and SQL imports; independently parsed five-row CSV export",
+      "Real running query cancellation and same-session SELECT 42 reuse",
+      "Confirmed reconnect rolls back uncommitted insert",
+      "Full Quit/relaunch restores draft and tabs, closes connections, clears returned data and never replays SQL"
+    ],
+    "PostgreSQL": [
+      "Verified TLS session with owned custom CA",
+      "Catalog and identity/generated/default column Structure",
+      "Native DDL opened and replayed unchanged except disposable schema; recreated definition matches"
+    ],
+    "MySQL": [
+      "Saved profile connection, catalog and Structure",
+      "Two native result sets; exact signed BIGINT, DECIMAL(38,18) and Unicode",
+      "Loopback plaintext fixture; this check does not establish native MySQL TLS acceptance"
+    ],
+    "DuckDB": [
+      "Owned local file, catalog, precise unsigned integer/decimal/binary cells and DDL",
+      "Native CSV export independently parsed; real cancellation and session reuse",
+      "Reviewed Unicode update; complete Quit/relaunch then file reopen returns the stored label and preserves untouched values"
+    ],
+    "SQL Server": [
+      "Isolated test and verified-TLS connection; catalog and Structure",
+      "Native JSON append with independent exact stored-row verification",
+      "Original DECLARE batch and two exact result sets",
+      "Estimated tree/raw plan and confirmed runtime profile",
+      "Real WAITFOR cancellation and same-session SELECT 42 reuse"
+    ],
+    "ClickHouse": [
+      "Isolated test, catalog, native DDL and exact UInt64/UInt256/decimal/binary cells",
+      "Estimated tree/raw native plan",
+      "Native CSV independently parsed; real cancellation and same-session reuse"
+    ],
+    "MongoDB": [
+      "Isolated test, lazy collections and 205 documents paged 100/100/5",
+      "Canonical Extended JSON and tree preserve Int64/Decimal128/binary; native indexes",
+      "Read-only aggregation returns EU count 103 and score total 105060",
+      "Reviewed BSON insert independently read from the server",
+      "Disconnect clears returned data and guards execution"
+    ],
+    "Redis": [
+      "Isolated test, lazy SCAN, TTL and all six native value types",
+      "Exact signed integer and binary bytes",
+      "Production Cancel dispatches no write, independently verified absent key",
+      "Confirmed production SET returns exact independently verified Unicode value",
+      "Disconnect clears keys/reply and guards execution"
+    ]
+  },
+  "limitations": [
+    "MariaDB is included and has real-server local contracts; exact Preview 2 native MariaDB acceptance remains pending.",
+    "Listed checks are workflow slices, not comprehensive acceptance of every supported driver feature.",
+    "Native MySQL/MariaDB TLS, NoSQL TLS/mTLS/SSH, broader edit/import/diagram paths and other unchecked transports remain pending.",
+    "Windows, Linux, Intel Macs, other macOS versions, Developer ID signing and notarization remain pending.",
+    "PostgreSQL planner/storage statistics added after this source commit are available only in newer source builds.",
+    "Source debug-app screenshot tour is not a continuous recording or proof of this release artifact."
+  ],
+  "private_receipt_sha256": {
+    "native-clickhouse-package-export.json": "926026406b44925d4ffc1e220feedb9ba0bb02241c67eeff2900e3a80346fcaf",
+    "native-clickhouse-package-progress.json": "61a4841ba304898de606ffbc7057b284fa681134acdc7b1a64be0781cad0f06a",
+    "native-duckdb-package-acceptance.json": "5cc501ba6dfbbb38e755d3d9f43ba558c6116d8dc9b9fb9fcc2ff333bf8d9bab",
+    "native-duckdb-package-edit.json": "bfec6d6443953b94287a2fe3aa32c65d3dfee5e252142250921a60b025150879",
+    "native-mongodb-package-progress.json": "076a1f38926ad41db978f561cdec35d4ace3eb88bfff49b6c477ffd42bb57232",
+    "native-mongodb-package-stored.json": "ba0369893fa73d9bec855d2d918e6d67d60740ade11de2a2dfdbb8e0997057d0",
+    "native-mssql-package-batch.json": "00b7eb3e6060d4dfb919e72ce43433b94dda9c9b1944f9bd91c19c53650ca287",
+    "native-mssql-package-cancel.json": "5e4d9d2445ba4f6fc32866e5c5a6c0416ed27d1e98e2d3c4b36aad03422b9917",
+    "native-mssql-package-json-stored.json": "0df696a8da729663a15e8a59b666013223dcc0b161b9e95f6ba931668bf5ce43",
+    "native-mssql-package-plans.json": "45529e84486e4d6ccd3ee1ce789ba2a771814c564b87fc3a36087d8cd92acc6d",
+    "native-mssql-package-progress.json": "895002575102e709a4bef25d714a6e13f53beb82f1a518c6f78407a37233ac20",
+    "native-mysql-package-progress.json": "0415c2e7fa666c330d58a9f948f6785ba18939daf937587ca92fe88c1f32e5d2",
+    "native-nosql-package-disconnect.json": "00ac20018975a7c6df3c43e9f4ca3520ef3b9293a8f3692aa4fc3db27116d3ff",
+    "native-postgres-package-acceptance.json": "78ffc3d04963545203e744cf32f5da64b6f52f204cc360ffe6c01f4bb0011dda",
+    "native-redis-package-cancel-stored.json": "b17304f130a8b6484958d904c30e95af290c9ff31ef2dc5cb05654de51dc6f2a",
+    "native-redis-package-confirm-stored.json": "0d4f793e2b2d55d413ce52031cdbd0fd0622c817dc1c3b4af27fed048ee8b5ea",
+    "native-redis-package-progress.json": "2e9b8eaf455adbd0a442e6b918c5024f756a475ec8a2f9f1ab14484ea8101ace",
+    "native-sqlite-package-progress.json": "c9b4da92cb56ec28227b270b123b6771f440220a6bbc565984114a9e3012b10f"
+  },
+  "privacy": "Receipt hashes are retained for attribution. Raw accessibility trees, private fixture profiles, database passwords, Keychain state and user workspace files are excluded."
+}

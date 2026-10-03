@@ -1,6 +1,6 @@
 # ClickHouse native connections
 
-ClickHouse is a source-build feature after `v0.1.0-preview.1`. The downloadable Preview 1 contains SQLite, PostgreSQL, MySQL and MariaDB. Build the current source to use ClickHouse or DuckDB.
+ClickHouse is available in [Preview 2 for macOS Apple Silicon](RELEASES.md#preview-2--macos-apple-silicon) and current source builds. Preview 1 does not include this driver.
 
 Choose **New connection → ClickHouse** and enter the native TCP URL. HTTP ports such as 8123 are not supported by this driver.
 
@@ -45,4 +45,4 @@ export KLYNDB_TEST_CLICKHOUSE_DELAY_HOST='127.0.0.1'
 
 For the TLS contract, also configure `KLYNDB_TEST_TLS_CLICKHOUSE_URL`, `KLYNDB_TEST_TLS_CERT_DIR` with the documented test certificates, and a disposable `readonly_fixture` user whose server profile enforces `readonly=1`. Keep credentials out of saved scripts and source. The client uses pinned [klickhouse](https://github.com/Protryon/klickhouse) with the small, documented safety patches in [the retained client source](../third_party/klickhouse-0.15.3/KLYNDB_PATCH.md). Original licenses and bundled LZ4 notices are included in the package inventory.
 
-The exact optimized macOS Preview 2 candidate now passes local TCP connection/catalog, exact UInt64/UInt256/decimal/Unicode/binary values, Structure DDL, estimated tree/raw index details, independently checked native CSV export and Cancel with same-session reuse. TLS is explicitly disabled only on the owned loopback fixture; native TLS/client identity/SSH and other platforms remain pending. This candidate is unpublished; [validation evidence](VALIDATION.md#preview-2-exact-package-sql-server-clickhouse-mongodb-and-redis-acceptance--2026-10-03) does not change the Preview 1 download.
+The exact optimized macOS Preview 2 candidate now passes local TCP connection/catalog, exact UInt64/UInt256/decimal/Unicode/binary values, Structure DDL, estimated tree/raw index details, independently checked native CSV export and Cancel with same-session reuse. TLS is explicitly disabled only on the owned loopback fixture; native TLS/client identity/SSH and other platforms remain pending. Preview 2 is now published; [validation evidence](VALIDATION.md#preview-2-exact-package-sql-server-clickhouse-mongodb-and-redis-acceptance--2026-10-03) records its exact-package scope.
