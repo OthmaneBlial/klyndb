@@ -54,7 +54,7 @@
   <a href="docs/DEMO.md">Scene guide</a>
 </p>
 
-A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and aggregation**, **Redis key inspection**, and **production-write review**. SQL and MongoDB scenes are real native macOS captures with synthetic data. Redis scenes use captured test-server values and simulated IPC.
+A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and aggregation**, **Redis key inspection**, and **production-write review**. **All SQL, MongoDB and Redis scenes are real native macOS captures**, using synthetic data and real database requests. Redis now shows the native key explorer, original bytes and production-write review.
 
 <details>
 <summary>📸 See the native macOS workspace</summary>
@@ -67,6 +67,11 @@ A captioned screenshot tour of **SQL tabs and results**, **MongoDB filters and a
 <p align="center">
   <img src="docs/assets/mongodb-macos.jpg" alt="Actual native Klyndb macOS MongoDB aggregation pipeline returning EU 102 and US 103 from a disposable database" width="100%" />
   <br /><sub>Real MongoDB aggregation in the native source debug app. Synthetic records only.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/redis-macos.jpg" alt="Actual native Klyndb macOS Redis explorer with synthetic typed keys, TTLs and hash field inspection" width="100%" />
+  <br /><sub>Real Redis keys and hash inspection in the native source debug app. Synthetic records only.</sub>
 </p>
 
 </details>
@@ -105,7 +110,7 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | DuckDB · source builds | ✓ | ✓ · scalar base tables; finish SQL transactions first | Embedded DuckDB 1.5.6 · native macOS query workflow; source editing/imports/ER diagrams |
 | ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
 | SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts; native UI acceptance pending |
-| Redis · source builds | Native keys, TTLs, six value types and data commands | Native data commands; production/read-only guards | Redis 7.4.11 · real backend/TLS/mTLS contracts; native UI acceptance pending |
+| Redis · source builds | Native keys, TTLs, six value types and data commands | Native data commands; production/read-only guards | Redis 7.4.11 · real backend/TLS/mTLS contracts and native macOS source UI acceptance |
 | MongoDB · source builds | Native documents, JSON filters, aggregation, indexes and JSON/tree views | Reviewed single-document writes; production/read-only/conflict guards | MongoDB 8.0.32 · real backend/TLS/mTLS contracts; macOS debug browse/aggregation/CRUD verified |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.

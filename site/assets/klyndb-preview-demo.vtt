@@ -16,13 +16,13 @@ Group documents with a real aggregation pipeline. Actual native macOS debug app 
 Review production writes before they run. Actual native macOS debug app / original BSON conflict guard / canceled without writing
 
 00:00:32.000 --> 00:00:42.000
-Explore Redis keys, types and TTLs. Browser component preview / captured Redis fixture values / simulated IPC
+Explore Redis keys, types and TTLs. Actual native macOS debug app / real Redis 7.4.11 / synthetic records
 
 00:00:42.000 --> 00:00:49.000
-Inspect the original bytes. Browser component preview / captured Redis fixture values / simulated IPC
+Inspect the original bytes. Actual native macOS debug app / real Redis 7.4.11 / synthetic records
 
 00:00:49.000 --> 00:00:58.000
-Review native data commands. Browser component preview / simulated IPC / no write executed in this scene
+Review native data commands. Actual native macOS debug app / exact production arguments / canceled without writing
 
 00:00:58.000 --> 00:01:04.000
 Nine engines in current source builds. Preview 1 includes PostgreSQL, MySQL, MariaDB and SQLite. Star github.com/OthmaneBlial/klyndb.
