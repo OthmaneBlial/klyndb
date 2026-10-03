@@ -58,6 +58,7 @@ if [[ -n "${KLYNDB_TEST_MSSQL_URL:-}" ]]; then
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_workflow --ignored
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_catalog --ignored
   workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_editing --ignored
+  workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_imports --ignored
   if [[ -n "${KLYNDB_TEST_TLS_CERT_DIR:-}" ]]; then
     workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_verified_tls --ignored
   fi

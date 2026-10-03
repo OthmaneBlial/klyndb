@@ -36,7 +36,7 @@ The selected database exposes schema-qualified tables/views, columns, nullabilit
 
 Execute explicit BEGIN TRANSACTION, COMMIT or ROLLBACK in SQL. The transaction indicator uses native XACT_STATE, including failed transactions. Confirmed reconnect drops the original session, rolling back its open transaction and removing temporary tables; retained result exports stay available.
 
-Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. File imports, structured execution plans and diagrams remain disabled for this driver.
+Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. CSV/JSON row imports are enabled; SQL file imports, structured execution plans and diagrams remain disabled for this driver.
 
 ## Reviewed table editing
 
@@ -52,8 +52,18 @@ Batches are limited to 1,000 changes / 8 MiB and one 60-second deadline. Attenti
 
 The current writer holds a table-wide exclusive lock through the transaction to protect metadata and reread values. In a manual transaction this lock remains until COMMIT/ROLLBACK and can block other sessions. Narrower locks are a follow-up, rather than an unverified concurrency guarantee.
 
+## CSV and JSON row imports
+
+Choose **Import data** on an editable table and select CSV, JSON object array or Klyndb JSON export. The shared native picker, immutable snapshot, preview, explicit field/type mapping and production confirmation flow is used. Identity/generated columns cannot be mapped; omitted columns use defaults. [The import guide](IMPORTS.md) describes formats and file/record bounds.
+
+The native writer holds the session lock and one transaction/savepoint across every bounded batch and parser wait. An explicit completion message after valid EOF is required before success; producer loss, late malformed records, conversion errors and constraint failures roll back earlier imported rows. Existing explicit/implicit transactions leave successful imports pending for COMMIT/ROLLBACK, preserving earlier caller work on recoverable errors. Values use the same bound casts and exact conversion checks as reviewed grid edits.
+
+The configured query timeout supplies the whole-file 1–3,600-second job deadline; the native driver also caps a stream at one hour. Cancellation interrupts parser waits or native requests, drains Attention and confirms rollback before reuse. Final COMMIT is not deliberately interrupted, and a late cancel can arrive after commit. Unconfirmed cleanup or commit closes the connection and requires verification before retrying. Native trigger/external-effect limits still apply.
+
+The current implementation makes per-row conversion/write requests and holds the same table-wide exclusive lock until the transaction ends. Large-file throughput remains unmeasured. Views, memory-optimized tables, enabled INSTEAD OF triggers and unsupported alias/CLR destination casts retain the editing restrictions. SQL file imports remain disabled, including GO-based dumps.
+
 ## Evidence and remaining validation
 
 The real native driver contract uses Microsoft SQL Server 2022 CU27, `16.0.4295.3`, Developer Edition from the official container image. It checks exact cells, DECLARE/multiple/empty result sets, native writes/catalog/browsing/transactions, reviewed edits and conflicts, cancellation and reuse, consumer loss, row limits and TLS encryption/CA/hostname rejection. The fixture runs under Rosetta on Apple Silicon; [Microsoft supports these Linux containers on x86-64 hosts](https://learn.microsoft.com/en-us/sql/linux/install-upgrade/quickstart-install-docker?view=sql-server-linux-ver15), so this is protocol test evidence, not a supported ARM production deployment claim.
 
-The real core contract also passes for isolated connection testing, saved sessions, exact disk-spool cells, production editing confirmation, multi-result CSV/SQL export, native SQL-export roundtrip and confirmed reconnect that rolls back the original transaction, removes temporary tables and retains completed results. Native desktop acceptance and Windows/Linux workflows remain pending and are tracked separately in [VALIDATION.md](VALIDATION.md). This source driver is not a new published binary release.
+The real core contract also passes for isolated connection testing, saved sessions, exact disk-spool cells, production editing/import confirmation, immutable CSV and standard/typed JSON imports, late-error rollback, manual-transaction export roundtrip, one-second slow-trigger import rollback/reuse, multi-result CSV/SQL export, native SQL-export roundtrip and confirmed reconnect that rolls back the original transaction, removes temporary tables and retains completed results. Native desktop acceptance and Windows/Linux workflows remain pending and are tracked separately in [VALIDATION.md](VALIDATION.md). This source driver is not a new published binary release.

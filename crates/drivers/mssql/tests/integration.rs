@@ -38,6 +38,289 @@ async fn answer(db: Arc<SqlServer>) {
     );
 }
 
+async fn import_batches(
+    db: Arc<SqlServer>,
+    table: Table,
+    batches: Vec<Result<InsertBatch>>,
+) -> Result<MutationResult> {
+    let (sender, receiver) = mpsc::channel(1);
+    let producer = tokio::spawn(async move {
+        for batch in batches {
+            if sender.send(batch).await.is_err() {
+                break;
+            }
+        }
+    });
+    let result = db
+        .insert_stream(table, receiver, CancellationToken::new())
+        .await;
+    producer.await.unwrap();
+    result
+}
+
+#[tokio::test]
+#[ignore = "Requires a disposable SQL Server; checks complete-stream rollback and native cancellation"]
+async fn real_sql_server_imports() {
+    let address = std::env::var("KLYNDB_TEST_MSSQL_URL").unwrap();
+    let password = std::env::var("KLYNDB_TEST_MSSQL_PASSWORD").unwrap();
+    let db = Arc::new(
+        SqlServer::connect(&address, Some(&password), false)
+            .await
+            .unwrap(),
+    );
+    let probe = Arc::new(
+        SqlServer::connect(&address, Some(&password), false)
+            .await
+            .unwrap(),
+    );
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let name = format!("klyndb_import_{suffix}");
+    query(db.clone(),&format!("CREATE TABLE dbo.[{name}](id bigint PRIMARY KEY,label nvarchar(100),amount decimal(38,18),payload varbinary(32),flag bit,seq int IDENTITY)"),10).await.unwrap();
+    let table = Table {
+        schema: "dbo".into(),
+        name: name.clone(),
+        kind: "table".into(),
+    };
+    let insert = |id: i64| Change::Insert {
+        values: BTreeMap::from([
+            ("id".into(), Cell::Number(id.to_string())),
+            ("label".into(), Cell::Text("é雪, \"quoted\"\nnext".into())),
+            (
+                "amount".into(),
+                Cell::Number("12345678901234567890.123456789012345678".into()),
+            ),
+            ("payload".into(), Cell::Binary("00ff".into())),
+            ("flag".into(), Cell::Boolean(true)),
+        ]),
+    };
+    assert!(db.capabilities().import_rows);
+    let result = import_batches(
+        db.clone(),
+        table.clone(),
+        vec![
+            Ok(InsertBatch::Rows((1..=256).map(insert).collect())),
+            Ok(InsertBatch::Rows((257..=300).map(insert).collect())),
+            Ok(InsertBatch::Complete),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(result.affected == 300 && !result.pending_transaction);
+    let count = format!("SELECT COUNT_BIG(*) FROM dbo.[{name}]");
+    assert_eq!(
+        rows(&query(db.clone(), &count, 10).await.unwrap())[0][0].text(),
+        "300"
+    );
+    let first = rows(
+        &query(
+            db.clone(),
+            &format!("SELECT * FROM dbo.[{name}] WHERE id=1"),
+            10,
+        )
+        .await
+        .unwrap(),
+    )
+    .remove(0);
+    assert_eq!(
+        &first[..5],
+        &[
+            Cell::Number("1".into()),
+            Cell::Text("é雪, \"quoted\"\nnext".into()),
+            Cell::Number("12345678901234567890.123456789012345678".into()),
+            Cell::Binary("00ff".into()),
+            Cell::Boolean(true)
+        ]
+    );
+    for batches in [
+        vec![
+            Ok(InsertBatch::Rows(vec![insert(301)])),
+            Err(Error::new("Fixture parser stopped")),
+        ],
+        vec![Ok(InsertBatch::Rows(vec![insert(301)]))], // EOF without explicit Complete must never commit.
+        vec![
+            Ok(InsertBatch::Rows(vec![insert(301)])),
+            Ok(InsertBatch::Rows(vec![insert(1)])),
+            Ok(InsertBatch::Complete),
+        ],
+        vec![
+            Ok(InsertBatch::Rows(vec![insert(301)])),
+            Ok(InsertBatch::Rows(vec![Change::Update {
+                old: first.clone(),
+                values: BTreeMap::from([("label".into(), Cell::Text("not an append".into()))]),
+            }])),
+            Ok(InsertBatch::Complete),
+        ],
+    ] {
+        assert!(
+            import_batches(db.clone(), table.clone(), batches)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            rows(&query(db.clone(), &count, 10).await.unwrap())[0][0].text(),
+            "300"
+        );
+        assert_eq!(
+            db.transaction_state().await.unwrap(),
+            TransactionState::Idle
+        );
+        answer(db.clone()).await;
+    }
+    query(
+        db.clone(),
+        &format!("BEGIN TRANSACTION; INSERT INTO dbo.[{name}](id) VALUES(400)"),
+        10,
+    )
+    .await
+    .unwrap();
+    assert!(
+        import_batches(
+            db.clone(),
+            table.clone(),
+            vec![
+                Ok(InsertBatch::Rows(vec![insert(401)])),
+                Err(Error::new("late parse failure"))
+            ]
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        rows(&query(db.clone(), &count, 10).await.unwrap())[0][0].text(),
+        "301"
+    );
+    assert_eq!(
+        db.transaction_state().await.unwrap(),
+        TransactionState::Active
+    );
+    let result = import_batches(
+        db.clone(),
+        table.clone(),
+        vec![
+            Ok(InsertBatch::Rows(vec![insert(401)])),
+            Ok(InsertBatch::Complete),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(result.pending_transaction && result.affected == 1);
+    query(db.clone(), "ROLLBACK; SET IMPLICIT_TRANSACTIONS ON", 10)
+        .await
+        .unwrap();
+    let result = import_batches(
+        db.clone(),
+        table.clone(),
+        vec![
+            Ok(InsertBatch::Rows(vec![insert(501)])),
+            Ok(InsertBatch::Complete),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(result.pending_transaction && result.affected == 1);
+    assert_eq!(
+        rows(&query(db.clone(), "SELECT @@TRANCOUNT", 10).await.unwrap())[0][0].text(),
+        "1"
+    );
+    query(db.clone(), "ROLLBACK; SET IMPLICIT_TRANSACTIONS OFF", 10)
+        .await
+        .unwrap();
+    query(db.clone(),&format!("EXEC(N'CREATE TRIGGER dbo.[tr_{suffix}] ON dbo.[{name}] AFTER INSERT AS BEGIN IF EXISTS(SELECT 1 FROM inserted WHERE id=999) WAITFOR DELAY ''00:02:00''; END')"),10).await.unwrap();
+    // Observe actual uncommitted inserts through a separate dirty-read probe before cancelling.
+    for active_request in [false, true] {
+        let (sender, receiver) = mpsc::channel(1);
+        let token = CancellationToken::new();
+        let task = {
+            let db = db.clone();
+            let table = table.clone();
+            let token = token.clone();
+            tokio::spawn(async move { db.insert_stream(table, receiver, token).await })
+        };
+        sender
+            .send(Ok(InsertBatch::Rows(if active_request {
+                vec![insert(301), insert(999)]
+            } else {
+                vec![insert(301)]
+            })))
+            .await
+            .unwrap();
+        let observed = if active_request { 999 } else { 301 };
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if rows(
+                    &query(
+                        probe.clone(),
+                        &format!("SELECT id FROM dbo.[{name}] WITH (NOLOCK) WHERE id={observed}"),
+                        10,
+                    )
+                    .await
+                    .unwrap(),
+                )
+                .len()
+                    == 1
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let mut queued = {
+            let db = db.clone();
+            tokio::spawn(async move { query(db, "SELECT 42", 10).await })
+        };
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut queued)
+                .await
+                .is_err()
+        );
+        token.cancel();
+        let error = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(error.message.contains("cancelled"), "{}", error.message);
+        drop(sender);
+        assert_eq!(rows(&queued.await.unwrap().unwrap())[0][0].text(), "42");
+        assert_eq!(
+            db.transaction_state().await.unwrap(),
+            TransactionState::Idle
+        );
+        assert_eq!(
+            rows(&query(db.clone(), &count, 10).await.unwrap())[0][0].text(),
+            "300"
+        );
+    }
+    let readonly = Arc::new(
+        SqlServer::connect(&address, Some(&password), true)
+            .await
+            .unwrap(),
+    );
+    assert!(!readonly.capabilities().import_rows);
+    assert!(
+        import_batches(
+            readonly.clone(),
+            table,
+            vec![
+                Ok(InsertBatch::Rows(vec![insert(601)])),
+                Ok(InsertBatch::Complete)
+            ]
+        )
+        .await
+        .unwrap_err()
+        .message
+        .contains("read-only")
+    );
+    readonly.disconnect().await.unwrap();
+    query(db.clone(), &format!("DROP TABLE dbo.[{name}]"), 10)
+        .await
+        .unwrap();
+    probe.disconnect().await.unwrap();
+    db.disconnect().await.unwrap();
+}
+
 #[tokio::test]
 #[ignore = "Requires a disposable KLYNDB_TEST_MSSQL_URL server and KLYNDB_TEST_MSSQL_PASSWORD"]
 async fn real_sql_server_editing() {

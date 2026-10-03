@@ -335,6 +335,34 @@ impl SqlServer {
             ))
         })
     }
+    async fn write(
+        &self,
+        table: Table,
+        source: edit::Source<'_>,
+        cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This SQL Server connection is read-only"));
+        }
+        let mut guard = tokio::select! {biased; _=cancel.cancelled()=>return Err(Error::new("Import cancelled")), guard=self.connection.lock()=>guard};
+        // Own the client while writing: a dropped caller cannot leave a half-read response reusable.
+        let mut client = guard
+            .take()
+            .ok_or_else(|| Error::new("Connection is closed; reconnect."))?;
+        let mut poison = false;
+        let result = edit::apply(&mut client, &table, source, &cancel, &mut poison).await;
+        if poison {
+            let cause = result
+                .err()
+                .map(|e| e.message)
+                .unwrap_or_else(|| "Session cleanup failed".into());
+            return Err(Error::new(format!(
+                "{cause} Table writes could not be safely completed or rolled back. Connection closed; reconnect and verify writes and the original transaction before retrying."
+            )));
+        }
+        *guard = Some(client);
+        result
+    }
     async fn foreign_key_rows(&self, table: &Table) -> Result<Vec<Row>> {
         self.metadata(format!("SELECT TOP (50001) fk.name,pc.name,SCHEMA_NAME(t.schema_id),t.name,rc.name FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id=fk.object_id JOIN sys.columns pc ON pc.object_id=fkc.parent_object_id AND pc.column_id=fkc.parent_column_id JOIN sys.tables t ON t.object_id=fkc.referenced_object_id JOIN sys.columns rc ON rc.object_id=fkc.referenced_object_id AND rc.column_id=fkc.referenced_column_id WHERE fk.parent_object_id={} ORDER BY fk.name,fkc.constraint_column_id",object_id(table))).await
     }
@@ -351,7 +379,7 @@ impl Session for SqlServer {
             explain: false,
             explain_analyze: false,
             edit_rows: !self.read_only,
-            import_rows: false,
+            import_rows: !self.read_only,
             import_sql: false,
             cancel: true,
             tls: true,
@@ -480,27 +508,21 @@ impl Session for SqlServer {
         }
     }
     async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult> {
-        if self.read_only {
-            return Err(Error::new("This SQL Server connection is read-only"));
-        }
         validate_change_batch(&changes)?;
-        let mut guard = self.connection.lock().await;
-        let client = guard
-            .as_mut()
-            .ok_or_else(|| Error::new("Connection is closed; reconnect."))?;
-        let mut poison = false;
-        let result = edit::apply(client, &table, &changes, &mut poison).await;
-        if poison {
-            guard.take();
-            let cause = result
-                .err()
-                .map(|e| e.message)
-                .unwrap_or_else(|| "Session cleanup failed".into());
-            return Err(Error::new(format!(
-                "{cause} Editing could not be safely completed or rolled back. Connection closed; reconnect and verify writes and the original transaction before retrying."
-            )));
-        }
-        result
+        self.write(
+            table,
+            edit::Source::Edits(Some(&changes)),
+            CancellationToken::new(),
+        )
+        .await
+    }
+    async fn insert_stream(
+        &self,
+        table: Table,
+        input: mpsc::Receiver<Result<InsertBatch>>,
+        cancel: CancellationToken,
+    ) -> Result<MutationResult> {
+        self.write(table, edit::Source::Import(input), cancel).await
     }
     async fn disconnect(&self) -> Result<()> {
         self.connection.lock().await.take();
