@@ -51,8 +51,15 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ConnectionDialog } from "./components/ConnectionDialog";
 import type { EditorHandle } from "./components/SqlEditor";
-import type { DocumentWorkspaceHandle } from "./components/DocumentWorkspace";
-import type { KeyWorkspaceHandle } from "./components/KeyValueWorkspace";
+import type {
+  DocumentWorkspaceHandle,
+  DocumentWorkspaceState,
+} from "./components/DocumentWorkspace";
+import type {
+  KeyWorkspaceHandle,
+  KeyWorkspaceState,
+} from "./components/KeyValueWorkspace";
+import { TransientWorkspaceCache } from "./transientWorkspace";
 import type { SqlSubmission } from "./sql";
 import { tableKey } from "./diagram";
 const KeyValueWorkspace = lazy(() =>
@@ -171,6 +178,12 @@ export default function App() {
     [transactionStates, setTransactionStates] = useState<
       Record<string, "idle" | "active" | "failed" | "unknown">
     >({});
+  const documentStates = useRef(
+    new TransientWorkspaceCache<DocumentWorkspaceState>(16 * 1024 * 1024),
+  );
+  const keyStates = useRef(
+    new TransientWorkspaceCache<KeyWorkspaceState>(16 * 1024 * 1024),
+  );
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const applyingRef = useRef(applying);
   applyingRef.current = applying;
@@ -466,6 +479,8 @@ export default function App() {
       delete next[id];
       return next;
     });
+    documentStates.current.forget(id);
+    keyStates.current.forget(id);
     setTabs((t) => t.filter((tab) => tab.id !== id));
     if (active === id) setActive(tabs.find((t) => t.id !== id)?.id ?? "");
   }
@@ -484,6 +499,13 @@ export default function App() {
     });
     setInspectors((s) => {
       const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    documentStates.current.forget(id);
+    keyStates.current.forget(id);
+    setKeyDrafts((previous) => {
+      const next = { ...previous };
       delete next[id];
       return next;
     });
@@ -580,6 +602,10 @@ export default function App() {
     const previousTabs = new Set(
       tabsRef.current.filter((t) => t.connection === id).map((t) => t.id),
     );
+    for (const tab of previousTabs) {
+      documentStates.current.invalidate(tab);
+      keyStates.current.invalidate(tab);
+    }
     setTableJobs((s) =>
       Object.fromEntries(
         Object.entries(s).filter(([tab]) => !previousTabs.has(tab)),
@@ -925,11 +951,7 @@ export default function App() {
         api("delete_connection", { id: c.id })
           .then(() => {
             setConnections((s) => s.filter((item) => item.id !== c.id));
-            setConnected((s) => {
-              const next = { ...s };
-              delete next[c.id];
-              return next;
-            });
+            clearConnection(c.id);
           })
           .catch((e) => report(String(e)));
       },
@@ -1582,6 +1604,16 @@ export default function App() {
                   connection={connection}
                   ready={!!connected[current.connection]?.document_queries}
                   workspaceRef={documentWorkspaceRef}
+                  initialState={documentStates.current.restore(current.id)}
+                  onRemember={(state, bytes, clear) =>
+                    documentStates.current.remember(
+                      current.id,
+                      state,
+                      bytes,
+                      clear,
+                    )
+                  }
+                  blocked={!!applying[current.id]}
                   onBusy={(value) => {
                     applyingRef.current = {
                       ...applyingRef.current,
@@ -1604,6 +1636,11 @@ export default function App() {
                   key={`${current.id}-${current.connection}-${!!connected[current.connection]}`}
                   connection={connection}
                   workspaceRef={keyWorkspaceRef}
+                  initialState={keyStates.current.restore(current.id)}
+                  onRemember={(state, bytes, clear) =>
+                    keyStates.current.remember(current.id, state, bytes, clear)
+                  }
+                  blocked={!!applying[current.id]}
                   ready={!!connected[current.connection]?.key_value}
                   draft={keyDrafts[current.id] ?? '["PING"]'}
                   onDraft={(text) =>

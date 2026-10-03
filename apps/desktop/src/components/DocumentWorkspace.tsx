@@ -1,6 +1,7 @@
 import {
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type Ref,
@@ -55,6 +56,40 @@ function JsonTree({
     </details>
   );
 }
+export interface DocumentWorkspaceState {
+  kind: "document";
+  database: string;
+  databases: string[];
+  collections: Table[];
+  search: string;
+  collection: Table | null;
+  text: string;
+  sort: string;
+  aggregate: boolean;
+  page: DocumentPage | null;
+  applied: DocumentQuery | null;
+  selected: DocumentRecord | null;
+  indexes: string[] | null;
+  tree: boolean;
+  error: string;
+  message: string;
+}
+export function clearDocumentResults(
+  state: DocumentWorkspaceState,
+  reason: string,
+): DocumentWorkspaceState {
+  return {
+    ...state,
+    databases: [],
+    collections: [],
+    page: null,
+    applied: null,
+    selected: null,
+    indexes: null,
+    error: "",
+    message: reason,
+  };
+}
 export interface DocumentWorkspaceHandle {
   run: () => void;
   refresh: () => void;
@@ -64,13 +99,24 @@ export function DocumentWorkspace({
   ready,
   onBusy,
   workspaceRef,
+  initialState,
+  onRemember,
+  blocked = false,
 }: {
   connection?: Connection;
   ready: boolean;
   onBusy: (value: boolean) => void;
   workspaceRef?: Ref<DocumentWorkspaceHandle>;
+  initialState?: DocumentWorkspaceState;
+  onRemember?: (
+    state: DocumentWorkspaceState,
+    bytes: number,
+    clear: typeof clearDocumentResults,
+  ) => void;
+  blocked?: boolean;
 }) {
   const [database, setDatabase] = useState(() => {
+    if (initialState) return initialState.database;
     try {
       return decodeURIComponent(
         new URL(connection?.address ?? "").pathname.slice(1),
@@ -79,27 +125,88 @@ export function DocumentWorkspace({
       return "";
     }
   });
-  const [databases, setDatabases] = useState<string[]>([]);
-  const [collections, setCollections] = useState<Table[]>([]);
-  const [search, setSearch] = useState("");
-  const [collection, setCollection] = useState<Table | null>(null);
-  const [text, setText] = useState("{}");
-  const [sort, setSort] = useState("{}");
-  const [aggregate, setAggregate] = useState(false);
-  const [page, setPage] = useState<DocumentPage | null>(null);
-  const [applied, setApplied] = useState<DocumentQuery | null>(null);
-  const [selected, setSelected] = useState<DocumentRecord | null>(null);
-  const [indexes, setIndexes] = useState<string[] | null>(null);
-  const [tree, setTree] = useState(false);
+  const [databases, setDatabases] = useState<string[]>(
+    initialState?.databases ?? [],
+  );
+  const [collections, setCollections] = useState<Table[]>(
+    initialState?.collections ?? [],
+  );
+  const [search, setSearch] = useState(initialState?.search ?? "");
+  const [collection, setCollection] = useState<Table | null>(
+    initialState?.collection ?? null,
+  );
+  const [text, setText] = useState(initialState?.text ?? "{}");
+  const [sort, setSort] = useState(initialState?.sort ?? "{}");
+  const [aggregate, setAggregate] = useState(initialState?.aggregate ?? false);
+  const [page, setPage] = useState<DocumentPage | null>(
+    initialState?.page ?? null,
+  );
+  const [applied, setApplied] = useState<DocumentQuery | null>(
+    initialState?.applied ?? null,
+  );
+  const [selected, setSelected] = useState<DocumentRecord | null>(
+    initialState?.selected ?? null,
+  );
+  const [indexes, setIndexes] = useState<string[] | null>(
+    initialState?.indexes ?? null,
+  );
+  const [tree, setTree] = useState(initialState?.tree ?? false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [error, setError] = useState(initialState?.error ?? "");
+  const [message, setMessage] = useState(initialState?.message ?? "");
   const [edit, setEdit] = useState<{
     change: DocumentChange;
     review: boolean;
     database: string;
     collection: string;
   } | null>(null);
+  // Estimate retained UTF-16 payload once per reply, not on every keystroke.
+  const retainedBytes = useMemo(
+    () => JSON.stringify({ databases, collections, page, indexes }).length * 2,
+    [databases, collections, page, indexes],
+  );
+  useEffect(() => {
+    onRemember?.(
+      {
+        kind: "document",
+        database,
+        databases,
+        collections,
+        search,
+        collection,
+        text,
+        sort,
+        aggregate,
+        page,
+        applied,
+        selected,
+        indexes,
+        tree,
+        error,
+        message,
+      },
+      retainedBytes,
+      clearDocumentResults,
+    );
+  }, [
+    onRemember,
+    database,
+    databases,
+    collections,
+    search,
+    collection,
+    text,
+    sort,
+    aggregate,
+    page,
+    applied,
+    selected,
+    indexes,
+    tree,
+    error,
+    message,
+    retainedBytes,
+  ]);
   const pending = useRef(false),
     live = useRef(true);
   useEffect(() => {
@@ -109,7 +216,7 @@ export function DocumentWorkspace({
     };
   }, []);
   async function work(task: (id: string) => Promise<void>) {
-    if (!connection || !ready || pending.current) return;
+    if (!connection || !ready || blocked || pending.current) return;
     pending.current = true;
     setBusy(true);
     onBusy(true);
@@ -129,7 +236,15 @@ export function DocumentWorkspace({
       const result = await api("document_collections", { id, database });
       if (live.current) {
         setCollections(result);
-        setCollection(null);
+        setCollection((previous) =>
+          previous
+            ? (result.find(
+                (item) =>
+                  item.schema === previous.schema &&
+                  item.name === previous.name,
+              ) ?? null)
+            : null,
+        );
         setPage(null);
         setSelected(null);
         setIndexes(null);
@@ -162,17 +277,21 @@ export function DocumentWorkspace({
     setPage(null);
     setApplied(null);
     setCollection(item);
-    setText("{}");
-    setSort("{}");
-    setAggregate(false);
+    const same =
+      collection?.schema === item.schema && collection?.name === item.name;
+    if (!same) {
+      setText("{}");
+      setSort("{}");
+      setAggregate(false);
+    }
     setSelected(null);
     setIndexes(null);
     run({
       database: item.schema,
       collection: item.name,
-      text: "{}",
-      sort: "{}",
-      aggregate: false,
+      text: same ? text : "{}",
+      sort: same ? sort : "{}",
+      aggregate: same ? aggregate : false,
       offset: 0,
     });
   }
@@ -180,9 +299,17 @@ export function DocumentWorkspace({
     run: () => run(),
     refresh: loadCollections,
   }));
-  const disabled = busy || !ready;
+  const disabled = busy || blocked || !ready;
   const writable =
-    !!collection && collection.kind === "collection" && !connection?.read_only;
+    !!collection &&
+    collection.kind === "collection" &&
+    collections.some(
+      (item) =>
+        item.schema === collection.schema &&
+        item.name === collection.name &&
+        item.kind === "collection",
+    ) &&
+    !connection?.read_only;
   const editDocument = (change: DocumentChange) =>
     collection &&
     setEdit({
@@ -238,7 +365,7 @@ export function DocumentWorkspace({
               value={database}
               list="mongo-databases"
               maxLength={255}
-              disabled={busy}
+              disabled={busy || blocked}
               onChange={(e) => {
                 setDatabase(e.target.value);
                 setCollections([]);
@@ -343,7 +470,7 @@ export function DocumentWorkspace({
               Mode
               <select
                 aria-label="Document query mode"
-                disabled={busy}
+                disabled={busy || blocked}
                 value={aggregate ? "aggregate" : "find"}
                 onChange={(e) => {
                   const next = e.target.value === "aggregate";
@@ -362,7 +489,7 @@ export function DocumentWorkspace({
                   aria-label="Document sort"
                   value={sort}
                   maxLength={16384}
-                  disabled={busy}
+                  disabled={busy || blocked}
                   onChange={(e) => setSort(e.target.value)}
                 />
               </label>
@@ -377,7 +504,7 @@ export function DocumentWorkspace({
               value={text}
               maxLength={1024 * 1024}
               spellCheck={false}
-              disabled={busy}
+              disabled={busy || blocked}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

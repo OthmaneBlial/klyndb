@@ -1,6 +1,7 @@
 import {
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type Ref,
@@ -25,6 +26,33 @@ export function KeyReply({ value }: { value: KeyValue }) {
     </pre>
   );
 }
+export interface KeyWorkspaceState {
+  kind: "key_value";
+  pattern: string;
+  page: KeyScan | null;
+  applied: string;
+  selected: Cell | null;
+  inspection: KeyInspection | null;
+  positions: string[];
+  reply: KeyValue | null;
+  error: string;
+  message: string;
+}
+export function clearKeyResults(
+  state: KeyWorkspaceState,
+  reason: string,
+): KeyWorkspaceState {
+  return {
+    ...state,
+    page: null,
+    selected: null,
+    inspection: null,
+    positions: [],
+    reply: null,
+    error: "",
+    message: reason,
+  };
+}
 export interface KeyWorkspaceHandle {
   run: () => void;
   scan: () => void;
@@ -36,6 +64,9 @@ export function KeyValueWorkspace({
   onDraft,
   onBusy,
   workspaceRef,
+  initialState,
+  onRemember,
+  blocked = false,
 }: {
   connection?: Connection;
   ready: boolean;
@@ -43,20 +74,70 @@ export function KeyValueWorkspace({
   onDraft: (text: string) => void;
   onBusy: (busy: boolean) => void;
   workspaceRef?: Ref<KeyWorkspaceHandle>;
+  initialState?: KeyWorkspaceState;
+  onRemember?: (
+    state: KeyWorkspaceState,
+    bytes: number,
+    clear: typeof clearKeyResults,
+  ) => void;
+  blocked?: boolean;
 }) {
-  const [pattern, setPattern] = useState("*");
-  const [page, setPage] = useState<KeyScan | null>(null);
-  const [applied, setApplied] = useState("*");
-  const [selected, setSelected] = useState<Cell | null>(null);
-  const [inspection, setInspection] = useState<KeyInspection | null>(null);
-  const [positions, setPositions] = useState<string[]>([]);
-  const [reply, setReply] = useState<KeyValue | null>(null);
+  const [pattern, setPattern] = useState(initialState?.pattern ?? "*");
+  const [page, setPage] = useState<KeyScan | null>(initialState?.page ?? null);
+  const [applied, setApplied] = useState(initialState?.applied ?? "*");
+  const [selected, setSelected] = useState<Cell | null>(
+    initialState?.selected ?? null,
+  );
+  const [inspection, setInspection] = useState<KeyInspection | null>(
+    initialState?.inspection ?? null,
+  );
+  const [positions, setPositions] = useState<string[]>(
+    initialState?.positions ?? [],
+  );
+  const [reply, setReply] = useState<KeyValue | null>(
+    initialState?.reply ?? null,
+  );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialState?.error ?? "");
+  const [message, setMessage] = useState(initialState?.message ?? "");
   const [confirm, setConfirm] = useState<{
     text: string;
     info: KeyCommandInfo;
   } | null>(null);
+  const retainedBytes = useMemo(
+    () => JSON.stringify({ page, inspection, reply, positions }).length * 2,
+    [page, inspection, reply, positions],
+  );
+  useEffect(() => {
+    onRemember?.(
+      {
+        kind: "key_value",
+        pattern,
+        page,
+        applied,
+        selected,
+        inspection,
+        positions,
+        reply,
+        error,
+        message,
+      },
+      retainedBytes,
+      clearKeyResults,
+    );
+  }, [
+    onRemember,
+    pattern,
+    page,
+    applied,
+    selected,
+    inspection,
+    positions,
+    reply,
+    error,
+    message,
+    retainedBytes,
+  ]);
   const live = useRef(true),
     pending = useRef(false);
   useEffect(() => {
@@ -66,7 +147,7 @@ export function KeyValueWorkspace({
     };
   }, []);
   async function work(task: (id: string) => Promise<void>) {
-    if (!connection || !ready || pending.current) return;
+    if (!connection || !ready || blocked || pending.current) return;
     pending.current = true;
     setBusy(true);
     onBusy(true);
@@ -87,6 +168,7 @@ export function KeyValueWorkspace({
       if (live.current) {
         setPage(result);
         setApplied(query);
+        setMessage("");
       }
     });
   }
@@ -97,6 +179,7 @@ export function KeyValueWorkspace({
         setSelected(key);
         setInspection(result);
         setPositions(previous);
+        setMessage("");
       }
     });
   }
@@ -117,11 +200,12 @@ export function KeyValueWorkspace({
       const result = await api("key_command", { id, text, confirmed });
       if (live.current) {
         setReply(result);
+        setMessage("");
         setInspection(null);
       }
     });
   }
-  const disabled = !ready || busy;
+  const disabled = !ready || busy || blocked;
   useImperativeHandle(workspaceRef, () => ({
     run: () => {
       void execute(draft);
@@ -151,7 +235,7 @@ export function KeyValueWorkspace({
               maxLength={1024}
               onChange={(event) => setPattern(event.target.value)}
               placeholder="cache:*"
-              disabled={busy}
+              disabled={busy || blocked}
             />
           </label>
           <button className="primary" disabled={disabled}>
@@ -211,6 +295,11 @@ export function KeyValueWorkspace({
         {!ready && (
           <p className="key-hint muted">
             Connect to Redis to inspect keys and run native commands.
+          </p>
+        )}
+        {message && (
+          <p className="notice" role="status">
+            {message}
           </p>
         )}
         {error && (
@@ -322,7 +411,7 @@ export function KeyValueWorkspace({
               onChange={(event) => onDraft(event.target.value)}
               maxLength={256 * 1024}
               spellCheck={false}
-              disabled={busy}
+              disabled={busy || blocked}
               onKeyDown={(event) => {
                 if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                   event.preventDefault();

@@ -72,8 +72,8 @@ A captioned screenshot walkthrough of **SQL tabs and results**, **Redis key insp
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **🍃 Explore MongoDB** | Source builds add native JSON filters, read-only aggregation pipelines, paged documents, JSON/tree inspection, indexes and reviewed insert/replace/delete with concurrent-change guards. [MongoDB guide](docs/MONGODB.md). |
-| **🔑 Explore Redis** | Source builds add native key search, types/TTL, bounded string/hash/list/set/sorted-set/stream inspection and native data commands in a dedicated workspace; production confirmations and read-only guards. |
+| **🍃 Explore MongoDB** | Source builds add native JSON filters, read-only aggregation pipelines, paged documents, JSON/tree inspection, indexes and reviewed insert/replace/delete with concurrent-change guards. Query drafts and completed results stay with their tab in memory. [MongoDB guide](docs/MONGODB.md). |
+| **🔑 Explore Redis** | Source builds add native key search, types/TTL, bounded string/hash/list/set/sorted-set/stream inspection and native data commands in a dedicated workspace; production confirmations and read-only guards. Command drafts and completed explorer results stay with their tab in memory. |
 | **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md), [SQL Server](docs/SQLSERVER.md), [Redis](docs/REDIS.md) and [MongoDB](docs/MONGODB.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes and available table DDL, with foreign keys, constraints and triggers where supported. [Engine matrix](docs/COMPATIBILITY.md). |
 | **ƒ Inspect routines** | PostgreSQL, MySQL, MariaDB and SQL Server source builds: search and page routines, inspect native definitions and open them in an SQL tab. |
