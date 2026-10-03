@@ -1,6 +1,7 @@
 use klyndb_connections::{Connection, Store};
 use klyndb_core::Engine;
-use klyndb_driver_api::{Cell, TransactionState};
+use klyndb_driver_api::{Cell, Change, TransactionState};
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 async fn query(engine: &Engine, config: &Connection, sql: &str) -> String {
@@ -35,7 +36,7 @@ async fn sql_server_saved_session_spool_export_and_reconnect() {
         name: "SQL Server core contract".into(),
         engine: "mssql".into(),
         address,
-        environment: "development".into(),
+        environment: "production".into(),
         group: String::new(),
         color: "#79c7a4".into(),
         favorite: false,
@@ -53,8 +54,8 @@ async fn sql_server_saved_session_spool_export_and_reconnect() {
         .connect(&config.id, Some(password.clone()), None, None)
         .await
         .unwrap();
-    assert!(caps.transactions && caps.table_browse && caps.cancel && caps.tls);
-    assert!(!caps.affected_rows && !caps.edit_rows && !caps.import_rows && !caps.import_sql);
+    assert!(caps.transactions && caps.table_browse && caps.cancel && caps.tls && caps.edit_rows);
+    assert!(!caps.affected_rows && !caps.import_rows && !caps.import_sql);
     let name = format!("klyndb_{}", uuid::Uuid::new_v4().simple());
     let copy = format!("{name}_copy]雪");
     let quoted = format!("[{}]", copy.replace(']', "]]"));
@@ -85,6 +86,47 @@ async fn sql_server_saved_session_spool_export_and_reconnect() {
         Cell::Boolean(true),
     ];
     assert_eq!(job.page(0, 0, 100).unwrap(), vec![expected.clone()]);
+    let driver = engine.driver(&config.id).await.unwrap();
+    let table = driver
+        .tables()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|t| t.name == name)
+        .unwrap();
+    assert!(driver.inspect(&table).await.unwrap().editable);
+    let update = Change::Update {
+        old: expected.clone(),
+        values: BTreeMap::from([("label".into(), Cell::Text("reviewed".into()))]),
+    };
+    assert!(
+        engine
+            .apply_changes(&config.id, table.clone(), vec![update.clone()], false)
+            .await
+            .unwrap_err()
+            .message
+            .contains("Confirmation")
+    );
+    let applied = engine
+        .apply_changes(&config.id, table.clone(), vec![update], true)
+        .await
+        .unwrap();
+    assert_eq!(applied.affected, 1);
+    assert!(!applied.pending_transaction);
+    let mut edited = expected.clone();
+    edited[1] = Cell::Text("reviewed".into());
+    engine
+        .apply_changes(
+            &config.id,
+            table,
+            vec![Change::Update {
+                old: edited,
+                values: BTreeMap::from([("label".into(), expected[1].clone())]),
+            }],
+            true,
+        )
+        .await
+        .unwrap();
     let mut csv = vec![];
     assert_eq!(job.export(&mut csv, 0, "csv", "").unwrap(), 1);
     assert!(

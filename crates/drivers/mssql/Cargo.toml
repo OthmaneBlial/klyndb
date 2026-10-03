@@ -17,6 +17,4 @@ url = "2"
 percent-encoding = "2"
 chrono = "0.4"
 hex = "0.4"
-
-[dev-dependencies]
 uuid.workspace = true

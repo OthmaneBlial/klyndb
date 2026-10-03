@@ -56,7 +56,7 @@
 | **🧭 Explore** | Tables and views, columns, primary keys, indexes and available table DDL, with foreign keys, constraints and triggers where supported. [Engine matrix](docs/COMPATIBILITY.md). |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
-| **✍️ Edit data** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |
+| **✍️ Edit data** | Staged SQLite/PostgreSQL, MySQL/MariaDB InnoDB and SQL Server source-build inserts, updates and deletes; review, bound values and optimistic conflicts. |
 | **🔍 Understand queries** | Native estimated plans, collapsible trees, raw output, server messages and confirmed runtime analysis where supported. [Plan guide](docs/EXPLAIN.md). |
 | **🛡️ Stay in control** | Cancellation, configurable connection/query timeouts, read-only connections, destructive-query confirmations and actual transaction visibility. |
 | **🗺️ Understand relationships** | Native foreign keys, composite keys, pan/zoom, saved layouts and SVG export. [Diagram guide](docs/DIAGRAMS.md). |
@@ -66,7 +66,7 @@
 
 Server passwords stay in the **OS keychain**. TLS verification is enabled by default, with optional [CA files and client certificates](docs/TLS.md) for private servers, plus [SSH tunnels with verified host keys](docs/SSH.md). Your queries and schemas stay local. Read [SECURITY.md](SECURITY.md) for the exact security model and local-history behavior.
 
-## 🗄️ Six databases. One workspace.
+## 🗄️ Seven databases. One workspace.
 
 | Database | Queries & schema | Staged grid edits | Verified against |
 | --- | --- | --- | --- |
@@ -76,10 +76,11 @@ Server passwords stay in the **OS keychain**. TLS verification is enabled by def
 | SQLite | ✓ | ✓ | Real SQLite files |
 | DuckDB · source builds | ✓ | SQL transactions; grid edits pending | Embedded DuckDB 1.5.6 · native macOS workflow |
 | ClickHouse · source builds | ✓ | Pending | ClickHouse 26.3.39.7 · real backend contracts; native UI acceptance pending |
+| SQL Server · source builds | ✓ | ✓ · disk-based base tables | SQL Server 2022 CU27 · real backend contracts; native UI acceptance pending |
 
 These are implemented engines, tested against actual databases. See the [compatibility matrix](docs/COMPATIBILITY.md) for type, export and workflow limits.
 
-DuckDB and ClickHouse are available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB](docs/DUCKDB.md) and [ClickHouse](docs/CLICKHOUSE.md) guides for setup and current limits.
+DuckDB, ClickHouse and SQL Server are available when building the current source. The downloadable Preview 1 contains the first four engines. See the [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md) and [SQL Server](docs/SQLSERVER.md) guides for setup and current limits.
 
 **Development preview:** [Download Preview 1 for macOS Apple Silicon](https://github.com/OthmaneBlial/klyndb/releases/tag/v0.1.0-preview.1), or build from source. Additional drivers and Windows/Linux packages are in progress. It does not yet cover every DBeaver workflow. The [roadmap](ROADMAP.md) tracks the next working slices and is updated with each meaningful change.
 

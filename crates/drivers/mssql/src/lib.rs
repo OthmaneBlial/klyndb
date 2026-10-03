@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+mod edit;
 use futures_util::TryStreamExt;
 use klyndb_driver_api::*;
 use std::{net::SocketAddr, time::Duration};
@@ -182,7 +183,9 @@ async fn stream(
     Ok(false)
 }
 async fn catalog(client: &mut NativeClient, sql: String) -> Result<Vec<Row>> {
-    let mut stream = client.simple_query(sql).await.map_err(err)?;
+    catalog_rows(client.simple_query(sql).await.map_err(err)?).await
+}
+async fn catalog_rows(mut stream: tiberius::QueryStream<'_>) -> Result<Vec<Row>> {
     let mut rows = vec![];
     let mut bytes = 0;
     while let Some(item) = stream.try_next().await.map_err(err)? {
@@ -263,6 +266,9 @@ impl SqlServer {
             .trim_start_matches('[')
             .trim_end_matches(']');
         let mut config = Config::new();
+        // Klyndb owns deadlines and drains Attention before reuse. The SDK timer
+        // poisons the protocol at 30 seconds before our edit/query deadline fires.
+        config.command_timeout(None);
         config.host(host);
         config.port(url.port().unwrap_or(1433));
         config.authentication(AuthMethod::sql_server(user, password));
@@ -311,12 +317,16 @@ impl SqlServer {
     }
     async fn metadata(&self, sql: String) -> Result<Vec<Row>> {
         let mut guard = self.connection.lock().await;
-        let client = guard
-            .as_mut()
+        // If a caller drops this future (for example the inspector deadline),
+        // the owned client closes instead of leaving an unread response reusable.
+        let mut client = guard
+            .take()
             .ok_or_else(|| Error::new("Connection is closed"))?;
-        let result = catalog(client, sql).await;
-        if result.is_err() {
-            guard.take();
+        let result = tokio::time::timeout(Duration::from_secs(30), catalog(&mut client, sql))
+            .await
+            .unwrap_or_else(|_| Err(Error::new("SQL Server metadata timed out after 30 seconds")));
+        if result.is_ok() {
+            *guard = Some(client);
         }
         result.map_err(|e| {
             Error::new(format!(
@@ -340,7 +350,7 @@ impl Session for SqlServer {
             schemas: true,
             explain: false,
             explain_analyze: false,
-            edit_rows: false,
+            edit_rows: !self.read_only,
             import_rows: false,
             import_sql: false,
             cancel: true,
@@ -427,7 +437,9 @@ impl Session for SqlServer {
     }
     async fn inspect(&self, table: &Table) -> Result<TableInfo> {
         let object = object_id(table);
-        let columns=self.metadata(format!("SELECT TOP (50001) c.name,t.name,CAST(c.is_nullable AS bit),CAST(CASE WHEN EXISTS(SELECT 1 FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id=i.object_id AND ic.index_id=i.index_id WHERE i.object_id=c.object_id AND i.is_primary_key=1 AND ic.column_id=c.column_id) THEN 1 ELSE 0 END AS bit),OBJECT_DEFINITION(c.default_object_id),CAST(CASE WHEN c.is_identity=1 OR c.is_computed=1 OR c.generated_always_type<>0 OR t.name='timestamp' THEN 1 ELSE 0 END AS bit) FROM sys.columns c JOIN sys.types t ON t.user_type_id=c.user_type_id WHERE c.object_id={object} ORDER BY c.column_id")).await?.into_iter().map(|r|Column {name:r[0].text(),data_type:r[1].text(),nullable:r[2].text()=="true",primary_key:r[3].text()=="true",default:if matches!(r[4],Cell::Null) {None} else {Some(r[4].text())},generated:r[5].text()=="true"}).collect();
+        let columns = edit::decode_columns(self.metadata(edit::column_sql(table)).await?);
+        let editable = !self.read_only
+            && edit::decode_editable(self.metadata(edit::editable_sql(table)).await?);
         let ddl = self
             .metadata(format!("SELECT OBJECT_DEFINITION({object})"))
             .await?
@@ -444,7 +456,7 @@ impl Session for SqlServer {
             name:r[0].text(),definition:if matches!(r[1],Cell::Null) {"Definition unavailable to this connection".into()} else {r[1].text()},state:Some(format!("{} · {}",r[2].text(),r[3].text()))
         }).collect();
         Ok(TableInfo {
-            editable: false,
+            editable,
             columns,
             ddl,
             indexes,
@@ -467,10 +479,28 @@ impl Session for SqlServer {
             _ => Err(Error::new("SQL Server transaction state is unavailable")),
         }
     }
-    async fn apply_changes(&self, _: Table, _: Vec<Change>) -> Result<MutationResult> {
-        Err(Error::new(
-            "SQL Server grid editing is unavailable; use explicit SQL transactions",
-        ))
+    async fn apply_changes(&self, table: Table, changes: Vec<Change>) -> Result<MutationResult> {
+        if self.read_only {
+            return Err(Error::new("This SQL Server connection is read-only"));
+        }
+        validate_change_batch(&changes)?;
+        let mut guard = self.connection.lock().await;
+        let client = guard
+            .as_mut()
+            .ok_or_else(|| Error::new("Connection is closed; reconnect."))?;
+        let mut poison = false;
+        let result = edit::apply(client, &table, &changes, &mut poison).await;
+        if poison {
+            guard.take();
+            let cause = result
+                .err()
+                .map(|e| e.message)
+                .unwrap_or_else(|| "Session cleanup failed".into());
+            return Err(Error::new(format!(
+                "{cause} Editing could not be safely completed or rolled back. Connection closed; reconnect and verify writes and the original transaction before retrying."
+            )));
+        }
+        result
     }
     async fn disconnect(&self) -> Result<()> {
         self.connection.lock().await.take();

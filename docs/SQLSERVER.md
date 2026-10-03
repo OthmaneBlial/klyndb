@@ -26,6 +26,8 @@ Native SELECT/OUTPUT result sets share the bounded Rust result spool, virtualize
 
 BIGINT and DECIMAL/NUMERIC values remain exact text tokens in Rust, including precision 38. NULL, Unicode text and binary values remain distinct. The client currently decodes MONEY/SMALLMONEY through floating point, so Klyndb rejects those columns: cast them to DECIMAL in the SELECT. Native unsupported representations need an explicit text cast. SQL exports use bracket identifiers, Unicode `N'…'` strings, `0x…` binary and numeric bit literals.
 
+Query deadlines follow the configured Klyndb timeout, without an additional SDK 30-second timer. Metadata has a separate 30-second driver bound; the inspector has its shared shorter deadline.
+
 The configured result limit applies per native result set. Reaching it stops the remainder of the original batch; later writes may already have executed. Cancellation sends native TDS Attention and drains its acknowledgement before reuse. If synchronization cannot be confirmed within three seconds, the connection closes and asks you to reconnect and verify writes. Cancellation never promises rollback.
 
 ## Tables and transactions
@@ -34,10 +36,24 @@ The selected database exposes schema-qualified tables/views, columns, nullabilit
 
 Execute explicit BEGIN TRANSACTION, COMMIT or ROLLBACK in SQL. The transaction indicator uses native XACT_STATE, including failed transactions. Confirmed reconnect drops the original session, rolling back its open transaction and removing temporary tables; retained result exports stay available.
 
-Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. Grid editing, file imports, structured execution plans and diagrams remain disabled for this driver.
+Read-only mode blocks non-read-only SQL in Klyndb. SQL Server has no per-session native read-only switch in this implementation: use a database principal with restricted server permissions for a server-enforced boundary. File imports, structured execution plans and diagrams remain disabled for this driver.
+
+## Reviewed table editing
+
+Open a disk-based base table, stage inserts/updates/deletions, review and apply through the existing grid. Updates/deletes need a non-NULL primary key. Views, memory-optimized tables and tables with enabled INSTEAD OF triggers are excluded. Identity, computed, rowversion and generated columns are protected; omitted insert columns use native defaults.
+
+Values use bound parameters and native destination-type casts. Numeric conversion checks compare exact decimal tokens without f64 rounding, and supported text/binary casts are checked for truncation or encoding loss. Fixed char/binary padding is allowed. Temporal, XML and UUID values follow native conversion rules. Writing user-defined alias/CLR columns is unsupported by this cast-based writer; [SQL Server does not allow alias types as CAST targets](https://learn.microsoft.com/en-us/sql/t-sql/functions/cast-and-convert-transact-sql?view=sql-server-ver17). Unsupported native codecs require SQL casts outside grid editing. Destination precision and length appear in Structure.
+
+The complete original row is reread under a lock and compared in Rust before update/delete, including differences hidden by case-insensitive collation. A stale row, conversion error or constraint failure aborts the batch. Native `OUTPUT 1 INTO` counts direct changes without adding AFTER-trigger row counts. Arbitrary query affected counts remain unavailable.
+
+A successful batch commits only when it started with no transaction and IMPLICIT_TRANSACTIONS OFF. Existing explicit transactions and implicit-transaction mode leave edits pending for COMMIT/ROLLBACK. Savepoints preserve earlier caller work on recoverable failures. Session transaction/SET commands use native batches; parameterized value requests use RPC. Original IMPLICIT_TRANSACTIONS, ANSI_WARNINGS and ARITHABORT settings are restored.
+
+Batches are limited to 1,000 changes / 8 MiB and one 60-second deadline. Attention acknowledgement and rollback must be confirmed before reuse; an uncertain interruption, rollback or commit closes the connection and requires write/transaction verification before retrying. A failed/uncommittable transaction must be rolled back first. Server triggers and external side effects retain their native transaction limits.
+
+The current writer holds a table-wide exclusive lock through the transaction to protect metadata and reread values. In a manual transaction this lock remains until COMMIT/ROLLBACK and can block other sessions. Narrower locks are a follow-up, rather than an unverified concurrency guarantee.
 
 ## Evidence and remaining validation
 
-The real native driver contract uses Microsoft SQL Server 2022 CU27, `16.0.4295.3`, Developer Edition from the official container image. It checks exact cells, DECLARE/multiple/empty result sets, native writes/catalog/browsing/transactions, cancellation and reuse, consumer loss, row limits and TLS encryption/CA/hostname rejection. The fixture runs under Rosetta on Apple Silicon; [Microsoft supports these Linux containers on x86-64 hosts](https://learn.microsoft.com/en-us/sql/linux/install-upgrade/quickstart-install-docker?view=sql-server-linux-ver15), so this is protocol test evidence, not a supported ARM production deployment claim.
+The real native driver contract uses Microsoft SQL Server 2022 CU27, `16.0.4295.3`, Developer Edition from the official container image. It checks exact cells, DECLARE/multiple/empty result sets, native writes/catalog/browsing/transactions, reviewed edits and conflicts, cancellation and reuse, consumer loss, row limits and TLS encryption/CA/hostname rejection. The fixture runs under Rosetta on Apple Silicon; [Microsoft supports these Linux containers on x86-64 hosts](https://learn.microsoft.com/en-us/sql/linux/install-upgrade/quickstart-install-docker?view=sql-server-linux-ver15), so this is protocol test evidence, not a supported ARM production deployment claim.
 
-The real core contract also passes for isolated connection testing, saved sessions, exact disk-spool cells, multi-result CSV/SQL export, native SQL-export roundtrip and confirmed reconnect that rolls back the original transaction, removes temporary tables and retains completed results. Native desktop acceptance and Windows/Linux workflows remain pending and are tracked separately in [VALIDATION.md](VALIDATION.md). This source driver is not a new published binary release.
+The real core contract also passes for isolated connection testing, saved sessions, exact disk-spool cells, production editing confirmation, multi-result CSV/SQL export, native SQL-export roundtrip and confirmed reconnect that rolls back the original transaction, removes temporary tables and retains completed results. Native desktop acceptance and Windows/Linux workflows remain pending and are tracked separately in [VALIDATION.md](VALIDATION.md). This source driver is not a new published binary release.
