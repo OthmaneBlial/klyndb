@@ -3,8 +3,8 @@ use serde::Serialize;
 use sqlparser::{
     ast::{Query, SetExpr, Statement, Visit, Visitor},
     dialect::{
-        ClickHouseDialect, Dialect, DuckDbDialect, GenericDialect, MySqlDialect, PostgreSqlDialect,
-        SQLiteDialect,
+        ClickHouseDialect, Dialect, DuckDbDialect, GenericDialect, MsSqlDialect, MySqlDialect,
+        PostgreSqlDialect, SQLiteDialect,
     },
     parser::Parser,
     tokenizer::{Location, Token, TokenWithSpan, Tokenizer, Whitespace},
@@ -96,6 +96,7 @@ fn parse(sql: &str, engine: &str) -> DriverResult<(Vec<Statement>, usize)> {
         "mysql" => &ValidatedMySqlDialect::new(),
         "duckdb" => &ValidatedDuckDbDialect::new(),
         "clickhouse" => &ClickHouseDialect {},
+        "mssql" => &MsSqlDialect {},
         _ => &GenericDialect {},
     };
     let mut tokens = Tokenizer::new(dialect, sql)
@@ -245,6 +246,25 @@ pub fn analyze_script(sql: &str, engine: &str) -> DriverResult<Option<Analysis>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mssql_preserves_batch_and_checks_native_writes() {
+        let sql =
+            "DECLARE @n bigint = 9223372036854775807; SELECT TOP (2) @n AS [exact]; SELECT N'é;雪'";
+        assert_eq!(analyze(sql, "mssql").unwrap().statements.len(), 3);
+        assert!(analyze("SELECT TOP (1) * FROM [dbo].[items] ORDER BY [id] OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", "mssql").unwrap().read_only);
+        assert!(
+            !analyze("SELECT 1 INTO [dbo].[copy]", "mssql")
+                .unwrap()
+                .read_only
+        );
+        assert_eq!(
+            analyze("UPDATE [dbo].[items] SET [label]=N'new'", "mssql")
+                .unwrap()
+                .warnings
+                .len(),
+            1
+        );
+    }
     #[test]
     fn explain_analyze_options_require_execution_confirmation() {
         let actual = analyze("EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1", "postgres").unwrap();

@@ -776,15 +776,17 @@ export default function App() {
       editorRef.current?.replace(
         format(editorRef.current.allText(), {
           language:
-            connection?.engine === "clickhouse"
-              ? "clickhouse"
-              : connection?.engine === "duckdb"
-              ? "duckdb"
-              : connection?.engine === "postgres"
-                ? "postgresql"
-                : connection?.engine === "mysql"
-                  ? "mysql"
-                  : "sqlite",
+            connection?.engine === "mssql"
+              ? "transactsql"
+              : connection?.engine === "clickhouse"
+                ? "clickhouse"
+                : connection?.engine === "duckdb"
+                  ? "duckdb"
+                  : connection?.engine === "postgres"
+                    ? "postgresql"
+                    : connection?.engine === "mysql"
+                      ? "mysql"
+                      : "sqlite",
         }),
       );
     } catch (e) {

@@ -195,7 +195,14 @@ export function ConnectionDialog({
           aria-label="Connection details"
         >
           <div className="engine-picker">
-            {["sqlite", "duckdb", "postgres", "mysql", "clickhouse"].map((engine) => (
+            {[
+              "sqlite",
+              "duckdb",
+              "postgres",
+              "mysql",
+              "clickhouse",
+              "mssql",
+            ].map((engine) => (
               <button
                 type="button"
                 key={engine}
@@ -221,9 +228,11 @@ export function ConnectionDialog({
                       ? "DuckDB"
                       : engine === "mysql"
                         ? "MySQL / MariaDB"
-                        : engine === "clickhouse"
-                          ? "ClickHouse"
-                          : "PostgreSQL"}
+                        : engine === "mssql"
+                          ? "SQL Server"
+                          : engine === "clickhouse"
+                            ? "ClickHouse"
+                            : "PostgreSQL"}
                 </strong>
                 <span>
                   {["sqlite", "duckdb"].includes(engine)
@@ -288,16 +297,20 @@ export function ConnectionDialog({
                   placeholder={
                     form.engine === "mysql"
                       ? "mysql://user@localhost:3306/database"
-                      : form.engine === "clickhouse"
-                        ? "clickhouse://default@localhost:9000/default?tls=disabled"
-                        : "postgresql://user@localhost:5432/database"
+                      : form.engine === "mssql"
+                        ? "mssql://user@localhost:1433/database"
+                        : form.engine === "clickhouse"
+                          ? "clickhouse://default@localhost:9000/default?tls=disabled"
+                          : "postgresql://user@localhost:5432/database"
                   }
                   required
                   autoComplete="off"
                 />
                 <small>
                   TLS verification is enabled by default. Add{" "}
-                  {form.engine !== "postgres" ? "tls=disabled" : "sslmode=disable"}{" "}
+                  {form.engine !== "postgres"
+                    ? "tls=disabled"
+                    : "sslmode=disable"}{" "}
                   only for a trusted local server.
                 </small>
               </label>
@@ -503,7 +516,9 @@ export function ConnectionDialog({
                     onChange={(e) => changeTls(e.target.value, tls.ca)}
                   >
                     <option
-                      value={form.engine !== "postgres" ? "required" : "require"}
+                      value={
+                        form.engine !== "postgres" ? "required" : "require"
+                      }
                     >
                       Verified TLS (default)
                     </option>
@@ -516,7 +531,9 @@ export function ConnectionDialog({
                       </option>
                     )}
                     <option
-                      value={form.engine !== "postgres" ? "disabled" : "disable"}
+                      value={
+                        form.engine !== "postgres" ? "disabled" : "disable"
+                      }
                       disabled={!!(tls.ca || tls.identity)}
                     >
                       Plaintext · trusted local server only
@@ -559,46 +576,49 @@ export function ConnectionDialog({
                     requires TLS.
                   </small>
                 </label>
-                <label>
-                  Client identity · optional
-                  <div className="input-action">
-                    <input
-                      aria-label="Client identity file"
-                      value={tls.identity}
-                      placeholder="PKCS#12 (.p12 / .pfx)"
-                      onChange={(e) => {
-                        changeTls(
-                          form.engine !== "postgres" ? "required" : "require",
-                          tls.ca,
-                          e.target.value,
-                        );
-                        setIdentityPassword("");
-                      }}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Choose client identity file"
-                      onClick={() => void chooseIdentity()}
-                    >
-                      <FolderOpen size={17} />
-                    </button>
-                    {tls.identity && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          changeTls(tls.mode, tls.ca, "");
+                {form.engine !== "mssql" && (
+                  <label>
+                    Client identity · optional
+                    <div className="input-action">
+                      <input
+                        aria-label="Client identity file"
+                        value={tls.identity}
+                        placeholder="PKCS#12 (.p12 / .pfx)"
+                        onChange={(e) => {
+                          changeTls(
+                            form.engine !== "postgres" ? "required" : "require",
+                            tls.ca,
+                            e.target.value,
+                          );
                           setIdentityPassword("");
                         }}
+                      />
+                      <button
+                        type="button"
+                        aria-label="Choose client identity file"
+                        onClick={() => void chooseIdentity()}
                       >
-                        Clear
+                        <FolderOpen size={17} />
                       </button>
-                    )}
-                  </div>
-                  <small>
-                    Certificate chain and private key in one PKCS#12 file, up to
-                    1 MiB. Rust reads the file; keys stay outside the interface.
-                  </small>
-                </label>
+                      {tls.identity && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            changeTls(tls.mode, tls.ca, "");
+                            setIdentityPassword("");
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <small>
+                      Certificate chain and private key in one PKCS#12 file, up
+                      to 1 MiB. Rust reads the file; keys stay outside the
+                      interface.
+                    </small>
+                  </label>
+                )}
                 {tls.identity && (
                   <>
                     <label>

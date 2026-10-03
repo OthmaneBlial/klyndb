@@ -372,6 +372,9 @@ pub trait Session: Send + Sync {
             self.quote_filter_value(&value)
         )
     }
+    fn pagination_sql(&self, limit: usize, offset: u64, _ordered: bool) -> String {
+        format!(" LIMIT {limit} OFFSET {offset};")
+    }
     fn table_query_sql(
         &self,
         table: &Table,
@@ -460,7 +463,7 @@ pub trait Session: Send + Sync {
             sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
         }
         // ponytail: OFFSET pages; use keyset paging if deep-page scans become a measured bottleneck.
-        sql.push_str(&format!(" LIMIT {} OFFSET {};", query.limit, query.offset));
+        sql.push_str(&self.pagination_sql(query.limit, query.offset, !order.is_empty()));
         Ok(sql)
     }
     fn table_select_sql(&self, table: &Table, limit: usize) -> Result<String> {

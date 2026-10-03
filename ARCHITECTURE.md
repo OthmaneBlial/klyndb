@@ -8,6 +8,7 @@ The desktop is a Tauri 2 system-WebView shell. React represents the workspace; R
 | `drivers/sqlite` | rusqlite on blocking workers; persistent connection and VM cancellation |
 | `drivers/postgres` | tokio-postgres native protocol, verified native TLS, server cancellation |
 | `drivers/mysql` | mysql_async native protocol, dedicated user session, lazy cancellation connection, verified native TLS |
+| `drivers/mssql` | Tiberius native TDS, original batches, exact scalars, verified Rustls, bounded Attention/drain cancellation |
 | `query` | Dialect parsing, AST safety and bounded native-plan tree decoding |
 | `connections` | SQLite application-state migration, metadata validation, URL secret extraction and OS credential store |
 | `core` | Session/job lifecycle, timeout and disk-backed result spool |

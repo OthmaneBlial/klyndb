@@ -20,7 +20,7 @@ import {
   closeBracketsKeymap,
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { sql, SQLite, PostgreSQL, MySQL } from "@codemirror/lang-sql";
+import { sql, SQLite, PostgreSQL, MySQL, MSSQL } from "@codemirror/lang-sql";
 import { ClickHouseSQL, currentStatement, replaceDocument } from "../sql";
 export interface EditorHandle {
   runText: () => string;
@@ -66,9 +66,11 @@ export function SqlEditor({
               ? SQLite
               : engine === "mysql"
                 ? MySQL
-                : engine === "clickhouse"
-                  ? ClickHouseSQL
-                  : PostgreSQL,
+                : engine === "mssql"
+                  ? MSSQL
+                  : engine === "clickhouse"
+                    ? ClickHouseSQL
+                    : PostgreSQL,
           schema,
         }),
         keymap.of([

@@ -52,8 +52,8 @@
 
 | Your workflow | Klyndb |
 | --- | --- |
-| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md) and [ClickHouse](docs/CLICKHOUSE.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
-| **🧭 Explore** | Tables and views, columns, primary keys, indexes, foreign keys, constraints, user triggers and available table DDL. |
+| **🔌 Connect** | PostgreSQL, MySQL, MariaDB and SQLite, plus [DuckDB](docs/DUCKDB.md), [ClickHouse](docs/CLICKHOUSE.md) and [SQL Server](docs/SQLSERVER.md) in source builds; connection testing, confirmed session reconnect, saved connections, groups, favorites and environment labels. |
+| **🧭 Explore** | Tables and views, columns, primary keys, indexes and available table DDL, with foreign keys, constraints and triggers where supported. [Engine matrix](docs/COMPATIBILITY.md). |
 | **⌨️ Write SQL** | Multiple tabs, syntax highlighting, dialect-aware formatting, schema completion and statement/selection/batch execution. |
 | **📊 Work with results** | Streamed results, a virtualized grid, server-side table filters/sort/pages, column layout and cell inspection. [Browse guide](docs/TABLE_BROWSING.md). |
 | **✍️ Edit data** | Staged SQLite/PostgreSQL and MySQL/MariaDB InnoDB inserts, updates and deletes; review, bound values and optimistic conflicts. |

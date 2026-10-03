@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-exclude = ["third_party/klickhouse-0.15.3"]
-members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "apps/desktop/src-tauri"]
-default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse"]
+exclude = ["third_party/klickhouse-0.15.3", "third_party/tiberius-0.13.0"]
+members = ["crates/driver-api", "crates/query", "crates/connections", "crates/core", "crates/ssh", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "crates/drivers/mssql", "apps/desktop/src-tauri"]
+default-members = ["crates/core", "crates/query", "crates/connections", "crates/export", "crates/import", "crates/drivers/sqlite", "crates/drivers/postgres", "crates/drivers/mysql", "crates/drivers/duckdb", "crates/drivers/clickhouse", "crates/drivers/mssql"]
 
 [workspace.package]
 version = "0.1.0"
@@ -27,6 +27,13 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+# Full native DuckDB debug data makes local test caches several GiB larger.
+# Keep application/Rust debug information; the vendor C++ engine is not our debugger target.
+[profile.dev.package.libduckdb-sys]
+debug = 0
+
 # Retains the pinned native client with a result-column data-loss guard.
 [patch.crates-io]
 klickhouse = { path = "third_party/klickhouse-0.15.3" }
+
+tiberius = { path = "third_party/tiberius-0.13.0" }

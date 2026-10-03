@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EditorState, type TransactionSpec } from "@codemirror/state";
-import { sql, PostgreSQL } from "@codemirror/lang-sql";
+import { sql, PostgreSQL, MSSQL } from "@codemirror/lang-sql";
 import { ClickHouseSQL, currentStatement, replaceDocument } from "./sql";
 describe("execute current statement", () => {
   it("uses the SQL parser for semicolons inside strings and dollar quotes", () => {
@@ -59,6 +59,22 @@ it("synchronizes generated SQL without dispatching unchanged documents", () => {
 
 it("keeps ClickHouse escaped quotes and semicolons inside the current statement", () => {
   const doc = "SELECT 'a\\';b' AS label; SELECT 42;";
-  const state = EditorState.create({doc,selection:{anchor:12},extensions:[sql({dialect:ClickHouseSQL})]});
+  const state = EditorState.create({
+    doc,
+    selection: { anchor: 12 },
+    extensions: [sql({ dialect: ClickHouseSQL })],
+  });
   expect(currentStatement(state).trim()).toBe("SELECT 'a\\';b' AS label;");
+});
+
+it("keeps T-SQL bracket identifiers and Unicode strings inside the current statement", () => {
+  const doc = "SELECT TOP (1) N'é;雪' AS [semi;colon]; SELECT 42;";
+  const state = EditorState.create({
+    doc,
+    selection: { anchor: 20 },
+    extensions: [sql({ dialect: MSSQL })],
+  });
+  expect(currentStatement(state).trim()).toBe(
+    "SELECT TOP (1) N'é;雪' AS [semi;colon];",
+  );
 });

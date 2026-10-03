@@ -269,6 +269,7 @@ async fn open_session(
                 .to_owned();
             let port = url.port().unwrap_or(match config.engine.as_str() {
                 "postgres" => 5432,
+                "mssql" => 1433,
                 "clickhouse"
                     if url
                         .query_pairs()
@@ -334,6 +335,15 @@ async fn open_session(
                     password,
                     config.read_only,
                     identity_password,
+                    endpoint,
+                )
+                .await?,
+            ) as Arc<dyn Session>),
+            "mssql" => Ok(Arc::new(
+                klyndb_mssql::SqlServer::connect_via(
+                    &address,
+                    password,
+                    config.read_only,
                     endpoint,
                 )
                 .await?,

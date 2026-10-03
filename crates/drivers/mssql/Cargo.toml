@@ -1,0 +1,22 @@
+[package]
+name = "klyndb-mssql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+klyndb-driver-api = { path = "../../driver-api" }
+klyndb-query = { path = "../../query" }
+tiberius = { version = "=0.13.0", default-features = false, features = ["rustls", "tds73", "chrono"] }
+async-trait.workspace = true
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["compat"] }
+futures-util.workspace = true
+serde_json.workspace = true
+url = "2"
+percent-encoding = "2"
+chrono = "0.4"
+hex = "0.4"
+
+[dev-dependencies]
+uuid.workspace = true

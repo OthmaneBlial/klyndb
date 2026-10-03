@@ -53,6 +53,15 @@ if [[ -n "${KLYNDB_TEST_CLICKHOUSE_URL:-}" ]]; then
 else
   echo 'ClickHouse integration skipped: set KLYNDB_TEST_CLICKHOUSE_URL to a disposable native TCP server.'
 fi
+if [[ -n "${KLYNDB_TEST_MSSQL_URL:-}" ]]; then
+  : "${KLYNDB_TEST_MSSQL_PASSWORD:?Set KLYNDB_TEST_MSSQL_PASSWORD for the disposable SQL Server}"
+  workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_workflow --ignored
+  if [[ -n "${KLYNDB_TEST_TLS_CERT_DIR:-}" ]]; then
+    workspace_test crates/drivers/mssql/tests/integration.rs real_sql_server_verified_tls --ignored
+  fi
+else
+  echo 'SQL Server integration skipped: set KLYNDB_TEST_MSSQL_URL and KLYNDB_TEST_MSSQL_PASSWORD.'
+fi
 if [[ -n "${KLYNDB_TEST_TLS_CLICKHOUSE_URL:-}" ]]; then
   : "${KLYNDB_TEST_TLS_CERT_DIR:?Set KLYNDB_TEST_TLS_CERT_DIR for ClickHouse TLS contracts}"
   workspace_test crates/drivers/clickhouse/tests/integration.rs real_clickhouse_verified_tls_and_native_readonly_profile --ignored

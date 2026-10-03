@@ -20,7 +20,9 @@ function serverUrl(address: string) {
   const url = new URL(address);
   if (
     !url.hostname ||
-    !["mysql:", "postgres:", "postgresql:", "clickhouse:"].includes(url.protocol)
+    !["mysql:", "postgres:", "postgresql:", "clickhouse:", "mssql:"].includes(
+      url.protocol,
+    )
   )
     throw new Error("Enter a valid server connection URL first.");
   return url;

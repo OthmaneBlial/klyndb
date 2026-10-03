@@ -67,7 +67,7 @@ impl Connection {
                 }
                 Ok(None)
             }
-            "postgres" | "mysql" | "clickhouse" => {
+            "postgres" | "mysql" | "clickhouse" | "mssql" => {
                 let mut url = url::Url::parse(&self.address)
                     .map_err(|_| Error::new("Enter a valid database connection URL"))?;
                 let native_tls_mode = self.engine != "postgres";
@@ -78,7 +78,9 @@ impl Connection {
                 };
                 if !schemes.contains(&url.scheme()) || url.host_str().is_none() {
                     return Err(Error::new(if native_tls_mode {
-                        if self.engine == "clickhouse" {
+                        if self.engine == "mssql" {
+                            "Expected mssql://user@host:1433/database"
+                        } else if self.engine == "clickhouse" {
                             "Expected clickhouse://user@host:9000/database"
                         } else {
                             "Expected mysql://user@host/database"
@@ -87,7 +89,9 @@ impl Connection {
                         "Expected postgresql://user@host/database"
                     }));
                 }
-                let options: &[&str] = if native_tls_mode {
+                let options: &[&str] = if self.engine == "mssql" {
+                    &["tls", "sslrootcert", "connect_timeout"]
+                } else if native_tls_mode {
                     &["tls", "sslrootcert", "sslidentity", "connect_timeout"]
                 } else {
                     &[
@@ -342,7 +346,7 @@ mod tests {
             invalid.address = address.into();
             assert!(invalid.validate().is_err());
         }
-        for engine in ["postgres", "mysql", "clickhouse"] {
+        for engine in ["postgres", "mysql", "clickhouse", "mssql"] {
             let mut timed = c.clone();
             timed.engine = engine.into();
             timed.address = format!("{engine}://alice@localhost/db");

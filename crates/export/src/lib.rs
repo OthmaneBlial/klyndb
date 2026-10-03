@@ -58,6 +58,8 @@ pub fn export_for_engine(
             let quote = |name: &str| {
                 if engine == "clickhouse" {
                     quote_clickhouse_identifier(name)
+                } else if engine == "mssql" {
+                    format!("[{}]", name.replace(']', "]]"))
                 } else if engine == "mysql" {
                     format!("`{}`", name.replace('`', "``"))
                 } else {
@@ -75,6 +77,7 @@ pub fn export_for_engine(
                     .map(|c| match c {
                         Cell::Null => "NULL".into(),
                         Cell::Number(n) => n.clone(),
+                        Cell::Boolean(b) if engine == "mssql" => if *b { "1" } else { "0" }.into(),
                         Cell::Boolean(b) => {
                             if *b {
                                 "TRUE".into()
@@ -85,6 +88,7 @@ pub fn export_for_engine(
                         Cell::Binary(b) if engine == "postgres" => format!("decode('{b}', 'hex')"),
                         Cell::Binary(b) if engine == "clickhouse" => format!("unhex('{b}')"),
                         Cell::Binary(b) if engine == "duckdb" => format!("from_hex('{b}')"),
+                        Cell::Binary(b) if engine == "mssql" => format!("0x{b}"),
                         Cell::Binary(b) => format!("X'{b}'"),
                         _ if engine == "mysql" || engine == "clickhouse" => {
                             // Hex UTF-8 avoids mode-dependent backslash and quote interpretation.
@@ -108,6 +112,7 @@ pub fn export_for_engine(
                         _ if engine == "postgres" => {
                             format!("E'{}'", c.text().replace('\\', "\\\\").replace('\'', "''"))
                         }
+                        _ if engine == "mssql" => format!("N'{}'", c.text().replace('\'', "''")),
                         _ => format!("'{}'", c.text().replace('\'', "''")),
                     })
                     .collect::<Vec<String>>();
