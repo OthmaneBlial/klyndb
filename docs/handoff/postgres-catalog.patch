@@ -1,0 +1,1090 @@
+diff --git a/apps/desktop/src-tauri/src/main.rs b/apps/desktop/src-tauri/src/main.rs
+index 42f2bb8..b374bc4 100644
+--- a/apps/desktop/src-tauri/src/main.rs
++++ b/apps/desktop/src-tauri/src/main.rs
+@@ -6,9 +6,9 @@ use klyndb_core::import::{
+ };
+ use klyndb_core::{Engine, QueryStatus};
+ use klyndb_driver_api::{
+-    Capabilities, Cell, Change, DocumentChange, DocumentPage, DocumentQuery, KeyCommandInfo,
+-    KeyInspection, KeyScan, KeyValue, MutationResult, RoutinePage, Row, Table, TableInfo,
+-    TableQuery, TransactionState,
++    Capabilities, CatalogInspection, CatalogKind, CatalogPage, Cell, Change, DocumentChange,
++    DocumentPage, DocumentQuery, KeyCommandInfo, KeyInspection, KeyScan, KeyValue, MutationResult,
++    RoutinePage, Row, Table, TableInfo, TableQuery, TransactionState,
+ };
+ use std::sync::Arc;
+ use tauri::{Manager, State};
+@@ -323,6 +323,37 @@ async fn routine_definition(
+         .map_err(api)
+ }
+ #[tauri::command]
++async fn catalog_objects(
++    engine: State<'_, Arc<Engine>>,
++    id: String,
++    kind: CatalogKind,
++    search: String,
++    offset: u32,
++) -> ApiResult<CatalogPage> {
++    engine
++        .driver(&id)
++        .await
++        .map_err(api)?
++        .catalog_objects(kind, &search, offset)
++        .await
++        .map_err(api)
++}
++#[tauri::command]
++async fn catalog_inspect(
++    engine: State<'_, Arc<Engine>>,
++    id: String,
++    kind: CatalogKind,
++    object_id: String,
++) -> ApiResult<CatalogInspection> {
++    engine
++        .driver(&id)
++        .await
++        .map_err(api)?
++        .catalog_inspect(kind, &object_id)
++        .await
++        .map_err(api)
++}
++#[tauri::command]
+ async fn inspect_table(
+     engine: State<'_, Arc<Engine>>,
+     id: String,
+@@ -706,6 +737,8 @@ fn main() {
+             key_command_info,
+             key_command,
+             routine_definition,
++            catalog_objects,
++            catalog_inspect,
+             table_select_sql,
+             table_query_sql,
+             diagram_tables,
+diff --git a/apps/desktop/src/App.tsx b/apps/desktop/src/App.tsx
+index 9f7e367..610993c 100644
+--- a/apps/desktop/src/App.tsx
++++ b/apps/desktop/src/App.tsx
+@@ -45,6 +45,7 @@ import {
+   type QueryStatus,
+   type History,
+   type Capabilities,
++  type CatalogKind,
+   type Change,
+   type Row,
+   type TableQuery,
+@@ -108,9 +109,9 @@ const DiagramDialog = lazy(() =>
+     default: m.DiagramDialog,
+   })),
+ );
+-const RoutineBrowser = lazy(() =>
+-  import("./components/RoutineBrowser").then((m) => ({
+-    default: m.RoutineBrowser,
++const CatalogBrowser = lazy(() =>
++  import("./components/CatalogBrowser").then((m) => ({
++    default: m.CatalogBrowser,
+   })),
+ );
+ import {
+@@ -142,9 +143,9 @@ export default function App() {
+     [diagramConnection, setDiagramConnection] = useState<Connection | null>(
+       null,
+     ),
+-    [routineConnection, setRoutineConnection] = useState<Connection | null>(
+-      null,
+-    ),
++    [routineConnection, setRoutineConnection] = useState<
++      (Connection & { catalogKind?: CatalogKind }) | null
++    >(null),
+     [palette, setPalette] = useState(false),
+     [sidebarSearch, setSidebarSearch] = useState(""),
+     [expanded, setExpanded] = useState<Record<string, boolean>>({});
+@@ -658,7 +659,7 @@ export default function App() {
+       )
+     ) {
+       report(
+-        "Finish the current operation, apply or discard staged changes, and close open import/diagram/routine dialogs before reconnecting.",
++        "Finish the current operation, apply or discard staged changes, and close open import/diagram/catalog dialogs before reconnecting.",
+       );
+       return;
+     }
+@@ -1118,6 +1119,14 @@ export default function App() {
+           },
+         ]
+       : []),
++    ...(connection
++      ? (connected[connection.id]?.catalog_objects ?? []).map((kind) => ({
++          name: `Browse ${kind}`,
++          key: "",
++          action: () =>
++            setRoutineConnection({ ...connection, catalogKind: kind }),
++        }))
++      : []),
+     ...connections.map((c) => ({
+       name: `Connect · ${c.name}`,
+       key: "",
+@@ -1331,6 +1340,23 @@ export default function App() {
+                                 <FileCode2 size={13} /> Functions & procedures
+                               </button>
+                             )}
++                            {(connected[c.id]?.catalog_objects ?? []).map(
++                              (kind) => (
++                                <button
++                                  key={kind}
++                                  className="diagram-open"
++                                  onClick={() =>
++                                    setRoutineConnection({
++                                      ...c,
++                                      catalogKind: kind,
++                                    })
++                                  }
++                                >
++                                  <FileCode2 size={13} />{" "}
++                                  {kind.charAt(0).toUpperCase() + kind.slice(1)}
++                                </button>
++                              ),
++                            )}
+                             {connected[c.id]?.diagrams && (
+                               <button
+                                 className="diagram-open"
+@@ -1961,17 +1987,20 @@ export default function App() {
+           </div>
+         )}
+       </main>
+-      {routineConnection && connected[routineConnection.id]?.routines && (
++      {routineConnection && connected[routineConnection.id] && (
+         <Suspense fallback={null}>
+-          <RoutineBrowser
+-            key={routineConnection.id}
++          <CatalogBrowser
++            key={`${routineConnection.id}:${routineConnection.catalogKind ?? "routines"}`}
++            kind={routineConnection.catalogKind}
+             connection={routineConnection}
+             onClose={() => setRoutineConnection(null)}
+             onOpen={(routine, definition) => {
+               const tab = newTab(
+                 routineConnection.id,
+                 definition,
+-                `${routine.schema}.${routine.name}`,
++                routine.schema
++                  ? `${routine.schema}.${routine.name}`
++                  : routine.name,
+               );
+               if (tab) setRoutineConnection(null);
+             }}
+diff --git a/apps/desktop/src/api.ts b/apps/desktop/src/api.ts
+index 532d354..69df2e9 100644
+--- a/apps/desktop/src/api.ts
++++ b/apps/desktop/src/api.ts
+@@ -17,6 +17,7 @@ export interface Capabilities {
+   affected_rows: boolean;
+   table_browse: boolean;
+   routines: boolean;
++  catalog_objects: CatalogKind[];
+   diagrams: boolean;
+   transactions: boolean;
+   schemas: boolean;
+@@ -61,6 +62,21 @@ export interface RoutinePage {
+   routines: Routine[];
+   has_more: boolean;
+ }
++export type CatalogKind = "types" | "sequences" | "users" | "roles";
++export interface CatalogObject {
++  id: string;
++  schema: string;
++  name: string;
++  kind: string;
++}
++export interface CatalogPage {
++  objects: CatalogObject[];
++  has_more: boolean;
++}
++export interface CatalogInspection {
++  sql: string;
++  details: string;
++}
+ export interface Table {
+   schema: string;
+   name: string;
+@@ -365,6 +381,14 @@ interface Commands {
+     result: string;
+   };
+ 
++  catalog_objects: {
++    args: { id: string; kind: CatalogKind; search: string; offset: number };
++    result: CatalogPage;
++  };
++  catalog_inspect: {
++    args: { id: string; kind: CatalogKind; objectId: string };
++    result: CatalogInspection;
++  };
+   diagram_tables: { args: { id: string; tables: Table[] }; result: Diagram };
+   export_diagram: {
+     args: {
+diff --git a/apps/desktop/src/components/RoutineBrowser.tsx b/apps/desktop/src/components/CatalogBrowser.tsx
+similarity index 53%
+rename from apps/desktop/src/components/RoutineBrowser.tsx
+rename to apps/desktop/src/components/CatalogBrowser.tsx
+index aeb19e0..1ea8fb1 100644
+--- a/apps/desktop/src/components/RoutineBrowser.tsx
++++ b/apps/desktop/src/components/CatalogBrowser.tsx
+@@ -1,7 +1,51 @@
+ import { useCallback, useEffect, useRef, useState } from "react";
+-import { api, type Routine, type RoutinePage } from "../api";
++import {
++  api,
++  type Routine,
++  type CatalogKind,
++  type CatalogObject,
++  type CatalogInspection,
++} from "../api";
++
+ import { Modal } from "./Modal";
+ 
++export const catalogLabels: Record<CatalogKind, string> = {
++  types: "Types",
++  sequences: "Sequences",
++  users: "Users",
++  roles: "Roles",
++};
++export function catalogName(object: CatalogObject) {
++  return object.schema ? `${object.schema}.${object.name}` : object.name;
++}
++export function CatalogDetails({
++  object,
++  inspection,
++  onOpen,
++}: {
++  object: CatalogObject;
++  inspection: CatalogInspection;
++  onOpen: () => void;
++}) {
++  return (
++    <section className="routine-definition" aria-label="Catalog details">
++      <div className="routine-definition-heading">
++        <div>
++          <strong>{catalogName(object)}</strong>
++          <small>{object.kind}</small>
++        </div>
++        <button className="primary" onClick={onOpen}>
++          Open inspection SQL
++        </button>
++      </div>
++      <p className="muted">
++        Read-only catalog details. Opening a tab does not execute SQL.
++      </p>
++      <pre tabIndex={0}>{inspection.details}</pre>
++    </section>
++  );
++}
++
+ export function RoutineDefinition({
+   routine,
+   definition,
+@@ -35,22 +79,30 @@ export function RoutineDefinition({
+   );
+ }
+ 
+-export function RoutineBrowser({
++export function CatalogBrowser({
+   connection,
++  kind,
+   onClose,
+   onOpen,
+ }: {
+   connection: { id: string; name: string };
+   onClose: () => void;
+-  onOpen: (routine: Routine, definition: string) => void;
++  kind?: CatalogKind;
++  onOpen: (object: CatalogObject, sql: string) => void;
+ }) {
++  const title = kind ? catalogLabels[kind] : "Functions & procedures";
+   const [search, setSearch] = useState("");
+-  const [page, setPage] = useState<RoutinePage | null>(null);
++  const [page, setPage] = useState<{
++    items: (Routine | CatalogObject)[];
++    has_more: boolean;
++  } | null>(null);
+   const [offset, setOffset] = useState(0);
+   const [applied, setApplied] = useState("");
+   const [busy, setBusy] = useState(false);
+-  const [selected, setSelected] = useState<Routine | null>(null);
+-  const [definition, setDefinition] = useState<string | null>(null);
++  const [selected, setSelected] = useState<Routine | CatalogObject | null>(
++    null,
++  );
++  const [definition, setDefinition] = useState<CatalogInspection | null>(null);
+   const [error, setError] = useState("");
+   const requests = useRef({ listing: 0, inspection: 0 });
+   const load = useCallback(
+@@ -63,11 +115,16 @@ export function RoutineBrowser({
+       setDefinition(null);
+       setPage(null);
+       try {
+-        const next = await api("routines", {
+-          id: connection.id,
+-          search: query,
+-          offset: start,
+-        });
++        const args = { id: connection.id, search: query, offset: start };
++        const next = kind
++          ? await api("catalog_objects", { ...args, kind }).then((p) => ({
++              items: p.objects,
++              has_more: p.has_more,
++            }))
++          : await api("routines", args).then((p) => ({
++              items: p.routines,
++              has_more: p.has_more,
++            }));
+         if (request !== requests.current.listing) return;
+         setPage(next);
+         setOffset(start);
+@@ -78,7 +135,7 @@ export function RoutineBrowser({
+         if (request === requests.current.listing) setBusy(false);
+       }
+     },
+-    [connection.id],
++    [connection.id, kind],
+   );
+   useEffect(() => {
+     const pending = requests.current;
+@@ -88,16 +145,22 @@ export function RoutineBrowser({
+       ++pending.inspection;
+     };
+   }, [load]);
+-  async function inspect(routine: Routine) {
++  async function inspect(routine: Routine | CatalogObject) {
+     const request = ++requests.current.inspection;
+     setSelected(routine);
+     setDefinition(null);
+     setError("");
+     try {
+-      const text = await api("routine_definition", {
+-        id: connection.id,
+-        routineId: routine.id,
+-      });
++      const text = kind
++        ? await api("catalog_inspect", {
++            id: connection.id,
++            kind,
++            objectId: routine.id,
++          })
++        : await api("routine_definition", {
++            id: connection.id,
++            routineId: routine.id,
++          }).then((sql) => ({ sql, details: sql }));
+       if (request === requests.current.inspection) setDefinition(text);
+     } catch (e) {
+       if (request === requests.current.inspection) setError(String(e));
+@@ -105,7 +168,7 @@ export function RoutineBrowser({
+   }
+   return (
+     <Modal
+-      title={`Functions & procedures · ${connection.name}`}
++      title={`${title} · ${connection.name}`}
+       onClose={onClose}
+       wide
+       className="routine-modal"
+@@ -118,12 +181,14 @@ export function RoutineBrowser({
+         }}
+       >
+         <label>
+-          Search schema or routine name
++          {kind === "roles" || kind === "users"
++            ? "Search name"
++            : "Search schema or name"}
+           <input
+             value={search}
+             maxLength={1024}
+             onChange={(e) => setSearch(e.target.value)}
+-            placeholder="analytics.calculate_total"
++            placeholder={kind ? "Search catalog…" : "analytics.calculate_total"}
+           />
+         </label>
+         <button type="submit" disabled={busy}>
+@@ -145,55 +210,62 @@ export function RoutineBrowser({
+       <div className="routine-layout">
+         <section
+           className="routine-catalog"
+-          aria-label="Routine catalog"
++          aria-label={`${title} catalog`}
+           aria-busy={busy}
+         >
+           {busy && (
+             <p className="muted" role="status">
+-              Loading routines…
++              Loading catalog…
+             </p>
+           )}
+-          {page?.routines.map((routine) => (
++          {page?.items.map((routine) => (
+             <button
+               key={routine.id}
+               aria-pressed={selected?.id === routine.id}
+               onClick={() => void inspect(routine)}
+             >
+-              <strong>
+-                {routine.schema}.{routine.name}
+-              </strong>
+-              <code>({routine.arguments})</code>
++              <strong>{catalogName(routine)}</strong>
++              {"arguments" in routine && <code>({routine.arguments})</code>}
+               <small>
+                 {routine.kind}
+-                {routine.returns ? ` → ${routine.returns}` : ""}
++                {"returns" in routine && routine.returns
++                  ? ` → ${routine.returns}`
++                  : ""}
+               </small>
+             </button>
+           ))}
+-          {page && !page.routines.length && (
+-            <p className="muted">
+-              No matching functions or procedures visible.
+-            </p>
++          {page && !page.items.length && (
++            <p className="muted">No matching objects visible.</p>
+           )}
+         </section>
+         <div className="routine-detail">
+           {selected ? (
+             definition !== null ? (
+-              <RoutineDefinition
+-                routine={selected}
+-                definition={definition}
+-                onOpen={() => onOpen(selected, definition)}
+-              />
++              "arguments" in selected ? (
++                <RoutineDefinition
++                  routine={selected}
++                  definition={definition.sql}
++                  onOpen={() => onOpen(selected, definition.sql)}
++                />
++              ) : (
++                <CatalogDetails
++                  object={selected}
++                  inspection={definition}
++                  onOpen={() => onOpen(selected, definition.sql)}
++                />
++              )
+             ) : (
+               !error && (
+                 <p className="muted" role="status">
+-                  Loading definition…
++                  Loading details…
+                 </p>
+               )
+             )
+           ) : (
+             <p className="muted">
+-              Select a function or procedure to inspect its native definition.
+-              Overloads are listed separately.
++              {kind
++                ? "Select an object to inspect its catalog details."
++                : "Select a function or procedure to inspect its native definition. Overloads are listed separately."}
+             </p>
+           )}
+         </div>
+@@ -201,7 +273,7 @@ export function RoutineBrowser({
+       <footer>
+         <small>
+           {page &&
+-            `${offset + (page.routines.length ? 1 : 0)}–${offset + page.routines.length}${page.has_more ? " · more available" : ""}`}
++            `${offset + (page.items.length ? 1 : 0)}–${offset + page.items.length}${page.has_more ? " · more available" : ""}`}
+         </small>
+         <button
+           disabled={busy || !page || offset === 0}
+diff --git a/apps/desktop/src/routines.test.tsx b/apps/desktop/src/routines.test.tsx
+index 0e0c38c..2c8261d 100644
+--- a/apps/desktop/src/routines.test.tsx
++++ b/apps/desktop/src/routines.test.tsx
+@@ -1,6 +1,6 @@
+ import { renderToStaticMarkup } from "react-dom/server";
+ import { expect, test } from "vitest";
+-import { RoutineDefinition } from "./components/RoutineBrowser";
++import { CatalogDetails, RoutineDefinition } from "./components/CatalogBrowser";
+ 
+ test("native routine signatures and reconstructed definitions remain escaped text", () => {
+   const html = renderToStaticMarkup(
+@@ -27,3 +27,31 @@ test("native routine signatures and reconstructed definitions remain escaped tex
+   expect(html).toContain("Opening a tab does not execute it.");
+   expect(html).toContain("Open in SQL tab");
+ });
++
++test("catalog inspection renders exact escaped server text and a nonexecuting SQL action", () => {
++  const html = renderToStaticMarkup(
++    <CatalogDetails
++      object={{
++        id: "42",
++        schema: "",
++        name: "<login>",
++        kind: "user / login role",
++      }}
++      inspection={{
++        sql: "SELECT 1;",
++        details:
++          '{"maximum":"9223372036854775807","label":"<script>é</script>"}',
++      }}
++      onOpen={() => {
++        throw new Error("Rendering must not open SQL");
++      }}
++    />,
++  );
++  expect(html).toContain("&lt;login&gt;");
++  expect(html).not.toContain(".&lt;login&gt;");
++  expect(html).toContain("9223372036854775807");
++  expect(html).toContain("&lt;script&gt;é&lt;/script&gt;");
++  expect(html).not.toContain("<script>");
++  expect(html).toContain("Open inspection SQL");
++  expect(html).toContain("Opening a tab does not execute SQL.");
++});
+diff --git a/crates/driver-api/src/lib.rs b/crates/driver-api/src/lib.rs
+index e752f00..5345f5b 100644
+--- a/crates/driver-api/src/lib.rs
++++ b/crates/driver-api/src/lib.rs
+@@ -116,6 +116,8 @@ pub struct Capabilities {
+     pub affected_rows: bool,
+     pub table_browse: bool,
+     pub routines: bool,
++    #[serde(default)]
++    pub catalog_objects: Vec<CatalogKind>,
+     pub diagrams: bool,
+     pub transactions: bool,
+     pub schemas: bool,
+@@ -222,6 +224,33 @@ pub struct RoutinePage {
+     pub routines: Vec<Routine>,
+     pub has_more: bool,
+ }
++#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
++#[serde(rename_all = "snake_case")]
++pub enum CatalogKind {
++    Types,
++    Sequences,
++    Users,
++    Roles,
++}
++#[derive(Clone, Debug, Serialize, Deserialize)]
++pub struct CatalogObject {
++    pub id: String,
++    pub schema: String,
++    pub name: String,
++    pub kind: String,
++}
++#[derive(Clone, Debug, Serialize, Deserialize)]
++pub struct CatalogPage {
++    pub objects: Vec<CatalogObject>,
++    pub has_more: bool,
++}
++#[derive(Clone, Debug, Serialize, Deserialize)]
++pub struct CatalogInspection {
++    /// Read-only catalog SQL. Opening it in an editor never executes it.
++    pub sql: String,
++    /// Server-produced JSON text; large integers stay exact.
++    pub details: String,
++}
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+ pub struct Column {
+     pub name: String,
+@@ -670,6 +699,20 @@ pub trait Session: Send + Sync {
+         ))
+     }
+ 
++    async fn catalog_objects(
++        &self,
++        _kind: CatalogKind,
++        _search: &str,
++        _offset: u32,
++    ) -> Result<CatalogPage> {
++        Err(Error::new("This driver does not support this catalog"))
++    }
++    async fn catalog_inspect(&self, _kind: CatalogKind, _id: &str) -> Result<CatalogInspection> {
++        Err(Error::new(
++            "This driver does not support catalog inspection",
++        ))
++    }
++
+     async fn inspect(&self, table: &Table) -> Result<TableInfo>;
+     async fn relationships(&self, _table: &Table) -> Result<Vec<ForeignKey>> {
+         Err(Error::new(
+diff --git a/crates/drivers/clickhouse/src/lib.rs b/crates/drivers/clickhouse/src/lib.rs
+index 92b2e17..be7e318 100644
+--- a/crates/drivers/clickhouse/src/lib.rs
++++ b/crates/drivers/clickhouse/src/lib.rs
+@@ -433,6 +433,7 @@ impl Session for ClickHouse {
+             affected_rows: false,
+             table_browse: true,
+             routines: false,
++            catalog_objects: vec![],
+             diagrams: false,
+             transactions: false,
+             schemas: true,
+diff --git a/crates/drivers/duckdb/src/lib.rs b/crates/drivers/duckdb/src/lib.rs
+index c37e682..4cad20e 100644
+--- a/crates/drivers/duckdb/src/lib.rs
++++ b/crates/drivers/duckdb/src/lib.rs
+@@ -494,6 +494,7 @@ impl Session for DuckDb {
+             affected_rows: true,
+             table_browse: true,
+             routines: false,
++            catalog_objects: vec![],
+             diagrams: true,
+             transactions: true,
+             schemas: true,
+diff --git a/crates/drivers/mongodb/src/lib.rs b/crates/drivers/mongodb/src/lib.rs
+index 049d2be..749df4e 100644
+--- a/crates/drivers/mongodb/src/lib.rs
++++ b/crates/drivers/mongodb/src/lib.rs
+@@ -231,6 +231,7 @@ impl Session for MongoDb {
+             affected_rows: false,
+             table_browse: false,
+             routines: false,
++            catalog_objects: vec![],
+             diagrams: false,
+             transactions: false,
+             schemas: false,
+diff --git a/crates/drivers/mssql/src/lib.rs b/crates/drivers/mssql/src/lib.rs
+index 1fa1acc..67d9c43 100644
+--- a/crates/drivers/mssql/src/lib.rs
++++ b/crates/drivers/mssql/src/lib.rs
+@@ -424,6 +424,7 @@ impl Session for SqlServer {
+             affected_rows: false,
+             table_browse: true,
+             routines: true,
++            catalog_objects: vec![],
+             diagrams: true,
+             transactions: true,
+             schemas: true,
+diff --git a/crates/drivers/mysql/src/lib.rs b/crates/drivers/mysql/src/lib.rs
+index b04fc20..214abab 100644
+--- a/crates/drivers/mysql/src/lib.rs
++++ b/crates/drivers/mysql/src/lib.rs
+@@ -344,6 +344,7 @@ impl Session for Mysql {
+             affected_rows: true,
+             table_browse: true,
+             routines: true,
++            catalog_objects: vec![],
+             diagrams: true,
+             transactions: true,
+             schemas: true,
+diff --git a/crates/drivers/postgres/src/catalog.rs b/crates/drivers/postgres/src/catalog.rs
+new file mode 100644
+index 0000000..7da1667
+--- /dev/null
++++ b/crates/drivers/postgres/src/catalog.rs
+@@ -0,0 +1,148 @@
++use super::{Postgres, err};
++use klyndb_driver_api::{
++    CatalogInspection, CatalogKind, CatalogObject, CatalogPage, Error, Result,
++};
++
++// All fragments are fixed native catalog expressions. Search is bound separately;
++// the only interpolated value is a parsed numeric OID.
++fn query_parts(
++    kind: CatalogKind,
++) -> (
++    &'static str,
++    &'static str,
++    &'static str,
++    &'static str,
++    &'static str,
++    &'static str,
++    &'static str,
++) {
++    match kind {
++        CatalogKind::Types => (
++            "pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_catalog.pg_class c ON c.oid=t.typrelid",
++            "t.oid",
++            "n.nspname",
++            "t.typname",
++            "CASE t.typtype WHEN 'd' THEN 'domain' WHEN 'e' THEN 'enum' WHEN 'c' THEN 'composite' WHEN 'r' THEN 'range' WHEN 'm' THEN 'multirange' ELSE 'base type' END",
++            "n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND t.typisdefined AND t.typcategory<>'A' AND (t.typtype<>'c' OR c.relkind='c') AND pg_catalog.has_schema_privilege(n.oid,'USAGE') AND pg_catalog.has_type_privilege(t.oid,'USAGE')",
++            r#"pg_catalog.jsonb_build_object(
++                'owner',pg_catalog.pg_get_userbyid(t.typowner),
++                'comment',pg_catalog.obj_description(t.oid,'pg_type'),
++                'base_type',CASE WHEN t.typbasetype<>0 THEN pg_catalog.format_type(t.typbasetype,t.typtypmod) END,
++                'not_null',t.typnotnull,'default',t.typdefault,
++                'enum_labels',(SELECT pg_catalog.jsonb_agg(e.enumlabel ORDER BY e.enumsortorder) FROM pg_catalog.pg_enum e WHERE e.enumtypid=t.oid),
++                'attributes',(SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('name',a.attname,'type',pg_catalog.format_type(a.atttypid,a.atttypmod)) ORDER BY a.attnum) FROM pg_catalog.pg_attribute a WHERE a.attrelid=t.typrelid AND a.attnum>0 AND NOT a.attisdropped),
++                'constraints',(SELECT pg_catalog.jsonb_agg(pg_catalog.pg_get_constraintdef(co.oid,true) ORDER BY co.conname) FROM pg_catalog.pg_constraint co WHERE co.contypid=t.oid),
++                'range_subtype',(SELECT pg_catalog.format_type(r.rngsubtype,NULL) FROM pg_catalog.pg_range r WHERE r.rngtypid=t.oid OR r.rngmultitypid=t.oid)
++            )"#,
++        ),
++        CatalogKind::Sequences => (
++            "pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace JOIN pg_catalog.pg_sequence s ON s.seqrelid=c.oid",
++            "c.oid",
++            "n.nspname",
++            "c.relname",
++            "'sequence'::text",
++            "c.relkind='S' AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND pg_catalog.has_schema_privilege(n.oid,'USAGE') AND CASE WHEN c.relkind='S' THEN pg_catalog.has_sequence_privilege(c.oid,'USAGE,SELECT,UPDATE') ELSE false END",
++            r#"pg_catalog.jsonb_build_object(
++                'owner',pg_catalog.pg_get_userbyid(c.relowner),'type',pg_catalog.format_type(s.seqtypid,NULL),
++                'start',s.seqstart::text,'minimum',s.seqmin::text,'maximum',s.seqmax::text,
++                'increment',s.seqincrement::text,'cache',s.seqcache::text,'cycle',s.seqcycle,
++                'owned_by',(SELECT pg_catalog.format('%I.%I.%I',tn.nspname,tc.relname,a.attname) FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_class tc ON tc.oid=d.refobjid JOIN pg_catalog.pg_namespace tn ON tn.oid=tc.relnamespace JOIN pg_catalog.pg_attribute a ON a.attrelid=tc.oid AND a.attnum=d.refobjsubid WHERE d.classid='pg_catalog.pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_catalog.pg_class'::regclass AND d.deptype IN ('a','i') LIMIT 1),
++                'comment',pg_catalog.obj_description(c.oid,'pg_class')
++            )"#,
++        ),
++        CatalogKind::Users | CatalogKind::Roles => (
++            "pg_catalog.pg_roles r",
++            "r.oid",
++            "''::text",
++            "r.rolname",
++            "CASE WHEN r.rolcanlogin THEN 'user / login role' ELSE 'role' END",
++            if kind == CatalogKind::Users {
++                "r.rolcanlogin"
++            } else {
++                "true"
++            },
++            r#"pg_catalog.jsonb_build_object(
++                'can_login',r.rolcanlogin,'superuser',r.rolsuper,'inherit',r.rolinherit,
++                'create_role',r.rolcreaterole,'create_database',r.rolcreatedb,
++                'replication',r.rolreplication,'bypass_rls',r.rolbypassrls,
++                'connection_limit',r.rolconnlimit,'valid_until',r.rolvaliduntil::text,
++                'member_of',(SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('role',p.rolname,'admin_option',m.admin_option) ORDER BY p.rolname) FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles p ON p.oid=m.roleid WHERE m.member=r.oid),
++                'members',(SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('role',p.rolname,'admin_option',m.admin_option) ORDER BY p.rolname) FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles p ON p.oid=m.member WHERE m.roleid=r.oid)
++            )"#,
++        ),
++    }
++}
++
++impl Postgres {
++    pub(super) async fn list_catalog(
++        &self,
++        kind: CatalogKind,
++        search: &str,
++        offset: u32,
++    ) -> Result<CatalogPage> {
++        if search.len() > 1024 || offset > 1_000_000 {
++            return Err(Error::new(
++                "Catalog search is limited to 1024 bytes and 1,000,000 rows of paging",
++            ));
++        }
++        let (from, id, schema, name, label, visible, _) = query_parts(kind);
++        let query = format!(
++            "SELECT {id},{schema}::text,{name}::text,{label} FROM {from} WHERE {visible} AND (CASE WHEN {schema}='' THEN {name} ELSE {schema} || '.' || {name} END) ILIKE $1 ESCAPE '!' ORDER BY {schema},{name},{id} LIMIT 101 OFFSET $2"
++        );
++        let pattern = format!(
++            "%{}%",
++            search
++                .replace('!', "!!")
++                .replace('%', "!%")
++                .replace('_', "!_")
++        );
++        let _guard = self.serial.lock().await;
++        let rows = self
++            .client
++            .query(&query, &[&pattern, &(offset as i64)])
++            .await
++            .map_err(err)?;
++        Ok(CatalogPage {
++            has_more: rows.len() > 100,
++            objects: rows
++                .into_iter()
++                .take(100)
++                .map(|row| CatalogObject {
++                    id: row.get::<_, u32>(0).to_string(),
++                    schema: row.get(1),
++                    name: row.get(2),
++                    kind: row.get(3),
++                })
++                .collect(),
++        })
++    }
++    pub(super) async fn inspect_catalog(
++        &self,
++        kind: CatalogKind,
++        id: &str,
++    ) -> Result<CatalogInspection> {
++        let oid = id
++            .parse::<u32>()
++            .map_err(|_| Error::new("Invalid catalog identifier"))?;
++        let (from, id, schema, name, label, visible, details) = query_parts(kind);
++        let sql = format!(
++            "SELECT pg_catalog.jsonb_pretty(pg_catalog.jsonb_build_object('schema',{schema},'name',{name},'kind',{label}) || {details}) AS details\nFROM {from}\nWHERE {visible} AND {id}={oid}::oid;"
++        );
++        let bounded = format!(
++            "SELECT pg_catalog.left(details,2097153) FROM ({}) AS inspection",
++            sql.trim_end_matches(';')
++        );
++        let _guard = self.serial.lock().await;
++        let row = self
++            .client
++            .query_opt(&bounded, &[])
++            .await
++            .map_err(err)?
++            .ok_or_else(|| Error::new("Object is no longer visible. Refresh the catalog."))?;
++        let details: String = row.get(0);
++        if details.len() > 2 * 1024 * 1024 {
++            return Err(Error::new("Catalog details exceed the 2 MiB viewer limit"));
++        }
++        Ok(CatalogInspection { sql, details })
++    }
++}
+diff --git a/crates/drivers/postgres/src/lib.rs b/crates/drivers/postgres/src/lib.rs
+index 7122168..94e138f 100644
+--- a/crates/drivers/postgres/src/lib.rs
++++ b/crates/drivers/postgres/src/lib.rs
+@@ -1,3 +1,4 @@
++mod catalog;
+ mod edit;
+ mod import;
+ use async_trait::async_trait;
+@@ -390,6 +391,12 @@ impl Session for Postgres {
+             affected_rows: true,
+             table_browse: true,
+             routines: true,
++            catalog_objects: vec![
++                CatalogKind::Types,
++                CatalogKind::Sequences,
++                CatalogKind::Users,
++                CatalogKind::Roles,
++            ],
+             diagrams: true,
+             transactions: true,
+             schemas: true,
+@@ -508,6 +515,17 @@ impl Session for Postgres {
+         }
+         Ok(definition)
+     }
++    async fn catalog_objects(
++        &self,
++        kind: CatalogKind,
++        search: &str,
++        offset: u32,
++    ) -> Result<CatalogPage> {
++        self.list_catalog(kind, search, offset).await
++    }
++    async fn catalog_inspect(&self, kind: CatalogKind, id: &str) -> Result<CatalogInspection> {
++        self.inspect_catalog(kind, id).await
++    }
+     async fn execute_script(
+         &self,
+         mut input: mpsc::Receiver<Result<ScriptBatch>>,
+diff --git a/crates/drivers/postgres/tests/catalog.rs b/crates/drivers/postgres/tests/catalog.rs
+new file mode 100644
+index 0000000..96083f5
+--- /dev/null
++++ b/crates/drivers/postgres/tests/catalog.rs
+@@ -0,0 +1,197 @@
++use klyndb_driver_api::{Batch, CatalogKind, Session, quote_identifier};
++use klyndb_postgres::Postgres;
++use std::sync::Arc;
++use tokio::sync::mpsc;
++use tokio_util::sync::CancellationToken;
++
++async fn query(driver: Arc<Postgres>, sql: String) -> Vec<Batch> {
++    let (tx, mut rx) = mpsc::channel(4);
++    let task =
++        tokio::spawn(async move { driver.execute(sql, tx, CancellationToken::new(), 100).await });
++    let mut result = Vec::new();
++    while let Some(batch) = rx.recv().await {
++        result.push(batch);
++    }
++    task.await.unwrap().unwrap();
++    result
++}
++
++#[tokio::test]
++#[ignore = "requires owned PostgreSQL fixture with CREATE ROLE and KLYNDB_TEST_POSTGRES_URL"]
++async fn postgres_catalog_paging_details_and_readonly_inspection() {
++    let url = std::env::var("KLYNDB_TEST_POSTGRES_URL")
++        .expect("Set the disposable PostgreSQL fixture URL");
++    let writer = Arc::new(Postgres::connect(&url, None, false, None).await.unwrap());
++    let reader = Arc::new(Postgres::connect(&url, None, true, None).await.unwrap());
++    let suffix = uuid::Uuid::new_v4().simple().to_string();
++    let schema = format!("klyndb catalog {suffix}");
++    let q = quote_identifier(&schema);
++    let login = format!("klyndb_login_{suffix}");
++    let role = format!("klyndb_role_{suffix}");
++    let setup = format!(
++        "CREATE SCHEMA {q}; CREATE TYPE {q}.status AS ENUM ('pending','<script>é</script>'); CREATE DOMAIN {q}.amount AS numeric(18,2) DEFAULT 0 NOT NULL CHECK (VALUE >= 0); CREATE TYPE {q}.pair AS (name text, amount {q}.amount); CREATE TYPE {q}.span AS RANGE (subtype=integer); CREATE SEQUENCE {q}.\"literal%_sequence\" START 9007199254740993; CREATE ROLE {login} LOGIN; CREATE ROLE {role} NOLOGIN; GRANT {role} TO {login};"
++    );
++    query(writer.clone(), setup).await;
++    let mut setup = String::new();
++    for i in 0..101 {
++        setup.push_str(&format!("CREATE TYPE {q}.item_{i:03} AS ENUM ('one');"));
++    }
++    query(writer.clone(), setup).await;
++    let first = reader
++        .catalog_objects(CatalogKind::Types, &schema, 0)
++        .await
++        .unwrap();
++    let second = reader
++        .catalog_objects(CatalogKind::Types, &schema, 100)
++        .await
++        .unwrap();
++    assert_eq!(first.objects.len(), 100);
++    assert!(first.has_more);
++    assert!(second.objects.len() >= 5);
++    assert!(!second.has_more);
++    assert!(
++        first
++            .objects
++            .iter()
++            .all(|a| second.objects.iter().all(|b| a.id != b.id))
++    );
++    let mut evidence = serde_json::json!({"first":first,"second":second,"inspections":{}});
++    for name in ["status", "amount", "pair", "span"] {
++        let page = reader
++            .catalog_objects(CatalogKind::Types, &format!("{schema}.{name}"), 0)
++            .await
++            .unwrap();
++        let object = page.objects.iter().find(|o| o.name == name).unwrap();
++        let inspected = reader
++            .catalog_inspect(CatalogKind::Types, &object.id)
++            .await
++            .unwrap();
++        let details: serde_json::Value = serde_json::from_str(&inspected.details).unwrap();
++        assert_eq!(details["name"], name);
++        match name {
++            "status" => assert_eq!(details["enum_labels"][1], "<script>é</script>"),
++            "amount" => {
++                assert_eq!(details["base_type"], "numeric(18,2)");
++                assert_eq!(details["not_null"], true);
++                assert!(
++                    details["constraints"][0]
++                        .as_str()
++                        .unwrap()
++                        .contains("CHECK")
++                );
++            }
++            "pair" => assert_eq!(details["attributes"][0]["name"], "name"),
++            "span" => assert_eq!(details["range_subtype"], "integer"),
++            _ => unreachable!(),
++        }
++        // The exported inspection query is executable through the ordinary read-only driver.
++        let replay = query(reader.clone(), inspected.sql.clone()).await;
++        assert!(
++            replay
++                .iter()
++                .any(|b| matches!(b,Batch::Rows(rows) if rows[0][0].text()==inspected.details))
++        );
++        evidence["inspections"][name] = serde_json::to_value(inspected).unwrap();
++    }
++    let seq = reader
++        .catalog_objects(
++            CatalogKind::Sequences,
++            &format!("{schema}.literal%_sequence"),
++            0,
++        )
++        .await
++        .unwrap();
++    assert_eq!(seq.objects.len(), 1);
++    let inspected = reader
++        .catalog_inspect(CatalogKind::Sequences, &seq.objects[0].id)
++        .await
++        .unwrap();
++    let details: serde_json::Value = serde_json::from_str(&inspected.details).unwrap();
++    assert_eq!(details["start"], "9007199254740993");
++    assert_eq!(details["maximum"], "9223372036854775807");
++    query(reader.clone(), inspected.sql.clone()).await;
++    let actual = query(
++        writer.clone(),
++        format!("SELECT last_value::text, is_called::text FROM {q}.\"literal%_sequence\";"),
++    )
++    .await;
++    assert!(actual.iter().any(|b|matches!(b,Batch::Rows(rows) if rows[0][0].text()=="9007199254740993" && rows[0][1].text()=="false")));
++    evidence["inspections"]["sequence"] = serde_json::to_value(inspected).unwrap();
++    for (kind, name) in [(CatalogKind::Users, &login), (CatalogKind::Roles, &role)] {
++        let page = reader.catalog_objects(kind, name, 0).await.unwrap();
++        assert_eq!(page.objects.len(), 1);
++        let inspected = reader
++            .catalog_inspect(kind, &page.objects[0].id)
++            .await
++            .unwrap();
++        let details: serde_json::Value = serde_json::from_str(&inspected.details).unwrap();
++        assert_eq!(details["can_login"], kind == CatalogKind::Users);
++        assert!(!inspected.details.contains("password"));
++        assert!(!inspected.sql.contains("rolpassword"));
++        if kind == CatalogKind::Users {
++            assert_eq!(details["member_of"][0]["role"], role);
++        } else {
++            assert_eq!(details["members"][0]["role"], login);
++        }
++        evidence["inspections"][if kind == CatalogKind::Users {
++            "user"
++        } else {
++            "role"
++        }] = serde_json::to_value(inspected).unwrap();
++        evidence[if kind == CatalogKind::Users {
++            "users"
++        } else {
++            "roles"
++        }] = serde_json::to_value(page).unwrap();
++    }
++    assert!(
++        reader
++            .catalog_objects(CatalogKind::Users, &role, 0)
++            .await
++            .unwrap()
++            .objects
++            .is_empty()
++    );
++    assert!(
++        reader
++            .catalog_objects(CatalogKind::Sequences, "%_sequence' OR true --", 0)
++            .await
++            .unwrap()
++            .objects
++            .is_empty()
++    );
++    assert!(
++        reader
++            .catalog_objects(CatalogKind::Types, &"a".repeat(1025), 0)
++            .await
++            .is_err()
++    );
++    assert!(
++        reader
++            .catalog_objects(CatalogKind::Types, "", 1_000_001)
++            .await
++            .is_err()
++    );
++    assert!(
++        reader
++            .catalog_inspect(CatalogKind::Types, "1 OR true")
++            .await
++            .is_err()
++    );
++    if let Ok(path) = std::env::var("KLYNDB_CATALOG_EVIDENCE") {
++        std::fs::write(path, serde_json::to_vec_pretty(&evidence).unwrap()).unwrap();
++    }
++    query(
++        writer.clone(),
++        format!("DROP SCHEMA {q} CASCADE; DROP ROLE {login}; DROP ROLE {role};"),
++    )
++    .await;
++    assert!(
++        reader
++            .catalog_inspect(CatalogKind::Sequences, &seq.objects[0].id)
++            .await
++            .is_err()
++    );
++    reader.disconnect().await.unwrap();
++    writer.disconnect().await.unwrap();
++}
+diff --git a/crates/drivers/redis/src/lib.rs b/crates/drivers/redis/src/lib.rs
+index 64c116e..62598d2 100644
+--- a/crates/drivers/redis/src/lib.rs
++++ b/crates/drivers/redis/src/lib.rs
+@@ -219,6 +219,7 @@ impl Session for Redis {
+             affected_rows: false,
+             table_browse: false,
+             routines: false,
++            catalog_objects: vec![],
+             diagrams: false,
+             transactions: false,
+             schemas: false,
+diff --git a/crates/drivers/sqlite/src/lib.rs b/crates/drivers/sqlite/src/lib.rs
+index c59ca1c..96518a1 100644
+--- a/crates/drivers/sqlite/src/lib.rs
++++ b/crates/drivers/sqlite/src/lib.rs
+@@ -177,6 +177,7 @@ impl Session for Sqlite {
+             affected_rows: true,
+             table_browse: true,
+             routines: false,
++            catalog_objects: vec![],
+             diagrams: true,
+             transactions: true,
+             schemas: false,
